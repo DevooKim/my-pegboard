@@ -8,6 +8,8 @@ import { JiraView } from './View'
 /** 프리셋 id → 표시 이름. Rust의 PRESETS와 짝을 이룬다. */
 const PRESET_TITLES: Record<string, string> = {
   'assigned-to-me': '내게 할당된 티켓',
+  'current-sprint-mine': '현재 스프린트 — 내 티켓',
+  'current-sprint-team': '현재 스프린트 — 전체',
   'reported-by-me': '내가 보고한 티켓',
   'my-projects-recent': '최근 업데이트',
   'watched-by-me': '지켜보는 티켓',

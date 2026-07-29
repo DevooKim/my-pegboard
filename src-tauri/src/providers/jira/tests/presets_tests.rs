@@ -29,10 +29,18 @@ fn reported_by_me_uses_reporter() {
 }
 
 #[test]
-fn every_preset_uses_current_user_function() {
-    // accountId를 미리 조회하지 않기 위한 조건이다 (DECISIONS 11.1).
+fn user_scoped_presets_use_current_user_function() {
+    // 진짜 목적은 "accountId를 미리 조회하지 않는다"이다 (DECISIONS 11.1).
     // 하나라도 accountId를 박아두면 위젯마다 /myself 호출이 붙는다.
+    //
+    // 사용자 범위가 아닌 프리셋(예: 스프린트 전체)은 currentUser()가 필요 없다.
+    // 그런 프리셋도 accountId를 쓰지 않는다는 것은 아래 테스트가 따로 보장한다.
+    const TEAM_SCOPED: &[&str] = &["current-sprint-team"];
+
     for preset in Preset::all() {
+        if TEAM_SCOPED.contains(&preset.id) {
+            continue;
+        }
         assert!(
             preset.jql.contains("currentUser()"),
             "프리셋 {}가 currentUser()를 쓰지 않는다: {}",
@@ -86,6 +94,8 @@ fn preset_ids_are_stable_identifiers() {
         ids,
         vec![
             "assigned-to-me",
+            "current-sprint-mine",
+            "current-sprint-team",
             "reported-by-me",
             "my-projects-recent",
             "watched-by-me",

@@ -70,6 +70,26 @@ pub const PRESETS: &[Preset] = &[
         description: "내가 담당자이고 아직 해결되지 않은 티켓",
         jql: "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC",
     },
+    // `openSprints()`는 "지금 활성화된 스프린트 전부"다. Jira에 '현재 스프린트'라는
+    // 단일 개념은 없다 — 보드마다 스프린트가 따로 돌기 때문. 여러 보드에 걸쳐
+    // 진행 중인 스프린트를 모두 포함하는 것이 실무에서 원하는 동작이다.
+    // (실측: 내 것 22건 / 전체 285건)
+    Preset {
+        id: "current-sprint-mine",
+        name: "현재 스프린트 — 내 티켓",
+        description: "진행 중인 스프린트에서 내가 담당인 미해결 티켓",
+        jql: "sprint IN openSprints() AND assignee = currentUser() AND resolution = Unresolved \
+              ORDER BY updated DESC",
+    },
+    Preset {
+        id: "current-sprint-team",
+        name: "현재 스프린트 — 전체",
+        description: "진행 중인 스프린트의 미해결 티켓 (담당자 무관)",
+        // 전체 285건은 위젯 하나에 담기엔 너무 넓다. 그래도 스코프를 임의로
+        // 좁히지 않는 이유: '우리 팀'의 정의가 조직마다 달라 프리셋으로 표현할 수
+        // 없다(DECISIONS 11.1). 좁히려면 JQL 직접 입력으로 가는 것이 정직하다.
+        jql: "sprint IN openSprints() AND resolution = Unresolved ORDER BY updated DESC",
+    },
     Preset {
         id: "reported-by-me",
         name: "내가 보고한 티켓",
