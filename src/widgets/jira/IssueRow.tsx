@@ -36,11 +36,16 @@ export function IssueRow({
     <button
       type="button"
       onClick={() => onOpen(issue.key)}
-      className="group grid w-full items-center gap-2 rounded px-2 py-1.5 text-left
+      className="group grid w-full items-center gap-2 rounded py-1.5 pr-2 pl-3 text-left
                  transition-colors duration-fast hover:bg-surface-inset
                  focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       style={{
-        borderLeft: `2px solid ${priorityColor(issue.priority?.name)}`,
+        // 우선순위 막대를 border가 아니라 배경 그라디언트로 그린다.
+        // `border-left` + `rounded` 조합은 둥근 모서리에서 테두리가 네 변을 돌기
+        // 때문에 오른쪽 끝에 색 조각이 잘린 채 남는다.
+        backgroundImage: `linear-gradient(to right, ${priorityColor(
+          issue.priority?.name,
+        )} 0 2px, transparent 2px)`,
         gridTemplateColumns: gridTemplate(widths, density, visible),
       }}
     >

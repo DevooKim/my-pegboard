@@ -98,11 +98,19 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         id: "my-projects-recent",
-        name: "최근 업데이트된 내 프로젝트",
-        description: "내가 참여 중인 프로젝트에서 최근 2주 안에 움직인 티켓",
-        // `project IN projectsWhereUserHasPermission(...)`가 아니라 `issueFunction`도 아닌
-        // 표준 JQL만 쓴다. Jira Cloud 기본 설치에서 동작하는 함수만 사용한다.
-        jql: "project IN projectsLeadByUser() OR (assignee = currentUser() OR reporter = currentUser()) \
+        name: "최근 내가 관련된 티켓",
+        description: "담당·보고·관찰 중인 티켓 가운데 최근 2주 안에 움직인 것",
+        // 이전 JQL은 두 가지가 틀렸다(실측으로 확인):
+        //
+        //   1. `projectsLeadByUser()`가 0건이었다. 프로젝트 리드가 아니면 아무것도
+        //      반환하지 않는다. "내 프로젝트"라는 이름과 동작이 전혀 달랐다.
+        //   2. 괄호가 없어 `A OR (B AND C)`로 해석됐다. `updated >= -14d`가
+        //      OR 왼쪽 항에는 적용되지 않아, 리드 프로젝트가 있었다면 그쪽은
+        //      기간 제한 없이 전부 들어왔을 것이다.
+        //
+        // 지금은 "내가 관련된 티켓"을 명시적으로 나열하고 기간을 전체에 건다.
+        // (실측: 27건)
+        jql: "(assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()) \
               AND updated >= -14d ORDER BY updated DESC",
     },
     Preset {

@@ -11,7 +11,7 @@ const PRESET_TITLES: Record<string, string> = {
   'current-sprint-mine': '현재 스프린트 — 내 티켓',
   'current-sprint-team': '현재 스프린트 — 전체',
   'reported-by-me': '내가 보고한 티켓',
-  'my-projects-recent': '최근 업데이트',
+  'my-projects-recent': '최근 내가 관련된 티켓',
   'watched-by-me': '지켜보는 티켓',
   'mentioned-recently': '나를 언급한 티켓',
 }
