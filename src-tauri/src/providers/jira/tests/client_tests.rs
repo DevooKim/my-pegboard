@@ -126,7 +126,7 @@ fn search_body_always_sends_explicit_fields() {
     // DECISIONS 6장: "Jira가 이슈당 200개 필드를 주지만 위젯엔 5개면 충분."
     let body = build_search_body("assignee = currentUser()", 30, LIST_FIELDS, None);
     let fields = body["fields"].as_array().expect("fields must be sent");
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 10);
     assert_eq!(body["fields"][0], "summary");
     assert_eq!(body["jql"], "assignee = currentUser()");
     assert_eq!(body["maxResults"], 30);
@@ -223,7 +223,7 @@ fn fields_param_is_comma_separated() {
     assert_eq!(fields_param(&["summary", "status"]), "summary,status");
     assert_eq!(
         fields_param(DETAIL_FIELDS),
-        "summary,status,assignee,reporter,priority,issuetype,updated,created,labels,description"
+        "summary,status,assignee,reporter,priority,issuetype,updated,created,labels,description,duedate,parent,customfield_10020"
     );
 }
 

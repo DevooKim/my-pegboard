@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { SortDirection, SortField } from '#/ipc/bindings'
 import { commands, type JiraProject, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
 import type { WidgetConfigFormProps } from '#/widgets/types'
 import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn, visibleColumns } from './columns'
@@ -23,6 +24,9 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
     })
   }, [])
 
+  // 정렬과 프로젝트 범위는 프리셋에만 적용된다. 생 JQL은 사용자가 ORDER BY와
+  // project 조건을 직접 쓰므로, 우리가 UI로 덧붙이면 의도를 덮어쓴다.
+  const isPreset = config.query.kind === 'preset'
   const scoped = config.projects ?? []
   const toggleProject = (key: string) => {
     onChange({
@@ -94,41 +98,76 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         </label>
       )}
 
-      {/*
-        프로젝트 범위. 쿼리와 분리해 둔 이유는 프리셋이든 생 JQL이든
-        똑같이 적용돼야 하기 때문이다 — 프리셋마다 프로젝트별 변종을
-        만들면 조합 폭발이 된다.
-      */}
-      <div className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">프로젝트</span>
-        {projects.length === 0 ? (
-          <span className="text-caption text-text-tertiary">불러오는 중…</span>
-        ) : (
-          <div className="flex flex-wrap gap-1">
-            <Chip
-              active={scoped.length === 0}
-              onClick={() => onChange({ ...config, projects: [] })}
-            >
-              전체
-            </Chip>
-            {projects.map((p) => (
+      {/* 프로젝트 범위와 정렬은 프리셋 전용이다 (생 JQL에는 사용자가 직접 쓴다) */}
+      {isPreset && (
+        <div className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">프로젝트</span>
+          {projects.length === 0 ? (
+            <span className="text-caption text-text-tertiary">불러오는 중…</span>
+          ) : (
+            <div className="flex flex-wrap gap-1">
               <Chip
-                key={p.key}
-                active={scoped.includes(p.key)}
-                onClick={() => toggleProject(p.key)}
-                title={p.name}
+                active={scoped.length === 0}
+                onClick={() => onChange({ ...config, projects: [] })}
               >
-                {p.key}
+                전체
               </Chip>
-            ))}
+              {projects.map((p) => (
+                <Chip
+                  key={p.key}
+                  active={scoped.includes(p.key)}
+                  onClick={() => toggleProject(p.key)}
+                  title={p.name}
+                >
+                  {p.key}
+                </Chip>
+              ))}
+            </div>
+          )}
+          <span className="text-caption text-text-tertiary">
+            {scoped.length === 0
+              ? '모든 프로젝트에서 검색합니다'
+              : `${scoped.join(', ')} 로 범위를 좁힙니다`}
+          </span>
+        </div>
+      )}
+
+      {isPreset && (
+        <label className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">정렬</span>
+          <div className="flex gap-1">
+            <select
+              value={config.sortField ?? 'updated'}
+              onChange={(e) => onChange({ ...config, sortField: e.target.value as SortField })}
+              className="flex-1 rounded border border-border-subtle bg-surface-inset px-2 py-2
+                         text-body text-text-primary"
+            >
+              <option value="updated">수정일</option>
+              <option value="created">생성일</option>
+              <option value="due">마감일</option>
+              <option value="priority">우선순위</option>
+              <option value="key">키</option>
+            </select>
+            <select
+              value={config.sortDirection ?? 'desc'}
+              onChange={(e) =>
+                onChange({ ...config, sortDirection: e.target.value as SortDirection })
+              }
+              className="w-28 rounded border border-border-subtle bg-surface-inset px-2 py-2
+                         text-body text-text-primary"
+            >
+              <option value="desc">내림차순</option>
+              <option value="asc">오름차순</option>
+            </select>
           </div>
-        )}
-        <span className="text-caption text-text-tertiary">
-          {scoped.length === 0
-            ? '모든 프로젝트에서 검색합니다'
-            : `${scoped.join(', ')} 로 범위를 좁힙니다`}
-        </span>
-      </div>
+          {(config.sortField ?? 'updated') === 'due' && (
+            // 실측 9/22만 채워져 있다. 정렬하면 나머지가 뭉텅이로 몰린다.
+            <span className="text-caption text-stale">
+              마감일이 없는 티켓이 많으면 한쪽에 몰려 보입니다
+            </span>
+          )}
+        </label>
+      )}
 
       <div className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">표시할 열</span>

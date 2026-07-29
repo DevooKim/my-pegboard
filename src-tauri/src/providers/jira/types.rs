@@ -155,10 +155,41 @@ pub struct JiraIssue {
     pub issue_type: Option<JiraIssueType>,
     /// ISO 8601 + 오프셋 (`2026-07-29T14:03:11.482+0900`). 기본 정렬 축.
     pub updated: Option<String>,
+    pub created: Option<String>,
+    /// `2026-07-27` (시각 없음). 실측 9/22만 채워져 있다.
+    pub due_date: Option<String>,
+    pub parent: Option<JiraParent>,
+    /// 활성 스프린트 하나. 여러 개면 첫 번째.
+    pub sprint: Option<JiraSprint>,
+}
+
+/// 스프린트 하나. Jira는 배열로 주지만(과거 스프린트 포함) 표시에는 활성 것 하나면 된다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraSprint {
+    pub name: String,
+    /// `active` | `closed` | `future`
+    #[serde(default)]
+    pub state: Option<String>,
+}
+
+/// 상위 항목. 팀 관리형에서는 에픽이고, 하위 작업이면 부모 티켓이다.
+///
+/// 구 `customfield_10014`(에픽 링크)는 쓰지 않는다 — 실측 결과 `parent`가
+/// 20/22, 에픽 링크가 6/22로 `parent` 쪽이 훨씬 잘 채워져 있다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraParent {
+    pub key: String,
+    #[serde(default)]
+    pub summary: Option<String>,
 }
 
 /// 이슈 하나의 `fields` 봉투. 목록/상세가 같은 구조를 공유한다.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// `Default`를 유도해 둔다 — 필드를 추가할 때마다 사용처의 구조체 리터럴을
+/// 전부 고쳐야 하면 반드시 하나를 빠뜨린다.
+#[derive(Debug, Clone, Default, Deserialize)]
 struct RawFields {
     #[serde(default)]
     summary: Option<String>,
@@ -180,6 +211,50 @@ struct RawFields {
     labels: Option<Vec<String>>,
     #[serde(default)]
     description: Option<Adf>,
+    #[serde(default, rename = "duedate")]
+    due_date: Option<String>,
+    #[serde(default, deserialize_with = "de_parent")]
+    parent: Option<JiraParent>,
+    /// 스프린트는 커스텀 필드다. 사이트마다 id가 다를 수 있으나
+    /// 이 사이트는 10020으로 확인됐다.
+    #[serde(default, rename = "customfield_10020", deserialize_with = "de_sprint")]
+    sprint: Option<JiraSprint>,
+}
+
+/// `parent`는 `{key, fields:{summary}}` 중첩이라 평평하게 편다.
+fn de_parent<'de, D>(de: D) -> Result<Option<JiraParent>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct RawParent {
+        key: String,
+        #[serde(default)]
+        fields: Option<RawParentFields>,
+    }
+    #[derive(Deserialize)]
+    struct RawParentFields {
+        #[serde(default)]
+        summary: Option<String>,
+    }
+    Ok(Option::<RawParent>::deserialize(de)?.map(|p| JiraParent {
+        key: p.key,
+        summary: p.fields.and_then(|f| f.summary),
+    }))
+}
+
+/// 스프린트는 배열로 온다(과거 스프린트 포함). 활성 것을 고르고,
+/// 없으면 마지막 것 — 완료된 스프린트라도 안 보여주는 것보다 낫다.
+fn de_sprint<'de, D>(de: D) -> Result<Option<JiraSprint>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let list = Option::<Vec<JiraSprint>>::deserialize(de)?.unwrap_or_default();
+    Ok(list
+        .iter()
+        .find(|s| s.state.as_deref() == Some("active"))
+        .or_else(|| list.last())
+        .cloned())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -191,18 +266,7 @@ struct RawIssue {
 
 impl From<RawIssue> for JiraIssue {
     fn from(raw: RawIssue) -> Self {
-        let f = raw.fields.unwrap_or(RawFields {
-            summary: None,
-            status: None,
-            assignee: None,
-            reporter: None,
-            priority: None,
-            issue_type: None,
-            updated: None,
-            created: None,
-            labels: None,
-            description: None,
-        });
+        let f = raw.fields.unwrap_or_default();
         JiraIssue {
             key: raw.key,
             // 요약이 없는 이슈는 없지만, 없으면 빈 행이 뜨는 게 파싱 실패보다 낫다.
@@ -212,6 +276,10 @@ impl From<RawIssue> for JiraIssue {
             priority: f.priority,
             issue_type: f.issue_type,
             updated: f.updated,
+            created: f.created,
+            due_date: f.due_date,
+            parent: f.parent,
+            sprint: f.sprint,
         }
     }
 }
@@ -222,18 +290,7 @@ impl<'de> Deserialize<'de> for JiraIssueDetail {
         D: serde::Deserializer<'de>,
     {
         let raw = RawIssue::deserialize(de)?;
-        let f = raw.fields.unwrap_or(RawFields {
-            summary: None,
-            status: None,
-            assignee: None,
-            reporter: None,
-            priority: None,
-            issue_type: None,
-            updated: None,
-            created: None,
-            labels: None,
-            description: None,
-        });
+        let f = raw.fields.unwrap_or_default();
         Ok(JiraIssueDetail {
             key: raw.key,
             summary: f.summary.unwrap_or_default(),
@@ -670,7 +727,14 @@ impl<'de> Deserialize<'de> for JiraIdentity {
 /// 목록 조회에서 요청할 필드. **성능 요구사항이다** (DECISIONS 6장 2번).
 ///
 /// Jira 기본값은 `*navigable` — 이슈당 ~200 필드가 온다. 30건이면 수백 KB.
-/// 이 6개만 요청하면 응답이 1/10 이하로 줄고, 그게 이 앱이 Jira 웹보다 빠른 이유의 일부다.
+/// 필요한 것만 요청해 응답을 크게 줄이는 것이 이 앱이 Jira 웹보다 빠른 이유의 일부다.
+///
+/// **측정값 (15건):** 6필드 31KB → 10필드 56KB (+79%).
+/// 증가분의 대부분(19KB)은 `parent`다 — Jira가 상위 티켓의 fields를 통째로
+/// 실어 보내는데 우리는 key와 summary만 쓴다. 줄일 방법이 없으므로 감수한다.
+/// WebView로 넘어가는 IPC 페이로드는 Rust가 축소한 뒤라 이보다 훨씬 작다.
+///
+/// **여기에 필드를 더하기 전에 반드시 크기를 재고 이 주석을 갱신할 것.**
 pub const LIST_FIELDS: &[&str] = &[
     "summary",
     "status",
@@ -678,6 +742,12 @@ pub const LIST_FIELDS: &[&str] = &[
     "priority",
     "issuetype",
     "updated",
+    "created",
+    "duedate",
+    "parent",
+    // 스프린트 커스텀 필드 (실측). 다른 사이트에서는 id가 다를 수 있고,
+    // 그 경우 이 필드는 그냥 비어서 온다 — 요청 자체는 실패하지 않는다.
+    "customfield_10020",
 ];
 
 /// 상세 모달용 필드. 목록 + 보고자·라벨·생성일·설명(ADF).
@@ -692,6 +762,9 @@ pub const DETAIL_FIELDS: &[&str] = &[
     "created",
     "labels",
     "description",
+    "duedate",
+    "parent",
+    "customfield_10020",
 ];
 
 #[cfg(test)]

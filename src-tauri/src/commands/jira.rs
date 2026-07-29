@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::providers::jira::{
-    JiraClient, JiraError, JiraIssue, JiraProject, JiraQuery, Preset, LIST_FIELDS,
+    apply_sort, JiraClient, JiraError, JiraIssue, JiraProject, JiraQuery, Preset, SortDirection,
+    SortField, LIST_FIELDS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
@@ -60,6 +61,11 @@ pub struct JiraWidgetConfig {
     /// 목록에 표시할 열. 비어 있으면 기본 세트.
     #[serde(default)]
     pub columns: Option<Vec<String>>,
+    /// 정렬 기준. **프리셋에만 적용된다** — 생 JQL의 ORDER BY는 사용자 몫이다.
+    #[serde(default)]
+    pub sort_field: Option<SortField>,
+    #[serde(default)]
+    pub sort_direction: Option<SortDirection>,
 }
 
 /// 5분 (DECISIONS 11.2 기본값)
@@ -78,6 +84,8 @@ impl Default for JiraWidgetConfig {
             projects: Vec::new(),
             refresh_secs: default_refresh_secs(),
             columns: None,
+            sort_field: None,
+            sort_direction: None,
         }
     }
 }
@@ -181,7 +189,18 @@ pub async fn jira_fetch(
             None,
         ));
     };
-    let jql = scope_to_projects(&jql, &config.projects);
+    // 정렬과 프로젝트 범위는 **프리셋에만** 적용한다.
+    // 사용자가 쓴 JQL은 그 자체로 완결이므로 우리가 손대면 의도를 덮어쓴다.
+    let is_preset = matches!(config.query, JiraQuery::Preset { .. });
+    let jql = if is_preset {
+        let sorted = match (config.sort_field, config.sort_direction) {
+            (Some(f), dir) => apply_sort(&jql, f, dir.unwrap_or(SortDirection::Desc)),
+            _ => jql,
+        };
+        scope_to_projects(&sorted, &config.projects)
+    } else {
+        jql
+    };
 
     let client = JiraClient::with_http_client(state.http.clone(), creds);
     match client

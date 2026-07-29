@@ -146,8 +146,23 @@ priority: JiraPriority | null; issueType: JiraIssueType | null;
 /**
  * ISO 8601 + 오프셋 (`2026-07-29T14:03:11.482+0900`). 기본 정렬 축.
  */
-updated: string | null }
+updated: string | null; created: string | null; 
+/**
+ * `2026-07-27` (시각 없음). 실측 9/22만 채워져 있다.
+ */
+dueDate: string | null; parent: JiraParent | null; 
+/**
+ * 활성 스프린트 하나. 여러 개면 첫 번째.
+ */
+sprint: JiraSprint | null }
 export type JiraIssueType = { name: string; iconUrl?: string | null; subtask?: boolean }
+/**
+ * 상위 항목. 팀 관리형에서는 에픽이고, 하위 작업이면 부모 티켓이다.
+ * 
+ * 구 `customfield_10014`(에픽 링크)는 쓰지 않는다 — 실측 결과 `parent`가
+ * 20/22, 에픽 링크가 6/22로 `parent` 쪽이 훨씬 잘 채워져 있다.
+ */
+export type JiraParent = { key: string; summary?: string | null }
 export type JiraPriority = { name: string; iconUrl?: string | null }
 /**
  * 프로젝트 선택 드롭다운 한 항목.
@@ -175,6 +190,14 @@ export type JiraQuery =
  * 훨씬 나은 에러 메시지를 준다 (DECISIONS 16장, 400은 원문 보존).
  */
 { kind: "raw"; jql: string }
+/**
+ * 스프린트 하나. Jira는 배열로 주지만(과거 스프린트 포함) 표시에는 활성 것 하나면 된다.
+ */
+export type JiraSprint = { name: string; 
+/**
+ * `active` | `closed` | `future`
+ */
+state?: string | null }
 export type JiraStatus = { name: string; 
 /**
  * 워크플로우가 이상하게 설정된 프로젝트에서 누락될 수 있다.
@@ -229,7 +252,11 @@ refreshSecs?: number;
 /**
  * 목록에 표시할 열. 비어 있으면 기본 세트.
  */
-columns?: string[] | null }
+columns?: string[] | null; 
+/**
+ * 정렬 기준. **프리셋에만 적용된다** — 생 JQL의 ORDER BY는 사용자 몫이다.
+ */
+sortField?: SortField | null; sortDirection?: SortDirection | null }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  * 
@@ -275,6 +302,14 @@ name: string;
  * 이 프리셋이 무엇을 보여주는지 한 줄 설명.
  */
 description: string; jql: string }
+export type SortDirection = "asc" | "desc"
+/**
+ * 프리셋에 적용할 정렬 기준.
+ * 
+ * **생 JQL에는 적용하지 않는다.** 사용자가 쓴 JQL에 이미 `ORDER BY`가 있으면
+ * 우리가 덧붙일 수 없고, 없더라도 정렬은 그 JQL의 일부로 사용자가 정할 몫이다.
+ */
+export type SortField = "updated" | "created" | "due" | "priority" | "key"
 export type Widget = { id: string; type: WidgetType; layout: WidgetLayout; 
 /**
  * Type-specific settings — JQL, GitHub query, refresh interval, and so on.

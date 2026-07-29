@@ -66,12 +66,12 @@ describe('gridTemplate', () => {
     expect(t).not.toContain('200px')
   })
 
-  it('수정 열은 wide에서만 나온다', () => {
+  it('넓은 열은 wide에서만 나온다', () => {
     const cols = (d: 'compact' | 'normal' | 'wide') =>
       gridTemplate(DEFAULT_COLUMN_WIABCS, d).split(' ').length
     expect(cols('wide')).toBeGreaterThan(cols('normal'))
     expect(gridTemplate(DEFAULT_COLUMN_WIABCS, 'normal')).not.toContain(
-      `${DEFAULT_COLUMN_WIABCS.updated}px`,
+      `${DEFAULT_COLUMN_WIABCS.sprint}px`,
     )
   })
 })
@@ -92,8 +92,13 @@ describe('resizableColumns', () => {
     expect(resizableColumns('compact')).not.toContain('status')
   })
 
-  it('수정 열 경계는 wide에서만 존재한다', () => {
-    expect(resizableColumns('normal')).not.toContain('updated')
-    expect(resizableColumns('wide')).toContain('updated')
+  it('넓은 열(수정·생성·마감·상위·스프린트)은 wide에서만 그려진다', () => {
+    // 기본 표시 세트에 sprint가 들어 있으므로 그걸로 확인한다.
+    expect(resizableColumns('normal')).not.toContain('sprint')
+    expect(resizableColumns('wide')).toContain('sprint')
+
+    // 명시적으로 켠 경우에도 마찬가지다.
+    expect(resizableColumns('normal', ['key', 'updated'])).not.toContain('updated')
+    expect(resizableColumns('wide', ['key', 'updated'])).toContain('updated')
   })
 })

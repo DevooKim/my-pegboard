@@ -178,9 +178,10 @@ fn list_issue_serializes_to_camel_case_for_frontend() {
 #[test]
 fn list_issue_omits_detail_only_fields() {
     // 목록 페이로드에 description/labels/reporter가 섞이면 IPC가 10배로 뚱뚱해진다.
+    // `created`는 사용자가 열로 켤 수 있어 목록에도 들어간다(작은 문자열이라 부담이 없다).
     let page = page1();
     let json = serde_json::to_value(&page.issues[0]).unwrap();
-    for forbidden in ["description", "labels", "reporter", "created"] {
+    for forbidden in ["description", "labels", "reporter"] {
         assert!(
             json.get(forbidden).is_none(),
             "목록 타입에 {forbidden}가 있으면 안 된다"
@@ -707,8 +708,8 @@ fn list_fields_stay_minimal() {
     // 이 상수가 커지면 위젯 페이로드가 그만큼 커진다. 늘리려면 의식적으로 이 테스트를 고쳐야 한다.
     assert_eq!(
         LIST_FIELDS.len(),
-        6,
-        "목록 필드가 늘었다 — 페이로드 영향 확인"
+        10,
+        "목록 필드가 늘었다 — 페이로드 영향 확인 (types.rs의 측정 주석도 갱신할 것)"
     );
     for expected in [
         "summary",

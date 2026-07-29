@@ -54,9 +54,12 @@ pub use client::{
     DEFAULT_MAX_RESULTS, DEFAULT_TIMEOUT, MAX_RESULTS_LIMIT,
 };
 pub use error::{parse_retry_after, ErrorKind, JiraError};
-pub use presets::{default_query, JiraQuery, Preset, PRESETS};
+pub use presets::{
+    apply_sort, default_query, JiraQuery, Preset, SortDirection, SortField, PRESETS,
+};
 pub use types::{
     Adf, AllowedValue, CommentPage, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue,
     JiraComment, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType, JiraPriority, JiraStatus,
-    JiraProject, JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraParent, JiraProject, JiraSprint, JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS,
+    LIST_FIELDS,
 };

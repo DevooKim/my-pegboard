@@ -141,3 +141,112 @@ pub fn default_query() -> JiraQuery {
 #[cfg(test)]
 #[path = "tests/presets_tests.rs"]
 mod presets_tests;
+
+// ---------------------------------------------------------------------------
+// 정렬 (프리셋 전용)
+// ---------------------------------------------------------------------------
+
+/// 프리셋에 적용할 정렬 기준.
+///
+/// **생 JQL에는 적용하지 않는다.** 사용자가 쓴 JQL에 이미 `ORDER BY`가 있으면
+/// 우리가 덧붙일 수 없고, 없더라도 정렬은 그 JQL의 일부로 사용자가 정할 몫이다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SortField {
+    Updated,
+    Created,
+    Due,
+    Priority,
+    Key,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortField {
+    /// JQL 필드명.
+    pub fn as_jql(self) -> &'static str {
+        match self {
+            SortField::Updated => "updated",
+            SortField::Created => "created",
+            SortField::Due => "duedate",
+            SortField::Priority => "priority",
+            SortField::Key => "key",
+        }
+    }
+}
+
+/// 프리셋 JQL의 `ORDER BY`를 사용자가 고른 것으로 교체한다.
+///
+/// 프리셋은 완성된 JQL(`... ORDER BY updated DESC`)을 들고 있으므로,
+/// 덧붙이는 게 아니라 **잘라내고 다시 붙여야** 한다. 두 개가 남으면 400이다.
+pub fn apply_sort(jql: &str, field: SortField, dir: SortDirection) -> String {
+    let base = match jql.to_uppercase().find(" ORDER BY ") {
+        Some(i) => &jql[..i],
+        None => jql,
+    }
+    .trim();
+
+    let d = match dir {
+        SortDirection::Asc => "ASC",
+        SortDirection::Desc => "DESC",
+    };
+    format!("{base} ORDER BY {} {d}", field.as_jql())
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use super::{apply_sort, SortDirection, SortField, Preset};
+
+    #[test]
+    fn replaces_existing_order_by_rather_than_appending() {
+        // 프리셋은 이미 ORDER BY를 들고 있다. 두 개가 되면 Jira가 400을 낸다.
+        let out = apply_sort(
+            "assignee = currentUser() ORDER BY updated DESC",
+            SortField::Created,
+            SortDirection::Asc,
+        );
+        assert_eq!(out, "assignee = currentUser() ORDER BY created ASC");
+        assert_eq!(out.to_uppercase().matches("ORDER BY").count(), 1);
+    }
+
+    #[test]
+    fn adds_order_by_when_absent() {
+        let out = apply_sort("x = 1", SortField::Due, SortDirection::Desc);
+        assert_eq!(out, "x = 1 ORDER BY duedate DESC");
+    }
+
+    #[test]
+    fn every_preset_survives_every_sort_combination() {
+        for preset in Preset::all() {
+            for field in [
+                SortField::Updated,
+                SortField::Created,
+                SortField::Due,
+                SortField::Priority,
+                SortField::Key,
+            ] {
+                for dir in [SortDirection::Asc, SortDirection::Desc] {
+                    let out = apply_sort(preset.jql, field, dir);
+                    assert_eq!(
+                        out.to_uppercase().matches("ORDER BY").count(),
+                        1,
+                        "프리셋 {}에 ORDER BY가 중복됐다: {out}",
+                        preset.id
+                    );
+                    assert!(!out.contains("  "), "연속 공백: {out}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lowercase_order_by_is_also_replaced() {
+        let out = apply_sort("x = 1 order by created", SortField::Key, SortDirection::Asc);
+        assert_eq!(out, "x = 1 ORDER BY key ASC");
+    }
+}

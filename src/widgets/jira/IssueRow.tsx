@@ -1,6 +1,11 @@
 import type { JiraIssue } from '#/ipc/bindings'
 import { relativeTime } from '#/ui/relativeTime'
-import { type ColumnWidths, gridTemplate, type ToggleableColumn } from '#/widgets/jira/columns'
+import {
+  type ColumnWidths,
+  gridTemplate,
+  renderedColumns,
+  type ToggleableColumn,
+} from '#/widgets/jira/columns'
 
 /**
  * 티켓 행 하나.
@@ -25,6 +30,8 @@ export function IssueRow({
 }) {
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
   const statusCategory = issue.status?.statusCategory?.key ?? 'new'
+  const shown = renderedColumns(density, visible)
+  const has = (c: ToggleableColumn) => shown.includes(c)
 
   return (
     <button
@@ -38,7 +45,7 @@ export function IssueRow({
         gridTemplateColumns: gridTemplate(widths, density, visible),
       }}
     >
-      {visible.includes('key') && (
+      {has('key') && (
         <span className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums">
           {issue.key}
         </span>
@@ -51,7 +58,16 @@ export function IssueRow({
         {issue.summary}
       </span>
 
-      {visible.includes('status') &&
+      {has('issueType') && (
+        <span
+          className="min-w-0 truncate text-caption text-text-tertiary"
+          title={issue.issueType?.name ?? undefined}
+        >
+          {issue.issueType?.name ?? '—'}
+        </span>
+      )}
+
+      {has('status') &&
         (density === 'compact' ? (
           <span
             role="img"
@@ -72,21 +88,48 @@ export function IssueRow({
           </span>
         ))}
 
-      {visible.includes('assignee') && <Assignee issue={issue} showName={density === 'wide'} />}
+      {has('priority') && (
+        <span
+          className="min-w-0 truncate text-caption"
+          style={{ color: priorityColor(issue.priority?.name) || undefined }}
+          title={issue.priority?.name ?? undefined}
+        >
+          {priorityLabel(issue.priority?.name)}
+        </span>
+      )}
+
+      {has('assignee') && <Assignee issue={issue} showName={density === 'wide'} />}
 
       {/*
         티켓이 마지막으로 수정된 시각. 헤더의 "갱신 시각"과 헷갈리지 않도록
         title로 무엇의 시간인지 밝힌다. 목록이 updated DESC로 정렬돼 있으므로
         정보 가치가 크지 않아 넓을 때만 보여준다.
       */}
-      {visible.includes('updated') && density === 'wide' && issue.updated && (
+      {has('updated') && (
         <span
           className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
-          title={`티켓 수정: ${new Date(issue.updated).toLocaleString('ko-KR')}`}
+          title={
+            issue.updated
+              ? `티켓 수정: ${new Date(issue.updated).toLocaleString('ko-KR')}`
+              : undefined
+          }
         >
-          {relativeTime(issue.updated)}
+          {issue.updated ? relativeTime(issue.updated) : '—'}
         </span>
       )}
+
+      {has('created') && (
+        <span
+          className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
+          title={
+            issue.created ? `생성: ${new Date(issue.created).toLocaleString('ko-KR')}` : undefined
+          }
+        >
+          {issue.created ? relativeTime(issue.created) : '—'}
+        </span>
+      )}
+
+      {has('dueDate') && <DueDate value={issue.dueDate} />}
     </button>
   )
 }
@@ -126,6 +169,45 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
       )}
     </span>
   )
+}
+
+/**
+ * 마감일. 지났으면 빨강, 오늘·내일이면 앰버.
+ * 실측상 절반 이하만 채워져 있어 없는 경우가 흔하다.
+ */
+function DueDate({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="text-caption text-text-quaternary">—</span>
+
+  const due = new Date(`${value}T23:59:59`)
+  const days = Math.ceil((due.getTime() - Date.now()) / 86_400_000)
+  const color = days < 0 ? 'text-danger' : days <= 1 ? 'text-stale' : 'text-text-quaternary'
+
+  return (
+    <span
+      className={`min-w-0 truncate text-caption tabular-nums ${color}`}
+      title={`마감: ${value}`}
+    >
+      {days < 0 ? `${-days}일 지남` : days === 0 ? '오늘' : `${days}일 남음`}
+    </span>
+  )
+}
+
+/** 우선순위 짧은 표기. 열 폭이 좁으므로 전체 이름을 쓰지 않는다. */
+function priorityLabel(name: string | null | undefined): string {
+  switch (name) {
+    case 'Highest':
+      return '최상'
+    case 'High':
+      return '높음'
+    case 'Medium':
+      return '보통'
+    case 'Low':
+      return '낮음'
+    case 'Lowest':
+      return '최하'
+    default:
+      return '—'
+  }
 }
 
 /** Medium(P3)은 일부러 그리지 않는다 — 모든 행에 표시가 뜨면 신호가 죽는다. */
