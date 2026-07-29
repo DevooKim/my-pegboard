@@ -1,10 +1,684 @@
-/* PLACEHOLDER — impeccable 기반 디자인 토큰 작업으로 통째로 교체될 파일.
-   스캐폴드가 빌드되도록 최소 토큰만 정의한다. 여기에 디자인을 쌓지 말 것. */
-@theme {
-  --color-surface-base: oklch(0.19 0.012 265);
-  --color-surface-raised: oklch(0.24 0.014 265);
-  --color-border-subtle: oklch(0.32 0.015 265);
-  --color-text-primary: oklch(0.94 0.005 265);
-  --color-text-muted: oklch(0.68 0.012 265);
-  --color-accent: oklch(0.72 0.14 250);
+/* ==========================================================================
+   my-pegboard — 디자인 토큰
+   --------------------------------------------------------------------------
+   THESIS      계기판(instrument panel)이지 웹페이지가 아니다. 색은 장식이 아니라
+               상태를 말할 때만 등장한다. 무채색 바탕 위에서 유일하게 색을 가진
+               것이 곧 지금 봐야 할 것이다. 카드 그림자를 겹겹이 쌓아 "대시보드처럼"
+               보이게 만드는 관성을 거부한다.
+   OWN-WORLD   차가운 무채색 램프(청록 기운의 잉크 계열) + 시안 액센트 1개 +
+               앰버 stale. 위젯은 1px 경계선으로만 떠 있고 그림자는 진짜로 떠 있는
+               것(드래그·모달·팝오버)에만 쓴다.
+   FORM        사용자 결정: slate-amber (제시된 3안 중 1안 채택)
+   FINISH      unreviewed and undocumented is unfinished
+
+   Tailwind 4 CSS-first. tailwind.config.js 없음.
+   사용처: src/styles/ 아래. 진입점에서 `@import "tailwindcss"` 다음에 import.
+
+   --------------------------------------------------------------------------
+   토큰 명명 규칙 — 반드시 지킬 것
+   --------------------------------------------------------------------------
+   토큰은 **의미**로 이름 짓는다. `--color-gray-800`이 아니라 `--color-surface-raised`.
+   이유: 라이트 테마에서 surface-raised는 회색이 아니라 흰색이다. 리터럴 이름을
+   쓰면 테마를 갈아끼울 수 없다.
+
+   컴포넌트는 아래 의미 토큰만 참조한다. 원시 색상(--palette-*)은 이 파일 안에서만
+   쓰이고 밖으로 나가지 않는다.
+
+   --------------------------------------------------------------------------
+   명암비 검증 (WCAG 2.1)
+   --------------------------------------------------------------------------
+   전 조합을 계산해서 확인했다. 기준: 본문 4.5:1, 큰 텍스트(18.66px+ 또는
+   14px+ bold) 3:1. 아래 숫자는 실측값이며 surface-base / raised / overlay /
+   inset 네 배경 전부에 대한 **최솟값**이다.
+
+   [다크]
+     text-primary    13.68 ~ 16.02  AA (본문 통과)
+     text-secondary   6.83 ~  8.00  AA (본문 통과)
+     text-tertiary    4.54 ~  5.32  AA (본문 통과)
+     text-quaternary  3.69 ~  4.32  AA-large 전용 ★아래 주의 참조
+     accent           7.83   success 7.73   warning 8.23   danger 5.69
+     info             6.66   stale   7.19
+     status todo      5.51   in-progress 6.44   done 7.73
+     priority P1 5.69  P2 7.06  P3 8.23  P4 7.33  P5 5.51
+
+   [라이트]
+     text-primary    14.86 ~ 16.37  AA
+     text-secondary   5.54 ~  6.11  AA
+     text-tertiary    4.70 ~  5.18  AA
+     text-quaternary  3.68 ~  4.05  AA-large 전용 ★
+     accent           5.06   success 4.55   warning 4.87   danger 4.85
+     info             5.53   stale   4.87
+     status todo      5.23   in-progress 5.53   done 4.55
+     priority P1 4.85  P2 4.78  P3 4.87  P4 5.10  P5 5.23
+
+   ★ --color-text-quaternary는 본문에 쓰지 않는다. 4.5:1을 넘지 못한다.
+     허용 범위: 이미 다른 곳에 표기된 정보의 중복 표시, 구분 기호(·, /),
+     비활성 아이콘. 텍스트로 정보를 전달해야 하면 tertiary 이상을 쓸 것.
+
+   경계선·아이콘 등 비텍스트 요소는 3:1(WCAG 1.4.11)이 기준이며 border-strong과
+   focus-ring이 이를 만족한다. border-subtle은 장식용 구분선이므로 대상 아님.
+   ========================================================================== */
+
+/* `static`을 붙이는 이유: Tailwind 4는 기본적으로 **실제로 쓰인** 테마 변수만
+   출력에 남긴다(tree-shaking). 이 앱은 컴포넌트가 유틸 클래스뿐 아니라
+   var(--space-widget-pad-x) 같은 직접 참조도 쓰고, 라이트 테마 블록이
+   런타임에 값을 갈아끼우므로, 변수가 항상 존재해야 한다.
+   static이 없으면 안 쓰인 것처럼 보이는 토큰이 조용히 사라진다. */
+@theme static {
+  /* ------------------------------------------------------------------
+     타이포그래피 — 스택
+     ------------------------------------------------------------------
+     한글 UI다. 한글은 라틴과 조판 특성이 다르다:
+       - 정사각형 글자틀이라 같은 px에서 라틴보다 크고 빽빽해 보인다
+       - 대문자/소문자 구분이 없어 단어 경계가 약하고, 받침 때문에
+         세로 밀도가 높다 → 라틴보다 넓은 행간이 필요하다
+     그래서 line-height 토큰을 한글용/라틴용으로 분리했다 (아래 leading-* 참조).
+
+     Pretendard를 첫 순위로 두되 번들하지 않는다. 없으면 Apple SD Gothic Neo로
+     떨어진다. 둘 다 macOS에서 한글 힌팅이 좋고 자소 간격이 균일하다.
+     -apple-system을 먼저 두면 한글이 Apple SD Gothic Neo로 가는데, 숫자·라틴은
+     SF Pro가 되어 두 서체가 한 줄에 섞인다. Pretendard는 라틴까지 한 벌로
+     처리하므로 섞임이 없다.
+     ------------------------------------------------------------------ */
+
+  --font-sans:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+
+  /* 티켓 키(PROJ-123), 커밋 해시, 숫자 정렬이 필요한 곳 전용.
+     "기술적으로 보이려고" 쓰지 않는다. 식별자와 측정값에만 쓴다.
+     SF Mono는 macOS 기본 탑재이며 0과 O, 1과 l 구분이 명확하다. */
+  --font-mono:
+    "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    "Cascadia Mono", "Roboto Mono", monospace;
+
+  /* ------------------------------------------------------------------
+     타이포그래피 — 크기
+     ------------------------------------------------------------------
+     밀도가 높은 UI라 위쪽보다 아래쪽 단계가 중요하다. 11~14px 구간을
+     촘촘하게 쪼개고, 큰 크기는 최소한만 둔다. 비율 약 1.125.
+     rem 고정. 프로덕트 UI에 유동 타이포(clamp)는 해가 된다 — 위젯 폭에 따라
+     글자 크기가 변하면 같은 정보가 위젯마다 달라 보인다.
+     ------------------------------------------------------------------ */
+
+  --text-2xs: 0.6875rem;  /* 11px — 배지, 이월 카운트, 단위 라벨 */
+  --text-xs: 0.75rem;     /* 12px — 메타 정보(담당자, 시각), 위젯 푸터 */
+  --text-sm: 0.8125rem;   /* 13px — 목록 행 기본. 이 앱에서 가장 많이 쓰인다 */
+  --text-base: 0.875rem;  /* 14px — 위젯 제목, 폼 입력, 본문 */
+  --text-md: 1rem;        /* 16px — 모달 제목, 빈 상태 안내 */
+  --text-lg: 1.125rem;    /* 18px — 상세 모달 티켓 제목 */
+  --text-xl: 1.375rem;    /* 22px — 설정창 섹션 제목. 사실상 최대 */
+
+  /* 행간 — 한글/라틴 분리.
+     한글은 받침으로 세로 공간을 더 먹어 라틴과 같은 배수면 답답하다.
+     tight-ko(1.45)가 tight-latin(1.25)보다 큰 이유가 이것이다. */
+  --leading-none: 1;          /* 아이콘 정렬, 단일 행 배지 */
+  --leading-tight-latin: 1.25;/* 티켓 키, 숫자 등 라틴/숫자 전용 한 줄 */
+  --leading-tight-ko: 1.45;   /* 한글 한 줄 (목록 행 요약문) */
+  --leading-normal-ko: 1.6;   /* 한글 여러 줄 (본문, 설명) */
+  --leading-relaxed-ko: 1.75; /* 한글 긴 글 (ADF 본문, 코멘트) */
+
+  --tracking-tight: -0.01em;  /* 한글은 자간을 좁히면 금방 뭉갠다. -0.01이 한계 */
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;    /* 대문자 라틴 라벨(배지)에만 */
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;  /* 한글 강조는 여기까지가 자연스럽다 */
+  --font-weight-semibold: 600;/* 위젯 제목, 티켓 키 */
+  --font-weight-bold: 700;    /* 거의 안 씀. 숫자 강조 정도 */
+
+  /* ------------------------------------------------------------------
+     간격 — 4px 기반
+     ------------------------------------------------------------------
+     밀도가 핵심이라 2px 단위(0.5)까지 열어둔다. 다만 실제로 자주 쓰는 것은
+     1(4px) / 1.5(6px) / 2(8px) / 3(12px) 네 개다.
+     ------------------------------------------------------------------ */
+
+  --spacing: 0.25rem; /* Tailwind 4 간격 기준 단위. spacing-* 유틸이 이걸 곱한다 */
+
+  /* 위젯 전용 간격 — 여기저기서 매직 넘버를 쓰지 않도록 이름을 준다 */
+  --space-widget-pad-x: 0.75rem;    /* 12px — 위젯 좌우 여백 */
+  --space-widget-pad-y: 0.625rem;   /* 10px — 위젯 헤더 상하 여백 */
+  --space-row-pad-y: 0.4375rem;     /* 7px — 목록 행 상하 여백 */
+  --space-row-gap: 0.5rem;          /* 8px — 행 내부 요소 간격 */
+  --space-board-gutter: 0.75rem;    /* 12px — 그리드 위젯 사이 간격 */
+
+  /* ------------------------------------------------------------------
+     모서리 반경
+     ------------------------------------------------------------------
+     낮게 간다. 반경이 크면 밀도가 낮아 보이고 위젯 안 목록이 헐거워진다.
+     ------------------------------------------------------------------ */
+
+  --radius-none: 0;
+  --radius-xs: 0.1875rem;  /* 3px — 배지, 작은 칩 */
+  --radius-sm: 0.25rem;    /* 4px — 버튼, 입력, 목록 행 hover */
+  --radius-md: 0.375rem;   /* 6px — 팝오버, 드롭다운 */
+  --radius-lg: 0.5rem;     /* 8px — 위젯. 이 앱의 최대 반경 */
+  --radius-full: 9999px;   /* 아바타, 상태 점 */
+
+  /* ------------------------------------------------------------------
+     경계선 두께
+     ------------------------------------------------------------------ */
+
+  --border-width-hairline: 1px;
+  --border-width-thick: 2px;  /* 포커스 링, 활성 탭 하단 */
+
+  /* ------------------------------------------------------------------
+     모션
+     ------------------------------------------------------------------
+     framer-motion 없음. CSS transition만. (DECISIONS 18장)
+     원칙: 모션은 상태 변화를 알릴 때만. 등장 애니메이션 없음.
+     앱이 "빠르다"는 인상은 애니메이션이 아니라 그 부재에서 온다.
+     ------------------------------------------------------------------ */
+
+  /* 네임스페이스 주의: Tailwind 4에서 `duration-*` 유틸을 만들어내는 테마 키는
+     `--transition-duration-*`다. `--duration-*`로 두면 var()로는 쓸 수 있지만
+     `duration-fast` 유틸이 생성되지 않는다 (조용히 무시됨). */
+  --transition-duration-instant: 0ms; /* 드래그 중 위치 갱신 — 절대 트랜지션 걸지 말 것 */
+  --transition-duration-fast: 90ms;   /* hover, 버튼 눌림 */
+  --transition-duration-base: 150ms;  /* 상태 전환, 배지 색 변화 */
+  --transition-duration-slow: 220ms;  /* 모달 등장, 배너 슬라이드. 최대치 */
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);      /* 기본. 빠르게 출발해 부드럽게 정지 */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);   /* 양방향 전환 */
+  --ease-linear: linear;                            /* 진행 표시, 회전 */
+}
+
+/* ==========================================================================
+   원시 팔레트 — 이 파일 밖에서 참조 금지
+   --------------------------------------------------------------------------
+   @theme이 아니라 :root에 둔다. Tailwind 유틸(bg-ink-900 같은 것)이 생기지
+   않게 하려는 의도다. 컴포넌트가 원시 색에 직접 접근할 수 있으면 테마 교체가
+   깨진다.
+
+   중립 램프는 순회색이 아니라 청록 쪽으로 살짝 기울였다(hue 210~215).
+   순회색은 시안 액센트 옆에서 누렇게 보인다.
+   ========================================================================== */
+
+:root {
+  /* 잉크(중립) 램프 */
+  --palette-ink-000: #ffffff;
+  --palette-ink-050: #f7f8fa;
+  --palette-ink-100: #f2f4f7;
+  --palette-ink-150: #eceef2;
+  --palette-ink-200: #e2e6ec;
+  --palette-ink-300: #cbd2db;
+  --palette-ink-400: #a8b2bf;
+  --palette-ink-500: #767f8b;
+  --palette-ink-550: #646e7a;
+  --palette-ink-600: #59636f;
+  --palette-ink-650: #4a535e;
+  --palette-ink-700: #39424d;
+  --palette-ink-750: #2a323c;
+  --palette-ink-800: #1c2129;
+  --palette-ink-850: #161b22;
+  --palette-ink-900: #11161d;
+  --palette-ink-950: #0d1117;
+  --palette-ink-990: #090c10;
+
+  /* 다크용 전경 */
+  --palette-fg-dark-1: #e6edf3;
+  --palette-fg-dark-2: #9daab8;
+  --palette-fg-dark-3: #7d8998;
+  --palette-fg-dark-4: #6e7a86;
+
+  /* 시안 액센트 */
+  --palette-cyan-light: #0b7286;  /* 라이트 테마용 (어두움) */
+  --palette-cyan-dark: #4cc4d6;   /* 다크 테마용 (밝음) */
+  --palette-cyan-hi: #7ad7e6;     /* 다크 hover */
+
+  /* 시맨틱 원색 — 다크 */
+  --palette-green-dark: #4ec98a;
+  --palette-amber-dark: #e0b341;
+  --palette-red-dark: #f2726a;
+  --palette-blue-dark: #6ea8fa;
+  --palette-stale-dark: #d9a441;
+  --palette-orange-dark: #f0955e;
+  --palette-slate-dark: #8b98a8;
+  --palette-skyblue-dark: #5aa9f0;
+  --palette-lightblue-dark: #7fb3e8;
+
+  /* 시맨틱 원색 — 라이트 */
+  --palette-green-light: #1a7f4d;
+  --palette-amber-light: #8a6410;
+  --palette-red-light: #c23934;
+  --palette-blue-light: #1f5fbf;
+  --palette-stale-light: #8a6410;
+  --palette-orange-light: #a85520;
+  --palette-slate-light: #5c6773;
+  --palette-skyblue-light: #1f5fbf;
+  --palette-lightblue-light: #2c6aa8;
+}
+
+/* ==========================================================================
+   다크 테마 = 기본값
+   --------------------------------------------------------------------------
+   왜 다크가 기본인가 (카테고리 관습이 아니라 사용 장면에서 나온 결정):
+   개발자가 자기 맥북에서 하루 수십 번 흘끗 본다. 옆에는 거의 항상 어두운
+   테마의 에디터와 터미널이 떠 있다. 이 앱만 밝으면 시선을 옮길 때마다
+   홍채가 조절된다. 밝기를 맞추는 쪽이 눈에 이롭다.
+
+   :root에 직접 선언 → prefers-color-scheme 없이도, JS 실행 전에도 다크.
+   FOUC(첫 프레임 흰 화면) 방지. 성능 목표가 "0ms 표시"인 앱이라 중요하다.
+   ========================================================================== */
+
+@theme static {
+  /* --- 표면(surface) — 아래에서 위로 쌓이는 순서 --- */
+  --color-surface-sunken: var(--palette-ink-990);   /* 보드 바탕. 가장 뒤 */
+  --color-surface-base: var(--palette-ink-950);     /* 앱 바탕 */
+  --color-surface-raised: var(--palette-ink-850);   /* 위젯 몸통 */
+  --color-surface-overlay: var(--palette-ink-800);  /* 모달, 팝오버, 드롭다운 */
+  --color-surface-inset: var(--palette-ink-900);    /* 입력창, 코드블록 — 파인 느낌 */
+
+  /* 상호작용 표면 — 반투명. 어떤 배경 위에서도 동작한다 */
+  --color-surface-hover: rgb(255 255 255 / 0.045);
+  --color-surface-active: rgb(255 255 255 / 0.075);
+  --color-surface-selected: rgb(76 196 214 / 0.13);  /* 액센트 기반 */
+
+  /* --- 전경(text) --- */
+  --color-text-primary: var(--palette-fg-dark-1);     /* 티켓 요약, 위젯 제목 */
+  --color-text-secondary: var(--palette-fg-dark-2);   /* 담당자, 라벨 */
+  --color-text-tertiary: var(--palette-fg-dark-3);    /* 시각, 보조 메타 */
+  --color-text-quaternary: var(--palette-fg-dark-4);  /* ★본문 금지. 구분기호·비활성 */
+  --color-text-on-accent: var(--palette-ink-950);     /* 액센트 배경 위 글자 */
+  --color-text-inverse: var(--palette-ink-950);
+
+  /* --- 경계선 --- */
+  --color-border-subtle: rgb(255 255 255 / 0.07);  /* 목록 행 구분선 */
+  --color-border-default: rgb(255 255 255 / 0.11); /* 위젯 테두리 */
+  --color-border-strong: rgb(255 255 255 / 0.20);  /* 입력창, hover된 테두리 */
+  --color-border-accent: var(--palette-cyan-dark);
+
+  /* --- 액센트 --- */
+  --color-accent: var(--palette-cyan-dark);
+  --color-accent-hover: var(--palette-cyan-hi);
+  --color-accent-muted: rgb(76 196 214 / 0.16);  /* 배지 배경 */
+  --color-accent-subtle: rgb(76 196 214 / 0.09);
+
+  /* --- 시맨틱 --- */
+  --color-success: var(--palette-green-dark);
+  --color-success-muted: rgb(78 201 138 / 0.15);
+  --color-warning: var(--palette-amber-dark);
+  --color-warning-muted: rgb(224 179 65 / 0.15);
+  --color-danger: var(--palette-red-dark);
+  --color-danger-muted: rgb(242 114 106 / 0.15);
+  --color-info: var(--palette-blue-dark);
+  --color-info-muted: rgb(110 168 250 / 0.15);
+
+  /* --- stale: 이 앱에서 가장 중요한 색 --------------------------------
+     "지금 보는 데이터는 오래됐지만 여전히 유효하다."
+
+     왜 별도 색이 필요한가: 갱신 실패 시 캐시 데이터를 계속 보여주는 것이
+     이 앱의 핵심 약속이다(CLAUDE.md 대전제 1). 그 순간 화면을 빨갛게 물들이면
+     사용자는 목록이 틀렸다고 읽는다. 실제로는 맞는 데이터인데.
+
+     왜 앰버인가: 빨강(danger)은 "이건 잘못됐다", 노랑/앰버는 "주의해서 봐라".
+     stale은 후자다. 동시에 warning과도 구별돼야 하는데, 둘 다 앰버 계열이라
+     색상만으로는 부족하다 → **표현 방식으로 구분한다**:
+       warning : 아이콘 + 텍스트, 배경 채움 있음 (행동을 요구)
+       stale   : 얇은 상단 실선 + 흐린 텍스트, 배경 채움 없음 (알리기만)
+     자세한 건 DESIGN.md 4장.
+
+     danger와 stale은 색상환에서 충분히 떨어져 있다(적색 ~5° vs 앰버 ~43°).
+     적록색각 이상에서도 명도차(다크 기준 7.19 vs 5.69)로 구분된다.
+     그래도 색에만 의존하지 않는다 — stale은 항상 텍스트 라벨을 동반한다.
+     ------------------------------------------------------------------- */
+  --color-stale: var(--palette-stale-dark);
+  --color-stale-muted: rgb(217 164 65 / 0.14);
+  --color-stale-border: rgb(217 164 65 / 0.45);
+  /* stale일 때 본문에 씌우는 감쇠. 목록을 지우지 않고 "물러나게" 한다 */
+  --opacity-stale-body: 0.62;
+
+  /* --- Jira 상태 카테고리 ---------------------------------------------
+     Jira의 statusCategory는 3종뿐이다: new(todo) / indeterminate(진행중) /
+     done(완료). 개별 상태명("코드리뷰", "QA")은 프로젝트마다 다르므로
+     색을 붙이지 않는다. 카테고리에만 붙인다.
+
+     Jira 원본 색(회색/파랑/초록)을 따르되 우리 배경에 맞게 조정했다.
+     사용자가 Jira 웹과 이 앱을 번갈아 보므로 색 의미가 일치해야 한다.
+     ------------------------------------------------------------------- */
+  --color-status-todo: var(--palette-slate-dark);
+  --color-status-todo-muted: rgb(139 152 168 / 0.16);
+  --color-status-progress: var(--palette-skyblue-dark);
+  --color-status-progress-muted: rgb(90 169 240 / 0.16);
+  --color-status-done: var(--palette-green-dark);
+  --color-status-done-muted: rgb(78 201 138 / 0.16);
+
+  /* --- Jira 우선순위 5단계 ---------------------------------------------
+     Highest → Lowest. 위쪽 둘만 따뜻한 색(주목), 아래 둘은 차갑거나 무채색
+     (물러남). 목록에서 P1이 눈에 띄고 P4/P5는 조용해야 한다.
+     아이콘 모양(↑↑ ↑ = ↓ ↓↓)과 함께 쓴다. 색만으로 구분하지 않는다.
+     ------------------------------------------------------------------- */
+  --color-priority-highest: var(--palette-red-dark);
+  --color-priority-high: var(--palette-orange-dark);
+  --color-priority-medium: var(--palette-amber-dark);
+  --color-priority-low: var(--palette-lightblue-dark);
+  --color-priority-lowest: var(--palette-slate-dark);
+
+  /* --- 포커스 링 --------------------------------------------------------
+     키보드 접근성. outline으로 구현한다(box-shadow 아님) — overflow:hidden
+     컨테이너 안에서도 잘리지 않는다.
+     ------------------------------------------------------------------- */
+  --color-focus-ring: var(--palette-cyan-dark);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* --- 그림자 ------------------------------------------------------------
+     원칙: 위젯은 그림자를 갖지 않는다. 경계선으로 충분하다.
+     1px 테두리 + 넓은 그림자를 같이 쓰면 유령 카드가 된다.
+     그림자는 **실제로 떠 있는 것**에만: 드래그 중인 위젯, 모달, 팝오버.
+     전부 offset + blur를 가진다. offset 0짜리 후광은 쓰지 않는다.
+     ------------------------------------------------------------------- */
+  --shadow-none: none;
+  --shadow-popover:
+    0 2px 4px -1px rgb(0 0 0 / 0.32),
+    0 6px 16px -4px rgb(0 0 0 / 0.42);
+  --shadow-modal:
+    0 8px 16px -4px rgb(0 0 0 / 0.38),
+    0 24px 56px -12px rgb(0 0 0 / 0.55);
+  --shadow-dragging:
+    0 4px 8px -2px rgb(0 0 0 / 0.40),
+    0 16px 32px -8px rgb(0 0 0 / 0.48);
+
+  /* --- 스크롤바 (위젯 본문 내부) --- */
+  --color-scrollbar-thumb: rgb(255 255 255 / 0.15);
+  --color-scrollbar-thumb-hover: rgb(255 255 255 / 0.26);
+}
+
+/* ==========================================================================
+   라이트 테마
+   --------------------------------------------------------------------------
+   두 경로로 켜진다:
+     1. prefers-color-scheme: light  — 시스템 설정 따라감
+     2. [data-theme="light"]         — 사용자가 설정창에서 명시 선택
+
+   그리고 [data-theme="dark"]는 시스템이 라이트여도 다크로 되돌린다.
+   즉 data-theme은 **양방향 모두** 시스템 설정을 이긴다. (요구사항)
+
+   구현 주의: 미디어 쿼리 블록 안에 :root:not([data-theme="dark"])를 쓴다.
+   그냥 :root를 쓰면 시스템=라이트일 때 data-theme="dark"를 덮어써버린다.
+   ========================================================================== */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-surface-sunken: var(--palette-ink-150);
+    --color-surface-base: var(--palette-ink-050);
+    --color-surface-raised: var(--palette-ink-000);
+    --color-surface-overlay: var(--palette-ink-000);
+    --color-surface-inset: var(--palette-ink-100);
+
+    --color-surface-hover: rgb(0 0 0 / 0.04);
+    --color-surface-active: rgb(0 0 0 / 0.07);
+    --color-surface-selected: rgb(11 114 134 / 0.11);
+
+    --color-text-primary: #1b2027;
+    --color-text-secondary: var(--palette-ink-600);
+    --color-text-tertiary: var(--palette-ink-550);
+    --color-text-quaternary: var(--palette-ink-500);
+    --color-text-on-accent: #ffffff;
+    --color-text-inverse: var(--palette-ink-000);
+
+    --color-border-subtle: rgb(0 0 0 / 0.07);
+    --color-border-default: rgb(0 0 0 / 0.12);
+    --color-border-strong: rgb(0 0 0 / 0.24);
+    --color-border-accent: var(--palette-cyan-light);
+
+    --color-accent: var(--palette-cyan-light);
+    --color-accent-hover: #095f70;
+    --color-accent-muted: rgb(11 114 134 / 0.12);
+    --color-accent-subtle: rgb(11 114 134 / 0.07);
+
+    --color-success: var(--palette-green-light);
+    --color-success-muted: rgb(26 127 77 / 0.12);
+    --color-warning: var(--palette-amber-light);
+    --color-warning-muted: rgb(138 100 16 / 0.12);
+    --color-danger: var(--palette-red-light);
+    --color-danger-muted: rgb(194 57 52 / 0.11);
+    --color-info: var(--palette-blue-light);
+    --color-info-muted: rgb(31 95 191 / 0.11);
+
+    --color-stale: var(--palette-stale-light);
+    --color-stale-muted: rgb(138 100 16 / 0.11);
+    --color-stale-border: rgb(138 100 16 / 0.42);
+    --opacity-stale-body: 0.66;
+
+    --color-status-todo: var(--palette-slate-light);
+    --color-status-todo-muted: rgb(92 103 115 / 0.13);
+    --color-status-progress: var(--palette-skyblue-light);
+    --color-status-progress-muted: rgb(31 95 191 / 0.12);
+    --color-status-done: var(--palette-green-light);
+    --color-status-done-muted: rgb(26 127 77 / 0.12);
+
+    --color-priority-highest: var(--palette-red-light);
+    --color-priority-high: var(--palette-orange-light);
+    --color-priority-medium: var(--palette-amber-light);
+    --color-priority-low: var(--palette-lightblue-light);
+    --color-priority-lowest: var(--palette-slate-light);
+
+    --color-focus-ring: var(--palette-cyan-light);
+
+    /* 라이트에서는 그림자를 더 옅게. 어두운 배경만큼 진하면 더러워 보인다 */
+    --shadow-popover:
+      0 2px 4px -1px rgb(16 24 40 / 0.07),
+      0 6px 16px -4px rgb(16 24 40 / 0.11);
+    --shadow-modal:
+      0 8px 16px -4px rgb(16 24 40 / 0.09),
+      0 24px 56px -12px rgb(16 24 40 / 0.17);
+    --shadow-dragging:
+      0 4px 8px -2px rgb(16 24 40 / 0.10),
+      0 16px 32px -8px rgb(16 24 40 / 0.15);
+
+    --color-scrollbar-thumb: rgb(0 0 0 / 0.18);
+    --color-scrollbar-thumb-hover: rgb(0 0 0 / 0.30);
+  }
+}
+
+/* 명시적 라이트 선택 — 시스템이 다크여도 이긴다.
+   위 미디어 쿼리 블록과 내용이 같다. CSS 변수는 상속되므로 한 번 더 쓴다.
+   (Tailwind 4에서 @theme은 미디어 쿼리 안에 못 넣으므로 :root 재선언이 정답) */
+:root[data-theme="light"] {
+  --color-surface-sunken: var(--palette-ink-150);
+  --color-surface-base: var(--palette-ink-050);
+  --color-surface-raised: var(--palette-ink-000);
+  --color-surface-overlay: var(--palette-ink-000);
+  --color-surface-inset: var(--palette-ink-100);
+
+  --color-surface-hover: rgb(0 0 0 / 0.04);
+  --color-surface-active: rgb(0 0 0 / 0.07);
+  --color-surface-selected: rgb(11 114 134 / 0.11);
+
+  --color-text-primary: #1b2027;
+  --color-text-secondary: var(--palette-ink-600);
+  --color-text-tertiary: var(--palette-ink-550);
+  --color-text-quaternary: var(--palette-ink-500);
+  --color-text-on-accent: #ffffff;
+  --color-text-inverse: var(--palette-ink-000);
+
+  --color-border-subtle: rgb(0 0 0 / 0.07);
+  --color-border-default: rgb(0 0 0 / 0.12);
+  --color-border-strong: rgb(0 0 0 / 0.24);
+  --color-border-accent: var(--palette-cyan-light);
+
+  --color-accent: var(--palette-cyan-light);
+  --color-accent-hover: #095f70;
+  --color-accent-muted: rgb(11 114 134 / 0.12);
+  --color-accent-subtle: rgb(11 114 134 / 0.07);
+
+  --color-success: var(--palette-green-light);
+  --color-success-muted: rgb(26 127 77 / 0.12);
+  --color-warning: var(--palette-amber-light);
+  --color-warning-muted: rgb(138 100 16 / 0.12);
+  --color-danger: var(--palette-red-light);
+  --color-danger-muted: rgb(194 57 52 / 0.11);
+  --color-info: var(--palette-blue-light);
+  --color-info-muted: rgb(31 95 191 / 0.11);
+
+  --color-stale: var(--palette-stale-light);
+  --color-stale-muted: rgb(138 100 16 / 0.11);
+  --color-stale-border: rgb(138 100 16 / 0.42);
+  --opacity-stale-body: 0.66;
+
+  --color-status-todo: var(--palette-slate-light);
+  --color-status-todo-muted: rgb(92 103 115 / 0.13);
+  --color-status-progress: var(--palette-skyblue-light);
+  --color-status-progress-muted: rgb(31 95 191 / 0.12);
+  --color-status-done: var(--palette-green-light);
+  --color-status-done-muted: rgb(26 127 77 / 0.12);
+
+  --color-priority-highest: var(--palette-red-light);
+  --color-priority-high: var(--palette-orange-light);
+  --color-priority-medium: var(--palette-amber-light);
+  --color-priority-low: var(--palette-lightblue-light);
+  --color-priority-lowest: var(--palette-slate-light);
+
+  --color-focus-ring: var(--palette-cyan-light);
+
+  --shadow-popover:
+    0 2px 4px -1px rgb(16 24 40 / 0.07),
+    0 6px 16px -4px rgb(16 24 40 / 0.11);
+  --shadow-modal:
+    0 8px 16px -4px rgb(16 24 40 / 0.09),
+    0 24px 56px -12px rgb(16 24 40 / 0.17);
+  --shadow-dragging:
+    0 4px 8px -2px rgb(16 24 40 / 0.10),
+    0 16px 32px -8px rgb(16 24 40 / 0.15);
+
+  --color-scrollbar-thumb: rgb(0 0 0 / 0.18);
+  --color-scrollbar-thumb-hover: rgb(0 0 0 / 0.30);
+}
+
+/* 명시적 다크 선택 — 시스템이 라이트여도 다크로 되돌린다.
+   @theme의 기본값이 이미 다크이므로 여기서는 아무것도 재선언할 필요가 없다.
+   위 미디어 쿼리가 :not([data-theme="dark"])로 스스로 비켜서기 때문이다.
+   이 규칙은 의도를 명시하고, 브라우저 UI 색을 맞추기 위해 존재한다. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   기본 스타일 — 토큰이 실제로 적용되는 최소한의 지점
+   ========================================================================== */
+
+@layer base {
+  html {
+    /* macOS에서 한글 서체가 지나치게 얇아지는 것을 막는다.
+       antialiased를 전역으로 걸면 한글 획이 끊겨 보인다 → 걸지 않는다. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-surface-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal-ko);
+    letter-spacing: var(--tracking-tight);
+    /* 한글은 단어 중간에서 줄바꿈되면 읽기 나쁘다 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  /* 숫자는 항상 등폭으로. 목록에서 시각·개수가 흔들리면 산만하다 */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 포커스: 마우스에는 안 보이고 키보드에는 확실히 보인다 */
+  :focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-focus-ring);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-xs);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* 스크롤바 — 위젯 본문용. 기본 스크롤바는 다크에서 튄다.
+     "커스텀 스크롤바 금지" 원칙의 예외: 재발명이 아니라 테마 정합이다.
+     동작·크기는 네이티브 그대로 두고 색만 맞춘다. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
+
+  /* 모션 최소화 설정 존중 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   유틸리티 — 토큰만으로는 표현이 안 되는 소수의 패턴
+   --------------------------------------------------------------------------
+   원칙적으로 컴포넌트는 Tailwind 유틸을 조합해서 쓴다. 여기 있는 것은
+   여러 위젯이 반드시 똑같이 보여야 하는 것들뿐이다.
+   ========================================================================== */
+
+@layer components {
+  /* 티켓 키(PROJ-123) — 등폭 + 자간 조정.
+     mono 서체는 기본 자간이 넓어 좁은 위젯에서 자리를 많이 먹는다. */
+  .ticket-key {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.02em;
+    line-height: var(--leading-tight-latin);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* stale 본문 감쇠 — 목록을 지우지 않고 물러나게만 한다.
+     opacity를 쓰는 이유: 색을 바꾸면 상태 배지의 의미색까지 망가진다.
+     투명도는 전체를 균일하게 뒤로 보내므로 색 의미가 보존된다. */
+  .is-stale-body {
+    opacity: var(--opacity-stale-body);
+    transition: opacity var(--transition-duration-base) var(--ease-out);
+  }
+
+  /* 갱신 중 표시 — 기존 데이터 위에 얇은 진행선.
+     본문을 절대 가리지 않는다. 스켈레톤으로 교체하지도 않는다.
+     (CLAUDE.md 대전제 1: 목록이 사라지면 안 된다) */
+  .refresh-bar {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    block-size: 2px;
+    overflow: hidden;
+    background-color: transparent;
+  }
+  .refresh-bar::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inline-size: 40%;
+    background-color: var(--color-accent);
+    animation: refresh-sweep 1.1s var(--ease-in-out) infinite;
+  }
+
+  @keyframes refresh-sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
 }
