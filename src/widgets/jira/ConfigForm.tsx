@@ -28,6 +28,12 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
   // project 조건을 직접 쓰므로, 우리가 UI로 덧붙이면 의도를 덮어쓴다.
   const isPreset = config.query.kind === 'preset'
   const scoped = config.projects ?? []
+
+  // placeholder로 보여줄 기본 이름 — 프리셋 이름이거나 'Jira'.
+  const defaultTitle =
+    config.query.kind === 'preset'
+      ? (presets.find((p) => p.id === presetId(config))?.name ?? 'Jira')
+      : 'Jira'
   const toggleProject = (key: string) => {
     onChange({
       ...config,
@@ -39,6 +45,19 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
 
   return (
     <div className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1">
+        <span className="text-caption text-text-secondary">위젯 이름</span>
+        <input
+          data-selectable
+          value={config.title ?? ''}
+          onChange={(e) => onChange({ ...config, title: e.target.value })}
+          placeholder={defaultTitle}
+          className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
+                     text-body text-text-primary placeholder:text-text-quaternary"
+        />
+        <span className="text-caption text-text-tertiary">비워두면 쿼리 이름을 씁니다</span>
+      </label>
+
       <label className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">쿼리</span>
         <select
@@ -133,7 +152,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
       )}
 
       {isPreset && (
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">정렬</span>
           <div className="flex gap-1">
             <select
@@ -166,7 +185,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
               마감일이 없는 티켓이 많으면 한쪽에 몰려 보입니다
             </span>
           )}
-        </label>
+        </div>
       )}
 
       <div className="flex flex-col gap-1">
@@ -192,25 +211,16 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         <span className="text-caption text-text-tertiary">제목은 항상 표시됩니다</span>
       </div>
 
-      <label className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">자동 새로고침</span>
         <div className="flex items-center gap-2">
-          <input
-            data-selectable
-            type="number"
+          <NumberField
+            value={Math.round((config.refreshSecs ?? 300) / 60)}
             min={0}
             max={120}
-            step={1}
-            value={Math.round((config.refreshSecs ?? 300) / 60)}
-            onChange={(e) => {
-              const m = Number(e.target.value)
-              if (!Number.isFinite(m)) return
-              // 0은 '자동 갱신 안 함'. 그 외에는 1분이 하한이다.
-              const mins = m <= 0 ? 0 : Math.min(120, Math.max(1, Math.round(m)))
-              onChange({ ...config, refreshSecs: mins * 60 })
-            }}
-            className="w-20 rounded border border-border-subtle bg-surface-inset px-2 py-1
-                       text-body text-text-primary tabular-nums"
+            // 0은 '자동 갱신 안 함'. 그 외에는 1분이 하한이다.
+            clamp={(n) => (n <= 0 ? 0 : Math.min(120, Math.max(1, n)))}
+            onCommit={(mins) => onChange({ ...config, refreshSecs: mins * 60 })}
           />
           <span className="text-caption text-text-tertiary">분마다</span>
         </div>
@@ -219,28 +229,21 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
             ? '자동 갱신하지 않습니다 — 새로고침 버튼으로만 갱신됩니다'
             : `${Math.round((config.refreshSecs ?? 300) / 60)}분마다 자동으로 갱신합니다`}
         </span>
-      </label>
+      </div>
 
-      <label className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">표시 개수</span>
-        <input
-          data-selectable
-          type="number"
+        <NumberField
+          value={config.maxResults}
           min={5}
           max={100}
-          step={5}
-          value={config.maxResults}
-          onChange={(e) => {
-            const n = Number(e.target.value)
-            if (Number.isFinite(n)) onChange({ ...config, maxResults: clamp(n, 5, 100) })
-          }}
-          className="w-24 rounded border border-border-subtle bg-surface-inset px-2 py-1
-                     text-body text-text-primary tabular-nums"
+          clamp={(n) => clamp(n, 5, 100)}
+          onCommit={(n) => onChange({ ...config, maxResults: n })}
         />
         <span className="text-caption text-text-tertiary">
-          많을수록 응답이 커집니다. 기본 30건.
+          많을수록 응답이 커집니다. 기본 15건.
         </span>
-      </label>
+      </div>
     </div>
   )
 }
@@ -254,6 +257,62 @@ function currentJql(config: JiraWidgetConfig, presets: Preset[]): string {
   const q = config.query
   if (q.kind === 'raw') return q.jql
   return presets.find((p) => p.id === q.id)?.jql ?? ''
+}
+
+/**
+ * 숫자 입력.
+ *
+ * 타이핑 중에는 **문자열을 그대로 둔다.** 매 키 입력마다 clamp를 걸면
+ * 15를 치려고 '1'을 누른 순간 하한 5로 튀어 커서가 밀리고, 사실상 입력이 안 된다.
+ * 확정은 blur와 Enter에서 한 번만 한다.
+ */
+function NumberField({
+  value,
+  min,
+  max,
+  clamp: clampFn,
+  onCommit,
+}: {
+  value: number
+  min: number
+  max: number
+  clamp: (n: number) => number
+  onCommit: (n: number) => void
+}) {
+  const [text, setText] = useState(String(value))
+
+  // 바깥에서 값이 바뀌면(다른 위젯 열기 등) 따라간다.
+  useEffect(() => {
+    setText(String(value))
+  }, [value])
+
+  const commit = () => {
+    const n = Number(text)
+    const next = Number.isFinite(n) ? clampFn(Math.round(n)) : value
+    setText(String(next))
+    if (next !== value) onCommit(next)
+  }
+
+  return (
+    <input
+      data-selectable
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          commit()
+        }
+      }}
+      className="w-24 rounded border border-border-subtle bg-surface-inset px-2 py-1
+                 text-body text-text-primary tabular-nums"
+    />
+  )
 }
 
 function Chip({

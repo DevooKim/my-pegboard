@@ -43,6 +43,9 @@ pub struct JiraWidgetError {
 #[derive(Debug, Clone, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraWidgetConfig {
+    /// 사용자가 붙인 위젯 이름. 비어 있으면 쿼리 이름을 쓴다.
+    #[serde(default)]
+    pub title: Option<String>,
     pub query: JiraQuery,
     /// DECISIONS 11.2 — 기본 30건.
     pub max_results: u32,
@@ -79,6 +82,7 @@ pub const MIN_REFRESH_SECS: u32 = 60;
 impl Default for JiraWidgetConfig {
     fn default() -> Self {
         Self {
+            title: None,
             query: crate::providers::jira::default_query(),
             max_results: 15,
             projects: Vec::new(),

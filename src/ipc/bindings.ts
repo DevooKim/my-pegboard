@@ -244,7 +244,11 @@ displayName?: string;
  * 48x48 아바타 URL. 아바타가 없는 계정이 실제로 있다.
  */
 avatarUrl?: string | null }
-export type JiraWidgetConfig = { query: JiraQuery; 
+export type JiraWidgetConfig = { 
+/**
+ * 사용자가 붙인 위젯 이름. 비어 있으면 쿼리 이름을 쓴다.
+ */
+title?: string | null; query: JiraQuery; 
 /**
  * DECISIONS 11.2 — 기본 30건.
  */

@@ -24,6 +24,7 @@ export const jiraWidget: WidgetDefinition<JiraWidgetConfig> = {
   maxInstances: 4,
 
   defaultConfig: {
+    title: null,
     query: { kind: 'preset', id: 'assigned-to-me' },
     maxResults: 15,
     projects: [],
@@ -38,10 +39,14 @@ export const jiraWidget: WidgetDefinition<JiraWidgetConfig> = {
   View: JiraView,
   ConfigForm: JiraConfigForm,
 
-  deriveTitle: (config) =>
-    config.query.kind === 'preset'
+  deriveTitle: (config) => {
+    // 사용자가 붙인 이름이 항상 이긴다.
+    const custom = config.title?.trim()
+    if (custom) return custom
+    return config.query.kind === 'preset'
       ? (PRESET_TITLES[config.query.id] ?? 'Jira')
-      : '직접 입력한 쿼리',
+      : '직접 입력한 쿼리'
+  },
 }
 
 registerWidget(jiraWidget)
