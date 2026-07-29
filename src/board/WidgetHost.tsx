@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
+import { ConfirmDialog } from '#/ui/ConfirmDialog'
 import { useJiraData } from '#/widgets/jira/useJiraData'
 import { tryGetWidget } from '#/widgets/registry'
 import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
 import { WidgetShell } from '#/widgets/shell/WidgetShell'
 import type { WidgetInstance } from '#/widgets/types'
 
-const DEFAULT_REFRESH_MS = 5 * 60 * 1000
+const DEFAULT_REFRESH_SECS = 300
+/** 자동 갱신을 켠 경우의 하한. 이보다 잦으면 rate limit에 가까워진다. */
+const MIN_REFRESH_SECS = 60
 
 /**
  * 위젯 하나를 실제로 살아 있게 만드는 곳.
@@ -20,6 +23,7 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
   const removeWidget = useBoardStore((s) => s.removeWidget)
   const [width, setWidth] = useState(0)
   const [configuring, setConfiguring] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const openConfig = useCallback(() => setConfiguring(true), [])
   const ref = useRef<HTMLDivElement | null>(null)
 
@@ -49,7 +53,7 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         <JiraHost
           widget={widget}
           width={width}
-          onRemove={() => removeWidget(widget.id)}
+          onRemove={() => setConfirmingRemove(true)}
           onConfigure={openConfig}
         />
       ) : (
@@ -60,7 +64,7 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
           pollable={definition.pollable}
           onRefresh={() => {}}
           onConfigure={openConfig}
-          onRemove={() => removeWidget(widget.id)}
+          onRemove={() => setConfirmingRemove(true)}
         >
           <div className="grid h-full place-items-center text-caption text-text-tertiary">
             아직 구현되지 않았습니다
@@ -70,6 +74,18 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
       <WidgetConfigModal
         widget={configuring ? widget : null}
         onClose={() => setConfiguring(false)}
+      />
+      <ConfirmDialog
+        open={confirmingRemove}
+        title={`${definition.label} 위젯을 삭제할까요?`}
+        // 되돌리기가 없으므로 무엇을 잃는지 분명히 말한다.
+        message="이 위젯의 설정(쿼리·열 너비·표시 개수)이 함께 사라집니다."
+        confirmLabel="삭제"
+        onConfirm={() => {
+          setConfirmingRemove(false)
+          removeWidget(widget.id)
+        }}
+        onCancel={() => setConfirmingRemove(false)}
       />
     </div>
   )
@@ -88,7 +104,10 @@ function JiraHost({
 }) {
   const definition = tryGetWidget('jira')
   const config = widget.config as unknown as JiraWidgetConfig
-  const { envelope, refresh } = useJiraData(widget.id, config, DEFAULT_REFRESH_MS)
+  // 0이면 자동 갱신하지 않는다. 그 외에는 1분이 하한.
+  const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
+  const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
+  const { envelope, refresh } = useJiraData(widget.id, config, refreshMs)
 
   if (!definition) return null
   const View = definition.View

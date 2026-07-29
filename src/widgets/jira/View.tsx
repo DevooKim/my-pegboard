@@ -1,11 +1,11 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JiraIssue, JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import type { WidgetViewProps } from '#/widgets/types'
 import { ColumnHeader } from './ColumnHeader'
-import { type ColumnWidths, withDefaults } from './columns'
+import { type ColumnWidths, visibleColumns, withDefaults } from './columns'
 import { IssueRow } from './IssueRow'
 
 /**
@@ -28,6 +28,22 @@ export function JiraView({
   const widths = withDefaults(
     (config as JiraWidgetConfig & { columnWidths?: Partial<ColumnWidths> }).columnWidths,
   )
+
+  const visible = visibleColumns(config.columns)
+
+  // 목록에 스크롤바가 생기면 그만큼 헤더를 밀어줘야 열이 어긋나지 않는다.
+  // macOS는 오버레이 스크롤바라 보통 0이지만, 마우스를 연결하면 폭이 생긴다.
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const [scrollbar, setScrollbar] = useState(0)
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const measure = () => setScrollbar(el.offsetWidth - el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  })
 
   const resizeColumn = useCallback(
     (col: keyof ColumnWidths, px: number) => {
@@ -68,12 +84,21 @@ export function JiraView({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <ColumnHeader widths={widths} density={density} onResize={resizeColumn} />
-      <ul className="min-h-0 flex-1 overflow-y-auto">
+    <div
+      className="flex h-full flex-col"
+      style={{ ['--pegboard-scrollbar' as string]: `${scrollbar}px` }}
+    >
+      <ColumnHeader widths={widths} density={density} visible={visible} onResize={resizeColumn} />
+      <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
         {issues.map((issue) => (
           <li key={issue.key}>
-            <IssueRow issue={issue} density={density} widths={widths} onOpen={openIssue} />
+            <IssueRow
+              issue={issue}
+              density={density}
+              widths={widths}
+              visible={visible}
+              onOpen={openIssue}
+            />
           </li>
         ))}
       </ul>

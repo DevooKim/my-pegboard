@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { commands, type JiraProject, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
 import type { WidgetConfigFormProps } from '#/widgets/types'
+import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn, visibleColumns } from './columns'
 
 const RAW = '__raw__'
 
@@ -128,6 +129,58 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
             : `${scoped.join(', ')} 로 범위를 좁힙니다`}
         </span>
       </div>
+
+      <div className="flex flex-col gap-1">
+        <span className="text-caption text-text-secondary">표시할 열</span>
+        <div className="flex flex-wrap gap-1">
+          {TOGGLEABLE_COLUMNS.map((col) => {
+            const shown = visibleColumns(config.columns)
+            const on = shown.includes(col)
+            return (
+              <Chip
+                key={col}
+                active={on}
+                onClick={() => {
+                  const next = on ? shown.filter((c) => c !== col) : [...shown, col]
+                  onChange({ ...config, columns: next as ToggleableColumn[] })
+                }}
+              >
+                {COLUMN_LABELS[col]}
+              </Chip>
+            )
+          })}
+        </div>
+        <span className="text-caption text-text-tertiary">제목은 항상 표시됩니다</span>
+      </div>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-caption text-text-secondary">자동 새로고침</span>
+        <div className="flex items-center gap-2">
+          <input
+            data-selectable
+            type="number"
+            min={0}
+            max={120}
+            step={1}
+            value={Math.round((config.refreshSecs ?? 300) / 60)}
+            onChange={(e) => {
+              const m = Number(e.target.value)
+              if (!Number.isFinite(m)) return
+              // 0은 '자동 갱신 안 함'. 그 외에는 1분이 하한이다.
+              const mins = m <= 0 ? 0 : Math.min(120, Math.max(1, Math.round(m)))
+              onChange({ ...config, refreshSecs: mins * 60 })
+            }}
+            className="w-20 rounded border border-border-subtle bg-surface-inset px-2 py-1
+                       text-body text-text-primary tabular-nums"
+          />
+          <span className="text-caption text-text-tertiary">분마다</span>
+        </div>
+        <span className="text-caption text-text-tertiary">
+          {(config.refreshSecs ?? 300) === 0
+            ? '자동 갱신하지 않습니다 — 새로고침 버튼으로만 갱신됩니다'
+            : `${Math.round((config.refreshSecs ?? 300) / 60)}분마다 자동으로 갱신합니다`}
+        </span>
+      </label>
 
       <label className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">표시 개수</span>

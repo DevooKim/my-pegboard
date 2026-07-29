@@ -218,7 +218,18 @@ maxResults: number;
  * 쿼리와 분리해서 두는 이유: 프리셋이든 생 JQL이든 똑같이 적용돼야 한다.
  * 프리셋마다 프로젝트별 변종을 만드는 것은 조합 폭발이다.
  */
-projects?: string[] }
+projects?: string[]; 
+/**
+ * 자동 새로고침 주기(초). **0이면 자동 갱신하지 않는다** — 수동 새로고침만.
+ * 
+ * 위젯마다 다르다(DECISIONS 11.2). 프론트에서 1분 미만으로 내려오지
+ * 않도록 막지만, 손으로 고친 board.json에 대비해 여기서도 보정한다.
+ */
+refreshSecs?: number; 
+/**
+ * 목록에 표시할 열. 비어 있으면 기본 세트.
+ */
+columns?: string[] | null }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  * 

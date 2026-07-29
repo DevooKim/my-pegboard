@@ -56,15 +56,51 @@ export function withDefaults(partial: Partial<ColumnWidths> | undefined): Column
   return { ...DEFAULT_COLUMN_WIABCS, ...partial }
 }
 
+/** 사용자가 켜고 끌 수 있는 열. `summary`(제목)는 끌 수 없다 — 목록의 본체다. */
+export const TOGGLEABLE_COLUMNS = ['key', 'status', 'assignee', 'updated'] as const
+export type ToggleableColumn = (typeof TOGGLEABLE_COLUMNS)[number]
+
+export const COLUMN_LABELS: Record<ToggleableColumn, string> = {
+  key: '키',
+  status: '상태',
+  assignee: '담당',
+  updated: '수정',
+}
+
+export const DEFAULT_VISIBLE_COLUMNS: ToggleableColumn[] = ['key', 'status', 'assignee', 'updated']
+
+/** 저장된 값을 정규화한다. 모르는 이름은 버리고, 순서는 항상 고정한다. */
+export function visibleColumns(saved: string[] | null | undefined): ToggleableColumn[] {
+  if (!saved) return DEFAULT_VISIBLE_COLUMNS
+  const set = new Set(saved)
+  return TOGGLEABLE_COLUMNS.filter((c) => set.has(c))
+}
+
 /**
  * grid-template-columns 문자열.
  * 밀도에 따라 열이 빠지므로(3열에서는 시간 없음) 여기서 함께 결정한다.
  */
-export function gridTemplate(widths: ColumnWidths, density: 'compact' | 'normal' | 'wide'): string {
-  const status = density === 'compact' ? 6 : widths.status
-  const cols = [`${widths.key}px`, 'minmax(0, 1fr)', `${status}px`, `${widths.assignee}px`]
-  if (density === 'wide') cols.push(`${widths.updated}px`)
+export function gridTemplate(
+  widths: ColumnWidths,
+  density: 'compact' | 'normal' | 'wide',
+  visible: ToggleableColumn[] = DEFAULT_VISIBLE_COLUMNS,
+): string {
+  const cols: string[] = []
+  if (visible.includes('key')) cols.push(`${widths.key}px`)
+  cols.push('minmax(0, 1fr)') // 제목은 항상 있고 항상 1fr
+  if (visible.includes('status')) cols.push(`${density === 'compact' ? 6 : widths.status}px`)
+  if (visible.includes('assignee')) cols.push(`${widths.assignee}px`)
+  // 수정 열은 좁은 위젯에서 자리를 너무 먹어 wide에서만 그린다.
+  if (visible.includes('updated') && density === 'wide') cols.push(`${widths.updated}px`)
   return cols.join(' ')
+}
+
+/** 실제로 그려지는 열. 밀도와 표시 설정을 모두 반영한다. */
+export function renderedColumns(
+  density: 'compact' | 'normal' | 'wide',
+  visible: ToggleableColumn[] = DEFAULT_VISIBLE_COLUMNS,
+): ToggleableColumn[] {
+  return visible.filter((c) => !(c === 'updated' && density !== 'wide'))
 }
 
 /**
@@ -78,8 +114,10 @@ export function gridTemplate(widths: ColumnWidths, density: 'compact' | 'normal'
  */
 export function resizableColumns(
   density: 'compact' | 'normal' | 'wide',
+  visible: ToggleableColumn[] = DEFAULT_VISIBLE_COLUMNS,
 ): Array<keyof ColumnWidths> {
-  if (density === 'compact') return ['key', 'assignee']
-  if (density === 'normal') return ['key', 'status', 'assignee']
-  return ['key', 'status', 'assignee', 'updated']
+  return renderedColumns(density, visible).filter(
+    // compact의 상태는 6px 점이라 조절할 것이 없다.
+    (c) => !(c === 'status' && density === 'compact'),
+  )
 }

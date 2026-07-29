@@ -1,6 +1,6 @@
 import type { JiraIssue } from '#/ipc/bindings'
 import { relativeTime } from '#/ui/relativeTime'
-import { type ColumnWidths, gridTemplate } from '#/widgets/jira/columns'
+import { type ColumnWidths, gridTemplate, type ToggleableColumn } from '#/widgets/jira/columns'
 
 /**
  * 티켓 행 하나.
@@ -14,11 +14,13 @@ export function IssueRow({
   issue,
   density,
   widths,
+  visible,
   onOpen,
 }: {
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
   widths: ColumnWidths
+  visible: ToggleableColumn[]
   onOpen: (key: string) => void
 }) {
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
@@ -33,12 +35,14 @@ export function IssueRow({
                  focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
       style={{
         borderLeft: `2px solid ${priorityColor(issue.priority?.name)}`,
-        gridTemplateColumns: gridTemplate(widths, density),
+        gridTemplateColumns: gridTemplate(widths, density, visible),
       }}
     >
-      <span className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums">
-        {issue.key}
-      </span>
+      {visible.includes('key') && (
+        <span className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums">
+          {issue.key}
+        </span>
+      )}
 
       <span
         className="min-w-0 truncate text-body text-text-primary leading-tight-ko"
@@ -47,34 +51,35 @@ export function IssueRow({
         {issue.summary}
       </span>
 
-      {density === 'compact' ? (
-        <span
-          role="img"
-          className="size-1.5 rounded-full"
-          style={{ backgroundColor: statusColor(statusCategory) }}
-          title={issue.status?.name ?? '상태 없음'}
-          aria-label={issue.status?.name ?? '상태 없음'}
-        />
-      ) : (
-        <span
-          className="min-w-0 truncate rounded px-1.5 py-0.5 text-center text-caption"
-          style={{
-            color: statusColor(statusCategory),
-            backgroundColor: statusMuted(statusCategory),
-          }}
-        >
-          {issue.status?.name ?? '—'}
-        </span>
-      )}
+      {visible.includes('status') &&
+        (density === 'compact' ? (
+          <span
+            role="img"
+            className="size-1.5 rounded-full"
+            style={{ backgroundColor: statusColor(statusCategory) }}
+            title={issue.status?.name ?? '상태 없음'}
+            aria-label={issue.status?.name ?? '상태 없음'}
+          />
+        ) : (
+          <span
+            className="min-w-0 truncate rounded px-1.5 py-0.5 text-center text-caption"
+            style={{
+              color: statusColor(statusCategory),
+              backgroundColor: statusMuted(statusCategory),
+            }}
+          >
+            {issue.status?.name ?? '—'}
+          </span>
+        ))}
 
-      <Assignee issue={issue} showName={density === 'wide'} />
+      {visible.includes('assignee') && <Assignee issue={issue} showName={density === 'wide'} />}
 
       {/*
         티켓이 마지막으로 수정된 시각. 헤더의 "갱신 시각"과 헷갈리지 않도록
         title로 무엇의 시간인지 밝힌다. 목록이 updated DESC로 정렬돼 있으므로
         정보 가치가 크지 않아 넓을 때만 보여준다.
       */}
-      {density === 'wide' && issue.updated && (
+      {visible.includes('updated') && density === 'wide' && issue.updated && (
         <span
           className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
           title={`티켓 수정: ${new Date(issue.updated).toLocaleString('ko-KR')}`}
@@ -113,8 +118,9 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
           {(assignee.displayName ?? '?').slice(0, 1)}
         </span>
       )}
+      {/* 고정 max-w를 두면 열을 넓혀도 말줄임이 그대로다. 열 폭을 따라가야 한다. */}
       {showName && (
-        <span className="max-w-16 truncate text-caption text-text-tertiary">
+        <span className="min-w-0 truncate text-caption text-text-tertiary">
           {assignee.displayName}
         </span>
       )}

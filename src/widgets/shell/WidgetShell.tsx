@@ -54,8 +54,11 @@ export function WidgetShell({
           stale일 때만 색이 앰버로 바뀐다.
         */}
         {fetchedAt && (
+          // 헤더 전체가 드래그 핸들이라 여기서 포인터를 막지 않으면
+          // 툴팁을 보려고 올린 커서가 위젯을 끌어버린다.
           <span
-            className={`shrink-0 text-caption tabular-nums ${
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`shrink-0 cursor-default text-caption tabular-nums ${
               isStale ? 'text-stale' : 'text-text-quaternary'
             }`}
             title={`마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}`}

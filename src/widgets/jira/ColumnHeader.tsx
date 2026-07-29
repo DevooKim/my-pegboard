@@ -1,17 +1,14 @@
 import { useCallback, useRef } from 'react'
 import {
+  COLUMN_LABELS,
   type ColumnWidths,
+  DEFAULT_VISIBLE_COLUMNS,
   gridTemplate,
   nextWidth,
+  renderedColumns,
   resizableColumns,
+  type ToggleableColumn,
 } from '#/widgets/jira/columns'
-
-const LABELS: Record<keyof ColumnWidths, string> = {
-  key: '키',
-  status: '상태',
-  assignee: '담당',
-  updated: '수정',
-}
 
 /**
  * 열 머리글 + 리사이즈 핸들.
@@ -20,16 +17,20 @@ const LABELS: Record<keyof ColumnWidths, string> = {
  * 무엇보다 **각 열이 무엇인지 이름이 붙는다** — 시간 열이 무슨 시간인지
  * 물어보게 만들지 않으려면 이름이 있어야 한다.
  *
- * 모든 경계는 끌 수 있고 세로선으로 보인다 — 끌 수 없는 경계를 남겨두면
- * "왜 여기만 안 되지"가 된다. 어느 열이 움직이는지는 본문 주석 참조.
+ * **경계선은 자기 오른쪽 열을 조절한다.** 제목이 1fr이라 벌어진 자리를 전부
+ * 흡수하므로, 왼쪽 열을 키우면 화면에서는 "제목이 줄었다"로만 보인다.
+ * 오른쪽 열을 움직여야 잡은 선과 커지는 칸이 일치한다.
+ * 예외는 키 열 — 오른쪽이 제목이라 조절할 px가 없어 자기 자신을 키운다.
  */
 export function ColumnHeader({
   widths,
   density,
+  visible = DEFAULT_VISIBLE_COLUMNS,
   onResize,
 }: {
   widths: ColumnWidths
   density: 'compact' | 'normal' | 'wide'
+  visible?: ToggleableColumn[]
   onResize: (col: keyof ColumnWidths, px: number) => void
 }) {
   const drag = useRef<{
@@ -64,55 +65,54 @@ export function ColumnHeader({
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
   }, [])
 
-  const active = resizableColumns(density)
-  const handleProps = (col: keyof ColumnWidths, invert = false) => ({
-    onPointerDown: beginDrag(col, invert),
-    onPointerMove,
-    onPointerUp: endDrag,
-    onPointerCancel: endDrag,
-  })
+  const rendered = renderedColumns(density, visible)
+  const adjustable = resizableColumns(density, visible)
+
+  // 화면 순서: [키] 제목 [상태] [담당] [수정]
+  // 셀에 붙는 핸들은 그 셀의 오른쪽 경계이고, 조절 대상은 **다음** 열이다.
+  const cells: Array<ToggleableColumn | 'summary'> = [
+    ...(rendered.includes('key') ? ['key' as const] : []),
+    'summary',
+    ...rendered.filter((c) => c !== 'key'),
+  ]
 
   return (
     <div
-      className="grid shrink-0 items-center gap-2 border-border-subtle border-b px-2 py-1
+      // 목록에 스크롤바가 생기면 헤더와 열이 어긋난다. 같은 폭을 비워 맞춘다.
+      className="grid shrink-0 items-center gap-2 border-border-subtle border-b py-1 pr-[var(--pegboard-scrollbar,0px)] pl-2
                  text-caption text-text-quaternary"
-      style={{ gridTemplateColumns: gridTemplate(widths, density) }}
+      style={{ gridTemplateColumns: gridTemplate(widths, density, visible) }}
     >
-      {/*
-        **경계선은 자기 오른쪽 열을 조절한다.**
+      {cells.map((cell, i) => {
+        const next = cells[i + 1]
+        // 키|제목 경계만 역방향(제목이 1fr이라 조절할 px가 없다).
+        const invert = next === 'summary'
+        const target: keyof ColumnWidths | undefined =
+          next === undefined ? undefined : next === 'summary' ? 'key' : next
+        const canDrag = target !== undefined && adjustable.includes(target)
 
-        선을 왼쪽으로 끌면 오른쪽 열이 넓어지고, 오른쪽으로 끌면 좁아진다.
-        경계 왼쪽에 있는 열을 키우는 것이 더 직관적으로 들리지만, 이 그리드에서는
-        제목이 1fr이라 벌어진 자리를 전부 흡수해버린다 — 그래서 왼쪽 열을 키워도
-        화면에서는 "제목이 줄었다"로만 보인다. 오른쪽 열을 움직여야 사용자가
-        잡은 선과 커지는 칸이 일치한다.
-
-        예외는 키 열뿐이다. 그 오른쪽이 제목(1fr)이라 조절할 px가 없으므로
-        역방향으로 키 자신을 키운다.
-
-          키|제목    → 키 +        (역방향. 오른쪽으로 끌면 키가 넓어짐)
-          제목|상태  → 상태 −
-          상태|담당  → 담당 −
-          담당|수정  → 수정 −
-      */}
-      <HeaderCell
-        label={LABELS.key}
-        handle={active.includes('key')}
-        {...handleProps('key', true)}
-      />
-
-      <HeaderCell label="제목" handle={active.includes('status')} {...handleProps('status')} />
-
-      <HeaderCell
-        label={density === 'compact' ? '' : LABELS.status}
-        handle={active.includes('assignee')}
-        {...handleProps('assignee')}
-      />
-
-      <HeaderCell label={LABELS.assignee} handle={density === 'wide'} {...handleProps('updated')} />
-
-      {/* 마지막 열은 오른쪽에 경계가 없으므로 핸들도 없다. */}
-      {density === 'wide' && <HeaderCell label={LABELS.updated} handle={false} />}
+        return (
+          <HeaderCell
+            key={cell}
+            label={
+              cell === 'summary'
+                ? '제목'
+                : density === 'compact' && cell === 'status'
+                  ? ''
+                  : COLUMN_LABELS[cell]
+            }
+            handle={canDrag}
+            {...(canDrag && target
+              ? {
+                  onPointerDown: beginDrag(target, invert),
+                  onPointerMove,
+                  onPointerUp: endDrag,
+                  onPointerCancel: endDrag,
+                }
+              : {})}
+          />
+        )
+      })}
     </div>
   )
 }

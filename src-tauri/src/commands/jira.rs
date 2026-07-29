@@ -51,14 +51,33 @@ pub struct JiraWidgetConfig {
     /// 프리셋마다 프로젝트별 변종을 만드는 것은 조합 폭발이다.
     #[serde(default)]
     pub projects: Vec<String>,
+    /// 자동 새로고침 주기(초). **0이면 자동 갱신하지 않는다** — 수동 새로고침만.
+    ///
+    /// 위젯마다 다르다(DECISIONS 11.2). 프론트에서 1분 미만으로 내려오지
+    /// 않도록 막지만, 손으로 고친 board.json에 대비해 여기서도 보정한다.
+    #[serde(default = "default_refresh_secs")]
+    pub refresh_secs: u32,
+    /// 목록에 표시할 열. 비어 있으면 기본 세트.
+    #[serde(default)]
+    pub columns: Option<Vec<String>>,
 }
+
+/// 5분 (DECISIONS 11.2 기본값)
+fn default_refresh_secs() -> u32 {
+    300
+}
+
+/// 자동 갱신을 켠 경우의 하한. 이보다 잦으면 rate limit에 가까워진다.
+pub const MIN_REFRESH_SECS: u32 = 60;
 
 impl Default for JiraWidgetConfig {
     fn default() -> Self {
         Self {
             query: crate::providers::jira::default_query(),
-            max_results: 30,
+            max_results: 15,
             projects: Vec::new(),
+            refresh_secs: default_refresh_secs(),
+            columns: None,
         }
     }
 }
