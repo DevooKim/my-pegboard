@@ -6,6 +6,8 @@
 
 pub mod commands;
 pub mod logging;
+pub mod secrets;
+pub mod storage;
 
 use tauri::Manager;
 

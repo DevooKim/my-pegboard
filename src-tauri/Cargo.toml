@@ -58,3 +58,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[features]
+default = []
+# 키체인 테스트는 실제 로그인 키체인에 쓴다. 기본 비활성.
+keychain-tests = []
