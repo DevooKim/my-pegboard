@@ -37,6 +37,14 @@ async jiraIsConfigured() : Promise<Result<boolean, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async jiraConnection() : Promise<Result<JiraConnectionInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 설정창의 "연결 테스트" 버튼.
  */
@@ -124,6 +132,12 @@ export type AppInfo = { version: string;
 memory_bytes: number | null }
 export type Board = { id: string; name: string; widgets?: Widget[] }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
+/**
+ * 연결 상태. 프론트가 알아야 할 것은 두 가지뿐이다 —
+ * 설정이 됐는지, 그리고 티켓 링크를 만들 base URL이 무엇인지.
+ * **토큰과 이메일은 넘기지 않는다.**
+ */
+export type JiraConnectionInfo = { configured: boolean; baseUrl: string | null }
 /**
  * 목록 위젯 행 하나. **여기 필드를 늘리기 전에 [`LIST_FIELDS`]와 페이로드 크기를 생각할 것.**
  * 

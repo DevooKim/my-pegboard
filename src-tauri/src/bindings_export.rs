@@ -17,6 +17,7 @@ mod tests {
             commands::jira::jira_presets,
             commands::jira::jira_projects,
             commands::jira::jira_is_configured,
+            commands::jira::jira_connection,
             commands::jira::jira_verify,
             commands::jira::jira_save_credentials,
             commands::jira::jira_fetch,

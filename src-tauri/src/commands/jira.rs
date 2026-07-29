@@ -108,6 +108,29 @@ pub async fn jira_projects(state: State<'_, AppState>) -> Result<Vec<JiraProject
     client.list_projects().await.map_err(|e| e.to_string())
 }
 
+/// 연결 상태. 프론트가 알아야 할 것은 두 가지뿐이다 —
+/// 설정이 됐는지, 그리고 티켓 링크를 만들 base URL이 무엇인지.
+/// **토큰과 이메일은 넘기지 않는다.**
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraConnectionInfo {
+    pub configured: bool,
+    pub base_url: Option<String>,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn jira_connection(state: State<'_, AppState>) -> Result<JiraConnectionInfo, String> {
+    let base_url = {
+        let c = state.connections.lock().map_err(|_| "상태 잠금 실패")?;
+        c.jira_base_url.clone()
+    };
+    Ok(JiraConnectionInfo {
+        configured: state.jira_credentials()?.is_some(),
+        base_url,
+    })
+}
+
 /// Jira 연결이 설정돼 있는가. 설정 안내를 띄울지 결정한다.
 #[tauri::command]
 #[specta::specta]

@@ -21,9 +21,14 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   jiraAuthFailed: false,
 
   refresh: async () => {
-    const result = await commands.jiraIsConfigured()
+    // baseUrl까지 함께 받는다. 예전에는 configured만 읽어서 jiraBaseUrl이
+    // 영원히 null이었고, 그 탓에 티켓 링크가 만들어지지 않았다.
+    const result = await commands.jiraConnection()
     if (result.status === 'ok') {
-      set({ jiraConfigured: result.data })
+      set({
+        jiraConfigured: result.data.configured,
+        jiraBaseUrl: result.data.baseUrl ?? null,
+      })
     }
   },
 
