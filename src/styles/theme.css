@@ -1,0 +1,10 @@
+/* PLACEHOLDER — impeccable 기반 디자인 토큰 작업으로 통째로 교체될 파일.
+   스캐폴드가 빌드되도록 최소 토큰만 정의한다. 여기에 디자인을 쌓지 말 것. */
+@theme {
+  --color-surface-base: oklch(0.19 0.012 265);
+  --color-surface-raised: oklch(0.24 0.014 265);
+  --color-border-subtle: oklch(0.32 0.015 265);
+  --color-text-primary: oklch(0.94 0.005 265);
+  --color-text-muted: oklch(0.68 0.012 265);
+  --color-accent: oklch(0.72 0.14 250);
+}

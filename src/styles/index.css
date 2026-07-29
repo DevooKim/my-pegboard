@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* 디자인 토큰은 theme.css가 소유한다 (impeccable 기반 설계).
+   이 파일은 진입점과 전역 리셋만 담당한다. */
+@import "./theme.css";
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden; /* 보드가 스크롤을 소유한다 */
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 데스크톱 앱 — 텍스트가 아닌 곳의 드래그 선택을 막는다 */
+  * {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable],
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

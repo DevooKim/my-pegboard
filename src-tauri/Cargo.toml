@@ -1,0 +1,60 @@
+[package]
+name = "my-pegboard"
+version = "0.1.0"
+description = "페그보드처럼 위젯을 배치하는 개인용 데스크톱 대시보드"
+authors = ["Hyunwoo Kim"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "my_pegboard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+# HTTP — rustls로 OpenSSL 빌드 의존을 피한다
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+  "gzip",
+] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+# 비밀 저장 — 평문 폴백 없음 (DECISIONS 9장)
+keyring = { version = "3", features = ["apple-native"] }
+
+# 로그 — 토큰 마스킹 필수
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Rust struct → TypeScript 타입/커맨드 자동 생성 (DECISIONS 7장)
+specta = { version = "2.0.0-rc.22", features = ["derive", "chrono", "serde_json"] }
+specta-typescript = "0.0.9"
+tauri-specta = { version = "2.0.0-rc.21", features = ["derive", "typescript"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

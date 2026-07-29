@@ -5,3 +5,6 @@ target/
 *.log
 src-tauri/target/
 src-tauri/gen/
+
+# 에이전트 worktree (별도 저장소)
+.claude/worktrees/
