@@ -59,7 +59,7 @@ export function IssueRow({
 
       {/* 제목은 항상, 그리고 키 바로 다음에 온다 */}
       <span
-        className={`min-w-0 truncate text-body text-text-primary leading-tight-ko ${alignClass('summary')}`}
+        className={`w-full min-w-0 truncate text-body text-text-primary leading-tight-ko ${alignClass('summary')}`}
         title={issue.summary}
       >
         {issue.summary}
@@ -106,7 +106,7 @@ function IssueLink({
   mono?: boolean
   title?: string
 }) {
-  const base = `min-w-0 truncate text-caption text-text-tertiary ${mono ? 'font-mono text-ticket-key tabular-nums' : ''}`
+  const base = `w-full min-w-0 truncate text-caption text-text-tertiary ${mono ? 'font-mono text-ticket-key tabular-nums' : ''}`
 
   if (!href) {
     return (
@@ -156,7 +156,7 @@ function Cell({
     case 'issueType':
       return (
         <span
-          className="min-w-0 truncate text-caption text-text-tertiary"
+          className="w-full min-w-0 truncate text-caption text-text-tertiary"
           title={issue.issueType?.name ?? undefined}
         >
           {issue.issueType?.name ?? '—'}
@@ -195,7 +195,7 @@ function Cell({
       // 색에만 기대지 않도록 글자로도 읽힌다.
       return (
         <span
-          className="truncate text-caption"
+          className="w-full truncate text-caption"
           style={{ color: priorityTextColor(issue.priority?.name) }}
           title={issue.priority?.name ?? undefined}
         >
@@ -209,7 +209,7 @@ function Cell({
     case 'sprint':
       return (
         <span
-          className="min-w-0 truncate text-caption text-text-tertiary"
+          className="w-full min-w-0 truncate text-caption text-text-tertiary"
           title={issue.sprint?.name ?? undefined}
         >
           {issue.sprint?.name ?? '—'}
@@ -225,7 +225,7 @@ function Cell({
           title={`${issue.parent.key} ${issue.parent.summary ?? ''}`.trim()}
         />
       ) : (
-        <span className="text-caption text-text-quaternary">—</span>
+        <span className="w-full text-caption text-text-quaternary">—</span>
       )
 
     case 'updated':
@@ -245,7 +245,7 @@ function Cell({
 function RelativeCell({ value, label }: { value: string | null | undefined; label: string }) {
   return (
     <span
-      className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
+      className="w-full min-w-0 truncate text-caption text-text-quaternary tabular-nums"
       title={value ? `${label}: ${absoluteTime(value)}` : undefined}
     >
       {value ? relativeTime(value) : '—'}
@@ -266,7 +266,10 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
     )
   }
   return (
-    <span className="flex min-w-0 items-center gap-1.5" title={assignee.displayName ?? undefined}>
+    <span
+      className="flex w-full min-w-0 items-center gap-1.5"
+      title={assignee.displayName ?? undefined}
+    >
       {assignee.avatarUrl ? (
         <img
           src={assignee.avatarUrl}
@@ -282,7 +285,7 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
       )}
       {/* 고정 max-w를 두면 열을 넓혀도 말줄임이 그대로다. 열 폭을 따라가야 한다. */}
       {showName && (
-        <span className="min-w-0 truncate text-caption text-text-tertiary">
+        <span className="w-full min-w-0 truncate text-caption text-text-tertiary">
           {assignee.displayName}
         </span>
       )}
@@ -295,7 +298,7 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
  * 실측상 절반 이하만 채워져 있어 없는 경우가 흔하다.
  */
 function DueDate({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-caption text-text-quaternary">—</span>
+  if (!value) return <span className="w-full text-caption text-text-quaternary">—</span>
 
   const due = new Date(`${value}T23:59:59`)
   const days = Math.ceil((due.getTime() - Date.now()) / 86_400_000)
@@ -303,7 +306,7 @@ function DueDate({ value }: { value: string | null | undefined }) {
 
   return (
     <span
-      className={`min-w-0 truncate text-caption tabular-nums ${color}`}
+      className={`w-full min-w-0 truncate text-caption tabular-nums ${color}`}
       title={`마감: ${absoluteDate(value)}`}
     >
       {days < 0 ? `${-days}일 지남` : days === 0 ? '오늘' : `${days}일 남음`}

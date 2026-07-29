@@ -45,7 +45,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
 
   return (
     <div className="flex flex-col">
-      <Section title="무엇을 가져올까">
+      <Section>
         <label className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">위젯 이름</span>
           <input
@@ -56,7 +56,6 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
             className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
                      text-body text-text-primary placeholder:text-text-quaternary"
           />
-          <span className="text-caption text-text-tertiary">비워두면 쿼리 이름을 씁니다</span>
         </label>
 
         <label className="flex flex-col gap-1">
@@ -190,7 +189,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         )}
       </Section>
 
-      <Section title="어떻게 보여줄까">
+      <Section>
         <div className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">표시할 열</span>
           <div className="flex flex-wrap gap-1">
@@ -229,7 +228,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         </div>
       </Section>
 
-      <Section title="언제 갱신할까" last>
+      <Section last>
         <div className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">자동 새로고침</span>
           <div className="flex items-center gap-2">
@@ -258,21 +257,12 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
  * 설정 폼의 구획.
  *
  * 항목이 열 개를 넘어가면서 한 덩어리로는 무엇이 무엇인지 읽히지 않는다.
- * "무엇을 / 어떻게 / 언제"라는 질문 순서로 나눈다 — 사용자가 고치려는
- * 항목이 어느 구획에 있을지 예측할 수 있게.
+ * 제목 없이 구분선만 둔다 — 묶음이 보이면 충분하고, 이름표는 오히려 소음이다.
+ * 순서는 무엇을 → 어떻게 → 언제.
  */
-function Section({
-  title,
-  last,
-  children,
-}: {
-  title: string
-  last?: boolean
-  children: React.ReactNode
-}) {
+function Section({ last, children }: { last?: boolean; children: React.ReactNode }) {
   return (
     <section className={`flex flex-col gap-3 py-4 ${last ? '' : 'border-border-subtle border-b'}`}>
-      <h3 className="text-caption text-text-quaternary uppercase tracking-wide">{title}</h3>
       {children}
     </section>
   )
