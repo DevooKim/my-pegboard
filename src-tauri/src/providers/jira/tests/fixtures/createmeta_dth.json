@@ -1,0 +1,103 @@
+{
+  "maxResults": 200,
+  "startAt": 0,
+  "total": 6,
+  "fields": [
+    {
+      "required": true,
+      "schema": { "type": "issuetype", "system": "issuetype" },
+      "name": "Issue Type",
+      "key": "issuetype",
+      "fieldId": "issuetype",
+      "hasDefaultValue": false,
+      "operations": [],
+      "allowedValues": [
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/issuetype/10082",
+          "id": "10082",
+          "description": "기능 개발",
+          "iconUrl": "https://your-team.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+          "name": "[Team] 기능",
+          "subtask": false,
+          "hierarchyLevel": 0
+        }
+      ]
+    },
+    {
+      "required": true,
+      "schema": { "type": "project", "system": "project" },
+      "name": "Project",
+      "key": "project",
+      "fieldId": "project",
+      "hasDefaultValue": false,
+      "operations": ["set"],
+      "allowedValues": [
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/project/10015",
+          "id": "10015",
+          "key": "ABC",
+          "name": "Team",
+          "projectTypeKey": "software",
+          "simplified": false
+        }
+      ]
+    },
+    {
+      "required": true,
+      "schema": { "type": "string", "system": "summary" },
+      "name": "Summary",
+      "key": "summary",
+      "fieldId": "summary",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    },
+    {
+      "required": false,
+      "schema": { "type": "user", "system": "reporter" },
+      "name": "Reporter",
+      "key": "reporter",
+      "fieldId": "reporter",
+      "hasDefaultValue": true,
+      "operations": ["set"],
+      "autoCompleteUrl": "https://your-team.atlassian.net/rest/api/3/user/search?query="
+    },
+    {
+      "required": false,
+      "schema": { "type": "priority", "system": "priority" },
+      "name": "Priority",
+      "key": "priority",
+      "fieldId": "priority",
+      "hasDefaultValue": true,
+      "operations": ["set"],
+      "allowedValues": [
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/priority/1",
+          "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/highest.svg",
+          "name": "Highest",
+          "id": "1"
+        },
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/priority/3",
+          "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/medium.svg",
+          "name": "Medium",
+          "id": "3"
+        },
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/priority/5",
+          "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/lowest.svg",
+          "name": "Lowest",
+          "id": "5"
+        }
+      ]
+    },
+    {
+      "required": false,
+      "schema": { "type": "doc", "system": "description" },
+      "name": "Description",
+      "key": "description",
+      "fieldId": "description",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    }
+  ]
+}

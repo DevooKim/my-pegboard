@@ -1,0 +1,131 @@
+{
+  "issues": [
+    {
+      "id": "10431",
+      "self": "https://your-team.atlassian.net/rest/api/3/issue/10431",
+      "key": "ABC-142",
+      "fields": {
+        "summary": "위젯 드래그 시 레이아웃 저장이 중복 호출됨",
+        "status": {
+          "self": "https://your-team.atlassian.net/rest/api/3/status/10001",
+          "description": "",
+          "iconUrl": "https://your-team.atlassian.net/",
+          "name": "진행 중",
+          "id": "10001",
+          "statusCategory": {
+            "self": "https://your-team.atlassian.net/rest/api/3/statuscategory/4",
+            "id": 4,
+            "key": "indeterminate",
+            "colorName": "yellow",
+            "name": "진행 중"
+          }
+        },
+        "assignee": {
+          "self": "https://your-team.atlassian.net/rest/api/3/user?accountId=5f8a1b2c3d4e5f6a7b8c9d0e",
+          "accountId": "5f8a1b2c3d4e5f6a7b8c9d0e",
+          "emailAddress": "you@example.com",
+          "avatarUrls": {
+            "48x48": "https://secure.gravatar.com/avatar/abc123?d=https%3A%2F%2Favatar-management.services.atlassian.com%2Finitials%2FSK-0.png&s=48",
+            "24x24": "https://secure.gravatar.com/avatar/abc123?d=https%3A%2F%2Favatar-management.services.atlassian.com%2Finitials%2FSK-0.png&s=24",
+            "16x16": "https://secure.gravatar.com/avatar/abc123?d=https%3A%2F%2Favatar-management.services.atlassian.com%2Finitials%2FSK-0.png&s=16",
+            "32x32": "https://secure.gravatar.com/avatar/abc123?d=https%3A%2F%2Favatar-management.services.atlassian.com%2Finitials%2FSK-0.png&s=32"
+          },
+          "displayName": "김현우",
+          "active": true,
+          "timeZone": "Asia/Seoul",
+          "accountType": "atlassian"
+        },
+        "priority": {
+          "self": "https://your-team.atlassian.net/rest/api/3/priority/3",
+          "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/medium.svg",
+          "name": "Medium",
+          "id": "3"
+        },
+        "issuetype": {
+          "self": "https://your-team.atlassian.net/rest/api/3/issuetype/10082",
+          "id": "10082",
+          "description": "기능 개발",
+          "iconUrl": "https://your-team.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+          "name": "[Team] 기능",
+          "subtask": false,
+          "avatarId": 10318,
+          "hierarchyLevel": 0
+        },
+        "updated": "2026-07-29T14:03:11.482+0900"
+      }
+    },
+    {
+      "id": "10428",
+      "self": "https://your-team.atlassian.net/rest/api/3/issue/10428",
+      "key": "ABC-139",
+      "fields": {
+        "summary": "담당자 미지정 백로그 항목",
+        "status": {
+          "self": "https://your-team.atlassian.net/rest/api/3/status/10000",
+          "name": "할 일",
+          "id": "10000",
+          "statusCategory": {
+            "self": "https://your-team.atlassian.net/rest/api/3/statuscategory/2",
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "할 일"
+          }
+        },
+        "assignee": null,
+        "priority": null,
+        "issuetype": {
+          "self": "https://your-team.atlassian.net/rest/api/3/issuetype/10083",
+          "id": "10083",
+          "iconUrl": "https://your-team.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+          "name": "[Team] 버그",
+          "subtask": false,
+          "hierarchyLevel": 0
+        },
+        "updated": "2026-07-28T09:11:00.000+0900"
+      }
+    },
+    {
+      "id": "10390",
+      "self": "https://your-team.atlassian.net/rest/api/3/issue/10390",
+      "key": "XYZ-77",
+      "fields": {
+        "summary": "아바타 없는 계정이 담당자인 티켓",
+        "status": {
+          "self": "https://your-team.atlassian.net/rest/api/3/status/10002",
+          "name": "완료",
+          "id": "10002",
+          "statusCategory": {
+            "self": "https://your-team.atlassian.net/rest/api/3/statuscategory/3",
+            "id": 3,
+            "key": "done",
+            "colorName": "green",
+            "name": "완료"
+          }
+        },
+        "assignee": {
+          "accountId": "712020:aaaa-bbbb-cccc-dddd",
+          "displayName": "서비스 계정",
+          "active": true,
+          "accountType": "app"
+        },
+        "priority": {
+          "self": "https://your-team.atlassian.net/rest/api/3/priority/1",
+          "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/highest.svg",
+          "name": "Highest",
+          "id": "1"
+        },
+        "issuetype": {
+          "self": "https://your-team.atlassian.net/rest/api/3/issuetype/10007",
+          "id": "10007",
+          "name": "작업",
+          "subtask": false,
+          "hierarchyLevel": 0
+        },
+        "updated": "2026-07-27T18:45:30.117+0900"
+      }
+    }
+  ],
+  "nextPageToken": "CAEaAggD",
+  "isLast": false
+}

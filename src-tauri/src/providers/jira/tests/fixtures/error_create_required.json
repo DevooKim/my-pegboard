@@ -1,0 +1,7 @@
+{
+  "errorMessages": [],
+  "errors": {
+    "reporter": "Reporter is required.",
+    "summary": "You must specify a summary of the issue."
+  }
+}

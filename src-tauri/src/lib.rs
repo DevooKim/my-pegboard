@@ -6,6 +6,7 @@
 
 pub mod commands;
 pub mod logging;
+pub mod providers;
 pub mod secrets;
 pub mod storage;
 
