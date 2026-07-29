@@ -1,5 +1,4 @@
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useJiraData } from '#/widgets/jira/useJiraData'
@@ -15,7 +14,13 @@ const DEFAULT_REFRESH_MS = 5 * 60 * 1000
  * 데이터 수명주기를 타입별로 갈아끼우되, 껍데기와 레이아웃은 공통이다.
  * 지금은 jira만 데이터 훅이 있고 나머지는 후속.
  */
-export function WidgetHost({ widget }: { widget: WidgetInstance }) {
+export function WidgetHost({
+  widget,
+  onOpenSettings,
+}: {
+  widget: WidgetInstance
+  onOpenSettings: () => void
+}) {
   const definition = tryGetWidget(widget.type)
   const removeWidget = useBoardStore((s) => s.removeWidget)
   const [width, setWidth] = useState(0)
@@ -33,11 +38,6 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
     return () => ro.disconnect()
   }, [])
 
-  const openSettings = useCallback(() => {
-    // 설정 모달은 후속. 지금은 최소한 무엇을 해야 하는지 알 수 있게.
-    void openUrl('https://id.atlassian.com/manage-profile/security/api-tokens')
-  }, [])
-
   if (!definition) {
     return (
       <div className="grid h-full place-items-center rounded-lg border border-border-subtle border-dashed p-4 text-center text-caption text-text-tertiary">
@@ -53,7 +53,7 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
           widget={widget}
           width={width}
           onRemove={() => removeWidget(widget.id)}
-          onConfigure={openSettings}
+          onConfigure={onOpenSettings}
         />
       ) : (
         <WidgetShell
@@ -62,7 +62,7 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
           fetchedAt={null}
           pollable={definition.pollable}
           onRefresh={() => {}}
-          onConfigure={openSettings}
+          onConfigure={onOpenSettings}
           onRemove={() => removeWidget(widget.id)}
         >
           <div className="grid h-full place-items-center text-caption text-text-tertiary">

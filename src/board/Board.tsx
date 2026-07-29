@@ -14,7 +14,7 @@ const GRID_CONFIG = { cols: GRID_COLUMNS, rowHeight: ROW_HEIGHT, margin: MARGIN 
 const DRAG_CONFIG = { handle: '[data-widget-drag-handle]' } as const
 const RESIZE_CONFIG = { handles: ['se'] } as const
 
-export function Board() {
+export function Board({ onOpenSettings }: { onOpenSettings: () => void }) {
   const widgets = useWidgets()
   const hydrated = useBoardStore((s) => s.hydrated)
   const applyLayout = useBoardStore((s) => s.applyLayout)
@@ -70,7 +70,7 @@ export function Board() {
         >
           {widgets.map((w) => (
             <div key={w.id}>
-              <WidgetHost widget={w} />
+              <WidgetHost widget={w} onOpenSettings={onOpenSettings} />
             </div>
           ))}
         </GridLayout>
