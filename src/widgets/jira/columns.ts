@@ -28,6 +28,26 @@ export const MIN_COLUMN_WIABC: Record<keyof ColumnWidths, number> = {
 
 export const MAX_COLUMN_WIABC = 240
 
+/**
+ * 드래그 중의 새 너비.
+ *
+ * **경계선은 자기 오른쪽 열을 조절한다** — 선을 왼쪽으로 끌면 오른쪽 열이 넓어진다.
+ * "경계 왼쪽 열을 키운다"가 더 직관적으로 들리지만 이 그리드에서는 틀리다.
+ * 제목이 1fr이라 벌어진 자리를 전부 흡수해서, 왼쪽 열을 키우면 화면에서는
+ * 제목만 줄어든 것처럼 보이기 때문이다.
+ *
+ * `invert`는 키 열 전용이다. 그 오른쪽이 제목(1fr)이라 조절할 px가 없으므로
+ * 자기 자신을 정방향으로 키운다.
+ */
+export function nextWidth(
+  col: keyof ColumnWidths,
+  startWidth: number,
+  deltaX: number,
+  invert: boolean,
+): number {
+  return clampColumn(col, startWidth + (invert ? deltaX : -deltaX))
+}
+
 export function clampColumn(col: keyof ColumnWidths, px: number): number {
   return Math.min(MAX_COLUMN_WIABC, Math.max(MIN_COLUMN_WIABC[col], Math.round(px)))
 }
@@ -50,13 +70,16 @@ export function gridTemplate(widths: ColumnWidths, density: 'compact' | 'normal'
 /**
  * 밀도별로 조절 가능한 열.
  *
- * `updated`는 항상 마지막 열이라 오른쪽에 경계가 없다 — 핸들을 놓을 자리가
- * 없으므로 조절 대상에서 뺀다. compact에서는 상태가 6px 점으로 축약되므로
- * 조절할 것이 없다.
+ * 각 경계선은 자기 **오른쪽** 열을 조절한다(ColumnHeader 참조). 따라서
+ * 여기 담기는 것은 '경계가 존재하는 열'이다.
+ *
+ * compact에서는 상태가 6px 점으로 축약되므로 조절 대상이 아니고,
+ * 수정 열은 wide에서만 존재한다.
  */
 export function resizableColumns(
   density: 'compact' | 'normal' | 'wide',
 ): Array<keyof ColumnWidths> {
   if (density === 'compact') return ['key', 'assignee']
-  return ['key', 'status', 'assignee']
+  if (density === 'normal') return ['key', 'status', 'assignee']
+  return ['key', 'status', 'assignee', 'updated']
 }

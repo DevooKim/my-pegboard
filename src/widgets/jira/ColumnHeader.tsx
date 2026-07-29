@@ -1,8 +1,8 @@
 import { useCallback, useRef } from 'react'
 import {
   type ColumnWidths,
-  clampColumn,
   gridTemplate,
+  nextWidth,
   resizableColumns,
 } from '#/widgets/jira/columns'
 
@@ -20,10 +20,8 @@ const LABELS: Record<keyof ColumnWidths, string> = {
  * 무엇보다 **각 열이 무엇인지 이름이 붙는다** — 시간 열이 무슨 시간인지
  * 물어보게 만들지 않으려면 이름이 있어야 한다.
  *
- * 모든 경계는 끌 수 있고 세로선으로 보인다. 제목 열은 `1fr`이라 자기
- * 너비가 없으므로, 제목 오른쪽 경계는 **다음 열을 반대로 줄인다** —
- * 결과적으로 제목이 넓어진다. 끌 수 없는 경계를 남겨두면
- * "왜 여기만 안 되지"가 되므로 예외를 만들지 않는다.
+ * 모든 경계는 끌 수 있고 세로선으로 보인다 — 끌 수 없는 경계를 남겨두면
+ * "왜 여기만 안 되지"가 된다. 어느 열이 움직이는지는 본문 주석 참조.
  */
 export function ColumnHeader({
   widths,
@@ -55,9 +53,7 @@ export function ColumnHeader({
     (e: React.PointerEvent) => {
       const d = drag.current
       if (!d) return
-      const delta = e.clientX - d.startX
-      // invert: 오른쪽으로 끌면 그 열이 줄어들고 왼쪽(제목)이 넓어진다.
-      onResize(d.col, clampColumn(d.col, d.startW + (d.invert ? -delta : delta)))
+      onResize(d.col, nextWidth(d.col, d.startW, e.clientX - d.startX, d.invert))
     },
     [onResize],
   )
@@ -83,35 +79,37 @@ export function ColumnHeader({
       style={{ gridTemplateColumns: gridTemplate(widths, density) }}
     >
       {/*
-        핸들은 셀의 오른쪽 경계에 놓인다. 어느 열을 바꾸는지는 경계마다 다르다:
+        **경계선은 자기 오른쪽 열을 조절한다.**
 
-          키|제목    → 키를 늘린다        (오른쪽으로 끌면 넓어짐)
-          제목|상태  → 상태를 줄인다      (제목이 1fr이라 결과적으로 제목이 넓어짐)
-          상태|담당  → 상태를 늘린다
-          담당|수정  → 담당을 늘린다
+        선을 왼쪽으로 끌면 오른쪽 열이 넓어지고, 오른쪽으로 끌면 좁아진다.
+        경계 왼쪽에 있는 열을 키우는 것이 더 직관적으로 들리지만, 이 그리드에서는
+        제목이 1fr이라 벌어진 자리를 전부 흡수해버린다 — 그래서 왼쪽 열을 키워도
+        화면에서는 "제목이 줄었다"로만 보인다. 오른쪽 열을 움직여야 사용자가
+        잡은 선과 커지는 칸이 일치한다.
 
-        남는 공간은 항상 1fr인 제목이 흡수한다. 그래서 어떤 고정 열을 줄여도
-        넓어지는 것은 제목이지 옆 열이 아니다.
+        예외는 키 열뿐이다. 그 오른쪽이 제목(1fr)이라 조절할 px가 없으므로
+        역방향으로 키 자신을 키운다.
+
+          키|제목    → 키 +        (역방향. 오른쪽으로 끌면 키가 넓어짐)
+          제목|상태  → 상태 −
+          상태|담당  → 담당 −
+          담당|수정  → 수정 −
       */}
-      <HeaderCell label={LABELS.key} handle={active.includes('key')} {...handleProps('key')} />
-
       <HeaderCell
-        label="제목"
-        handle={active.includes('status')}
-        {...handleProps('status', true)}
+        label={LABELS.key}
+        handle={active.includes('key')}
+        {...handleProps('key', true)}
       />
+
+      <HeaderCell label="제목" handle={active.includes('status')} {...handleProps('status')} />
 
       <HeaderCell
         label={density === 'compact' ? '' : LABELS.status}
-        handle={active.includes('status')}
-        {...handleProps('status')}
-      />
-
-      <HeaderCell
-        label={LABELS.assignee}
         handle={active.includes('assignee')}
         {...handleProps('assignee')}
       />
+
+      <HeaderCell label={LABELS.assignee} handle={density === 'wide'} {...handleProps('updated')} />
 
       {/* 마지막 열은 오른쪽에 경계가 없으므로 핸들도 없다. */}
       {density === 'wide' && <HeaderCell label={LABELS.updated} handle={false} />}
