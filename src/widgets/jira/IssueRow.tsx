@@ -1,5 +1,5 @@
 import type { JiraIssue } from '#/ipc/bindings'
-import { relativeTime } from '#/ui/relativeTime'
+import { absoluteDate, absoluteTime, relativeTime } from '#/ui/relativeTime'
 import {
   type ColumnWidths,
   gridTemplate,
@@ -134,11 +134,13 @@ function Cell({
       )
 
     case 'priority':
-      // 색은 왼쪽 막대가 이미 말하고 있다. 여기까지 칠하면 같은 정보가 두 번
-      // 소리치고, 행에서 정작 눈에 띄어야 할 것(상태·마감)이 묻힌다.
+      // 왼쪽 막대는 '보통'을 일부러 그리지 않는다(모든 행에 표시가 뜨면 신호가 죽는다).
+      // 그래서 이 열의 색은 중복이 아니라 막대가 못 하는 일을 한다 — 보통도 구분되고,
+      // 색에만 기대지 않도록 글자로도 읽힌다.
       return (
         <span
-          className="min-w-0 truncate text-center text-caption text-text-tertiary"
+          className="min-w-0 truncate text-center text-caption"
+          style={{ color: priorityTextColor(issue.priority?.name) }}
           title={issue.priority?.name ?? undefined}
         >
           {priorityLabel(issue.priority?.name)}
@@ -188,7 +190,7 @@ function RelativeCell({ value, label }: { value: string | null | undefined; labe
   return (
     <span
       className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
-      title={value ? `${label}: ${new Date(value).toLocaleString('ko-KR')}` : undefined}
+      title={value ? `${label}: ${absoluteTime(value)}` : undefined}
     >
       {value ? relativeTime(value) : '—'}
     </span>
@@ -246,7 +248,7 @@ function DueDate({ value }: { value: string | null | undefined }) {
   return (
     <span
       className={`min-w-0 truncate text-caption tabular-nums ${color}`}
-      title={`마감: ${value}`}
+      title={`마감: ${absoluteDate(value)}`}
     >
       {days < 0 ? `${-days}일 지남` : days === 0 ? '오늘' : `${days}일 남음`}
     </span>
@@ -271,7 +273,28 @@ function priorityLabel(name: string | null | undefined): string {
   }
 }
 
-/** Medium(P3)은 일부러 그리지 않는다 — 모든 행에 표시가 뜨면 신호가 죽는다. */
+/**
+ * 우선순위 열의 글자색. 왼쪽 막대와 달리 **보통도 색을 갖는다** —
+ * 열을 켠 사용자는 다섯 단계를 다 구분하고 싶은 것이다.
+ */
+function priorityTextColor(name: string | null | undefined): string {
+  switch (name) {
+    case 'Highest':
+      return 'var(--color-priority-highest)'
+    case 'High':
+      return 'var(--color-priority-high)'
+    case 'Medium':
+      return 'var(--color-priority-medium)'
+    case 'Low':
+      return 'var(--color-priority-low)'
+    case 'Lowest':
+      return 'var(--color-priority-lowest)'
+    default:
+      return 'var(--color-text-quaternary)'
+  }
+}
+
+/** 왼쪽 막대 색. Medium(P3)은 일부러 그리지 않는다 — 모든 행에 표시가 뜨면 신호가 죽는다. */
 function priorityColor(name: string | null | undefined): string {
   switch (name) {
     case 'Highest':

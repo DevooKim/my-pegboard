@@ -28,3 +28,34 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (day < 365) return `${Math.floor(day / 30)}개월 전`
   return `${Math.floor(day / 365)}년 전`
 }
+
+/**
+ * 툴팁용 절대 시각. `2026년 7월 29일 (수) 오후 11:03`
+ *
+ * `toLocaleString()` 기본값은 초까지 넣어 지저분하다. 요일을 넣는 이유는
+ * "2주 전"을 보고 실제 날짜를 확인할 때 무슨 요일이었는지가 대개 궁금해서다.
+ */
+export function absoluteTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/** 날짜만 있는 값(마감일 등). 시각이 없으므로 시분을 붙이지 않는다. */
+export function absoluteDate(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return ymd
+  return d.toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  })
+}

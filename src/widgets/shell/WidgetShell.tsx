@@ -1,6 +1,6 @@
 import { RefreshCw, Settings2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { relativeTime } from '#/ui/relativeTime'
+import { absoluteTime, relativeTime } from '#/ui/relativeTime'
 import type { WidgetStatus } from '#/widgets/types'
 
 /**
@@ -61,7 +61,7 @@ export function WidgetShell({
             className={`shrink-0 cursor-default text-caption tabular-nums ${
               isStale ? 'text-stale' : 'text-text-quaternary'
             }`}
-            title={`마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}`}
+            title={`마지막 갱신: ${absoluteTime(fetchedAt)}`}
           >
             {relativeTime(fetchedAt)}
           </span>
