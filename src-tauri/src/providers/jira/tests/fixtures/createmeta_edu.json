@@ -1,0 +1,72 @@
+{
+  "maxResults": 200,
+  "startAt": 0,
+  "total": 5,
+  "fields": [
+    {
+      "required": true,
+      "schema": { "type": "issuetype", "system": "issuetype" },
+      "name": "Issue Type",
+      "key": "issuetype",
+      "fieldId": "issuetype",
+      "hasDefaultValue": false,
+      "operations": [],
+      "allowedValues": [
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/issuetype/10007",
+          "id": "10007",
+          "name": "작업",
+          "subtask": false,
+          "hierarchyLevel": 0
+        }
+      ]
+    },
+    {
+      "required": true,
+      "schema": { "type": "project", "system": "project" },
+      "name": "Project",
+      "key": "project",
+      "fieldId": "project",
+      "hasDefaultValue": false,
+      "operations": ["set"],
+      "allowedValues": [
+        {
+          "self": "https://your-team.atlassian.net/rest/api/3/project/10022",
+          "id": "10022",
+          "key": "XYZ",
+          "name": "XYZ",
+          "projectTypeKey": "software",
+          "simplified": false
+        }
+      ]
+    },
+    {
+      "required": true,
+      "schema": { "type": "string", "system": "summary" },
+      "name": "Summary",
+      "key": "summary",
+      "fieldId": "summary",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    },
+    {
+      "required": true,
+      "schema": { "type": "user", "system": "reporter" },
+      "name": "Reporter",
+      "key": "reporter",
+      "fieldId": "reporter",
+      "hasDefaultValue": false,
+      "operations": ["set"],
+      "autoCompleteUrl": "https://your-team.atlassian.net/rest/api/3/user/search?query="
+    },
+    {
+      "required": false,
+      "schema": { "type": "doc", "system": "description" },
+      "name": "Description",
+      "key": "description",
+      "fieldId": "description",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    }
+  ]
+}

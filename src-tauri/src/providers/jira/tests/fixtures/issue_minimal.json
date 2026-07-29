@@ -1,0 +1,30 @@
+{
+  "id": "10500",
+  "self": "https://your-team.atlassian.net/rest/api/3/issue/10500",
+  "key": "PRD-3",
+  "fields": {
+    "summary": "설명도 담당자도 우선순위도 없는 티켓",
+    "status": {
+      "name": "할 일",
+      "id": "10000",
+      "statusCategory": {
+        "id": 2,
+        "key": "new",
+        "colorName": "blue-gray",
+        "name": "할 일"
+      }
+    },
+    "assignee": null,
+    "reporter": null,
+    "priority": null,
+    "issuetype": {
+      "id": "10011",
+      "name": "작업",
+      "subtask": false
+    },
+    "updated": "2026-07-29T08:00:00.000+0900",
+    "created": "2026-07-29T08:00:00.000+0900",
+    "labels": [],
+    "description": null
+  }
+}

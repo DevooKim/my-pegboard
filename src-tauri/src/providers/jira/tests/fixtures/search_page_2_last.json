@@ -1,0 +1,31 @@
+{
+  "issues": [
+    {
+      "id": "10301",
+      "self": "https://your-team.atlassian.net/rest/api/3/issue/10301",
+      "key": "OPS-12",
+      "fields": {
+        "summary": "마지막 페이지의 유일한 티켓",
+        "status": {
+          "name": "할 일",
+          "id": "10000",
+          "statusCategory": {
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "할 일"
+          }
+        },
+        "assignee": null,
+        "priority": null,
+        "issuetype": {
+          "id": "10009",
+          "name": "작업",
+          "subtask": false
+        },
+        "updated": "2026-07-20T10:00:00.000+0900"
+      }
+    }
+  ],
+  "isLast": true
+}

@@ -1,0 +1,124 @@
+{
+  "id": "10431",
+  "self": "https://your-team.atlassian.net/rest/api/3/issue/10431",
+  "key": "ABC-142",
+  "fields": {
+    "summary": "위젯 드래그 시 레이아웃 저장이 중복 호출됨",
+    "status": {
+      "name": "진행 중",
+      "id": "10001",
+      "statusCategory": {
+        "id": 4,
+        "key": "indeterminate",
+        "colorName": "yellow",
+        "name": "진행 중"
+      }
+    },
+    "assignee": {
+      "accountId": "5f8a1b2c3d4e5f6a7b8c9d0e",
+      "displayName": "김현우",
+      "avatarUrls": {
+        "48x48": "https://secure.gravatar.com/avatar/abc123?s=48",
+        "32x32": "https://secure.gravatar.com/avatar/abc123?s=32",
+        "24x24": "https://secure.gravatar.com/avatar/abc123?s=24",
+        "16x16": "https://secure.gravatar.com/avatar/abc123?s=16"
+      },
+      "active": true
+    },
+    "reporter": {
+      "accountId": "6a1b2c3d4e5f6a7b8c9d0e1f",
+      "displayName": "박서준",
+      "avatarUrls": {
+        "48x48": "https://secure.gravatar.com/avatar/def456?s=48",
+        "24x24": "https://secure.gravatar.com/avatar/def456?s=24"
+      },
+      "active": true
+    },
+    "priority": {
+      "iconUrl": "https://your-team.atlassian.net/images/icons/priorities/medium.svg",
+      "name": "Medium",
+      "id": "3"
+    },
+    "issuetype": {
+      "id": "10082",
+      "name": "[Team] 기능",
+      "subtask": false
+    },
+    "updated": "2026-07-29T14:03:11.482+0900",
+    "created": "2026-07-25T11:20:04.000+0900",
+    "labels": ["frontend", "performance"],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            { "type": "text", "text": "드래그 중 " },
+            {
+              "type": "text",
+              "text": "onLayoutChange",
+              "marks": [{ "type": "code" }]
+            },
+            { "type": "text", "text": "가 초당 수십 회 발생한다. " },
+            {
+              "type": "text",
+              "text": "디바운스",
+              "marks": [{ "type": "strong" }]
+            },
+            { "type": "text", "text": "가 필요함." }
+          ]
+        },
+        {
+          "type": "codeBlock",
+          "attrs": { "language": "typescript" },
+          "content": [
+            {
+              "type": "text",
+              "text": "const save = debounce(persist, 500);"
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "500ms 디바운스" }]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{ "type": "text", "text": "또는 드래그 종료 시 저장" }]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "mediaSingle",
+          "attrs": { "layout": "center" },
+          "content": [
+            {
+              "type": "media",
+              "attrs": {
+                "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
+                "type": "file",
+                "collection": "jira-attachments",
+                "width": 1200,
+                "height": 630
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

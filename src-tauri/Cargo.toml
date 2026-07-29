@@ -1,0 +1,39 @@
+[package]
+name = "my-pegboard"
+version = "0.1.0"
+edition = "2021"
+description = "my-pegboard — personal desktop dashboard (Jira provider)"
+publish = false
+
+[lib]
+name = "my_pegboard"
+path = "src/lib.rs"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  "json",
+  "gzip",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+# serde_json 기능: ADF를 `serde_json::Value`로 통과시키므로 그것이 specta::Type이어야 한다.
+# (TS에서는 `any`로 나간다 — ADF 노드 타입 수십 개를 Rust에 모델링할 값어치가 없다)
+specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json"] }
+
+# 이 모듈이 쓰지 않아 뺀 것들 — 앱 셸이 합쳐질 때 필요하면 그쪽에서 추가한다.
+#
+# thiserror : JiraError의 Display를 손으로 구현했다. variant마다 한국어 문장
+#             구조가 다르고(429는 Retry-After 유무로 갈림) derive 속성으로는
+#             오히려 읽기 어려워진다.
+# chrono    : 타임스탬프를 파싱하지 않는다. Jira의 ISO-8601 문자열을 그대로
+#             프론트에 넘기고 포매팅은 거기서 한다 — 파싱했다 다시 찍으면
+#             원본 오프셋(+0900)만 잃는다.
+# tokio     : 라이브러리 크레이트라 런타임을 직접 만들지 않는다. async 함수만
+#             제공하고 런타임은 Tauri가 소유한다.
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
