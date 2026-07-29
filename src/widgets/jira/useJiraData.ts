@@ -120,5 +120,12 @@ export function useJiraData(
     return () => clearInterval(id)
   }, [fetchNow, refreshMs])
 
+  // 전역 새로고침 (설정 저장 직후, ⌘R).
+  useEffect(() => {
+    const onRefreshAll = () => void fetchNow()
+    window.addEventListener('pegboard:refresh-all', onRefreshAll)
+    return () => window.removeEventListener('pegboard:refresh-all', onRefreshAll)
+  }, [fetchNow])
+
   return { envelope, refresh: () => void fetchNow() }
 }

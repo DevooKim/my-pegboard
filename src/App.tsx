@@ -15,12 +15,16 @@ export function App() {
     void bootstrap().finally(() => setReady(true))
   }, [])
 
-  // ⌘,
+  // ⌘, 설정 / ⌘R 전체 새로고침
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey && e.key === ',') {
         e.preventDefault()
         setSettingsOpen((v) => !v)
+      }
+      if (e.metaKey && e.key === 'r') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))
       }
     }
     document.addEventListener('keydown', onKey)
@@ -48,7 +52,12 @@ export function App() {
         </button>
       </header>
       {ready && <Board onOpenSettings={openSettings} />}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        // 저장 직후 모든 위젯을 즉시 갱신한다. 저장의 결과가 화면 변화로 보여야 한다.
+        onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
+      />
     </div>
   )
 }

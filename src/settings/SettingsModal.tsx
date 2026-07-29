@@ -1,5 +1,5 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { Check, ExternalLink, Loader2, X } from 'lucide-react'
+import { AlertCircle, Check, ExternalLink, Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { commands } from '#/ipc/bindings'
 import { IN_TAURI } from '#/ipc/env'
@@ -22,14 +22,23 @@ type TestState =
  * 토큰은 이 폼을 떠나 키체인으로 바로 간다. 어떤 상태에도 보관하지 않고,
  * 저장 직후 입력을 비운다.
  */
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsModal({
+  open,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+}) {
   const refreshConnection = useConnectionStore((s) => s.refresh)
+  const configured = useConnectionStore((s) => s.jiraConfigured)
   const [baseUrl, setBaseUrl] = useState('https://your-team.atlassian.net')
   // 이 앱은 단일 사용자용이다. 매번 타이핑할 이유가 없으므로 미리 채운다.
   const [email, setEmail] = useState('you@example.com')
   const [token, setToken] = useState('')
   const [test, setTest] = useState<TestState>({ kind: 'idle' })
-  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -53,16 +62,23 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const save = useCallback(async () => {
     if (!canSubmit || !IN_TAURI) return
+    setSaving(true)
     const r = await commands.jiraSaveCredentials(baseUrl.trim(), email.trim(), token.trim())
-    if (r.status === 'ok') {
-      setToken('') // 저장 후 폼에 남기지 않는다
-      setSaved(true)
-      void refreshConnection()
-      setTimeout(() => setSaved(false), 2000)
-    } else {
+    setSaving(false)
+
+    if (r.status !== 'ok') {
       setTest({ kind: 'failed', message: r.error })
+      return
     }
-  }, [baseUrl, email, token, canSubmit, refreshConnection])
+
+    setToken('') // 저장 후 폼에 남기지 않는다
+    await refreshConnection()
+
+    // 성공을 버튼 글자 변화로만 알리면 안 된다 — 방금 누른 버튼은
+    // 이미 시선이 떠난 곳이라 안 보인다. 모달을 닫아서 결과를 화면 변화로 만든다.
+    onSaved()
+    onClose()
+  }, [baseUrl, email, token, canSubmit, refreshConnection, onSaved, onClose])
 
   if (!open) return null
 
@@ -104,6 +120,16 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 토큰은 macOS 키체인에 저장되며 파일이나 로그에 남지 않습니다.
               </p>
             </div>
+
+            {/* 지금 연결돼 있는가 — 저장 여부를 매번 의심하지 않게 상시 표시한다 */}
+            <p
+              className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-caption ${
+                configured ? 'bg-success-muted text-success' : 'bg-surface-inset text-text-tertiary'
+              }`}
+            >
+              {configured ? <Check size={13} /> : <AlertCircle size={13} />}
+              {configured ? '연결됨 — 토큰이 키체인에 저장돼 있습니다' : '아직 연결되지 않았습니다'}
+            </p>
 
             <Field label="사이트 URL">
               <input
@@ -174,11 +200,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={!canSubmit}
-                className="rounded bg-accent px-3 py-1.5 text-caption text-surface-base
-                           disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!canSubmit || saving}
+                className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-caption
+                           text-surface-base disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {saved ? '저장됨' : '저장'}
+                {saving && <Loader2 size={13} className="animate-spin" />}
+                {configured ? '토큰 교체' : '저장'}
               </button>
             </div>
           </section>
