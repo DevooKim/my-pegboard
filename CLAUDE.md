@@ -129,7 +129,7 @@ src-tauri/src/
   "N분 전 데이터" 흐린 표시. 목록이 사라지면 안 된다.
 - **영구적**(401/403/400): 재시도 없음. 위젯 본문을 에러 상태로 + **무엇을 해야 하는지** + 행동 버튼.
 - **인증 실패는 전역 배너 한 번만.** 위젯 4개에 같은 에러 4번은 소음.
-- 로그: `~/Library/Logs/my-pegboard/` 회전 로그.
+- 로그: `~/Library/Logs/io.mypegboard.app/` 회전 로그 (Tauri는 productName이 아니라 identifier를 쓴다).
 
 ---
 
