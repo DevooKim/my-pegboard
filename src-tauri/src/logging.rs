@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn masks_long_secret_keeping_only_edges() {
-        assert_eq!(mask("ATATT3xFfGF0abcdefg123"), "ATA***123");
+        assert_eq!(mask("FAKETOKEN0abcdefg123"), "FAK***123");
     }
 
     #[test]

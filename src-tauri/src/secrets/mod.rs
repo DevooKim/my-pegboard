@@ -424,10 +424,13 @@ mod tests {
 
     #[test]
     fn mask_of_realistic_token_reveals_little() {
-        let token = "ATATT3xFfGF0T4JqOaBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890";
+        // 실제 토큰과 같은 **길이**여야 마스킹이 의미 있는지 알 수 있다.
+        // 다만 Atlassian 접두어(ATATT)는 쓰지 않는다 — 진짜 토큰이 아닌데도
+        // 시크릿 스캐너가 오탐한다.
+        let token = "FAKETOKEN0T4JqOaBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890";
         let masked = mask(token);
-        assert_eq!(masked, "ATA***890");
-        assert!(!masked.contains("FfGF0T4JqOaBcDeFgHiJkLmNoPqRsTuVwXyZ"));
+        assert_eq!(masked, "FAK***890");
+        assert!(!masked.contains("T4JqOaBcDeFgHiJkLmNoPqRsTuVwXyZ"));
     }
 
     #[test]
