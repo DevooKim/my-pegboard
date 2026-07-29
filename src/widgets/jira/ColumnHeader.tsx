@@ -80,7 +80,7 @@ export function ColumnHeader({
   return (
     <div
       // 목록에 스크롤바가 생기면 헤더와 열이 어긋난다. 같은 폭을 비워 맞춘다.
-      className="grid shrink-0 items-center gap-2 border-border-subtle border-b py-1 pr-[var(--pegboard-scrollbar,0px)] pl-2
+      className="grid shrink-0 items-center gap-2 border-border-subtle border-b py-1 pr-[var(--pegboard-scrollbar,0px)] pl-3
                  text-caption text-text-quaternary"
       style={{ gridTemplateColumns: gridTemplate(widths, density, visible) }}
     >

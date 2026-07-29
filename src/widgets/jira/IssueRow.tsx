@@ -177,7 +177,7 @@ function Cell({
         // 배지는 글자만 감싼다. min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
         // 열 전체가 색칠된 것처럼 보인다.
         <span
-          className="max-w-full truncate rounded px-1.5 py-0.5 text-caption"
+          className="-ml-1.5 max-w-full truncate rounded px-1.5 py-0.5 text-caption"
           style={{
             color: statusColor(statusCategory),
             backgroundColor: statusMuted(statusCategory),

@@ -152,35 +152,20 @@ export function resizableColumns(
 }
 
 /**
- * 열별 정렬. **헤더와 행이 이 하나의 표를 공유한다** — 따로 두면 반드시 어긋난다.
+ * 모든 열은 왼쪽 정렬이다.
  *
- * 좌·중앙 두 가지만 쓴다. 오른쪽 정렬을 쓰지 않는 이유는 시간 값이
- * "2일 전"·"19일 지남"처럼 길이가 제각각이라 오른쪽에 붙여도 자릿수가
- * 맞지 않고, 헤더와 멀어져 어느 열인지 읽기 어려워지기 때문이다.
+ * 섞어 쓰지 않는 이유: 헤더 글자의 시작점과 값의 시작점이 어긋나면
+ * 어느 값이 어느 열인지 눈으로 잇기 어려워진다. 중앙·오른쪽 정렬은
+ * 열마다 그 간격이 달라져서 표 전체의 세로선이 무너진다.
  *
- *   왼쪽  자유 길이 텍스트 — 왼쪽 끝이 맞아야 훑기 좋다.
- *   중앙  고정 어휘 값(상태·우선순위) + 시간 — 폭이 좁고 값이 짧다.
+ * 이 상수를 남겨두는 이유는 헤더와 행이 **같은 한 곳**을 보게 하기 위해서다.
+ * 나중에 특정 열만 예외를 두더라도 여기만 고치면 양쪽에 동시에 반영된다.
  */
-export const COLUMN_ALIGN: Record<ToggleableColumn | 'summary', 'left' | 'center'> = {
-  key: 'left',
-  summary: 'left',
-  issueType: 'left',
-  status: 'center',
-  priority: 'center',
-  assignee: 'left',
-  sprint: 'left',
-  parent: 'left',
-  updated: 'center',
-  created: 'center',
-  dueDate: 'center',
-}
-
-/** 텍스트 정렬 클래스. */
-export function alignClass(col: ToggleableColumn | 'summary'): string {
-  return COLUMN_ALIGN[col] === 'center' ? 'text-center' : 'text-left'
+export function alignClass(_col: ToggleableColumn | 'summary'): string {
+  return 'text-left'
 }
 
 /** flex 컨테이너(담당자 셀 등)에서 쓰는 정렬. */
-export function justifyClass(col: ToggleableColumn | 'summary'): string {
-  return COLUMN_ALIGN[col] === 'center' ? 'justify-center' : 'justify-start'
+export function justifyClass(_col: ToggleableColumn | 'summary'): string {
+  return 'justify-start'
 }
