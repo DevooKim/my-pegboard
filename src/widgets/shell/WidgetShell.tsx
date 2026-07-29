@@ -48,8 +48,18 @@ export function WidgetShell({
       >
         <h2 className="min-w-0 flex-1 truncate text-caption text-text-secondary">{title}</h2>
 
-        {isStale && fetchedAt && (
-          <span className="shrink-0 text-caption text-stale tabular-nums">
+        {/*
+          마지막으로 데이터를 가져온 시각. 새로고침 버튼 바로 왼쪽에 상시 표시한다 —
+          위치가 곧 의미다(이 버튼을 마지막으로 누른 것과 같은 효과가 일어난 시점).
+          stale일 때만 색이 앰버로 바뀐다.
+        */}
+        {fetchedAt && (
+          <span
+            className={`shrink-0 text-caption tabular-nums ${
+              isStale ? 'text-stale' : 'text-text-quaternary'
+            }`}
+            title={`마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}`}
+          >
             {relativeTime(fetchedAt)}
           </span>
         )}

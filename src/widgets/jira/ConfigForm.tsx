@@ -39,6 +39,14 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
           className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
                      text-body text-text-primary"
         >
+          {/*
+            프리셋을 아직 못 불러왔는데 현재 설정이 프리셋이면, 그 id를 임시 옵션으로
+            넣어둔다. 안 그러면 select가 매칭되는 option을 못 찾아 마지막 항목(RAW)을
+            고른 것처럼 보이고, 사용자가 건드리지도 않은 설정이 바뀐 듯 보인다.
+          */}
+          {presets.length === 0 && selected !== RAW && (
+            <option value={selected}>불러오는 중…</option>
+          )}
           {presets.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}

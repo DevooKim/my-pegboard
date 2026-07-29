@@ -51,7 +51,7 @@ export function App() {
           <Settings size={14} />
         </button>
       </header>
-      {ready && <Board onOpenSettings={openSettings} />}
+      {ready && <Board />}
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

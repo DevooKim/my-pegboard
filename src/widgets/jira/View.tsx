@@ -1,8 +1,11 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useCallback, useMemo } from 'react'
 import type { JiraIssue, JiraWidgetConfig } from '#/ipc/bindings'
+import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import type { WidgetViewProps } from '#/widgets/types'
+import { ColumnHeader } from './ColumnHeader'
+import { type ColumnWidths, withDefaults } from './columns'
 import { IssueRow } from './IssueRow'
 
 /**
@@ -13,11 +16,28 @@ import { IssueRow } from './IssueRow'
  * 차이이자 이 앱의 존재 이유다.
  */
 export function JiraView({
+  widgetId,
   config,
   envelope,
   width,
 }: WidgetViewProps<JiraWidgetConfig, { issues: JiraIssue[] }>) {
   const baseUrl = useConnectionStore((s) => s.jiraBaseUrl)
+  const updateConfig = useBoardStore((s) => s.updateWidgetConfig)
+
+  // 열 너비는 위젯 설정에 저장된다 — 위젯마다 다르게 둘 수 있다.
+  const widths = withDefaults(
+    (config as JiraWidgetConfig & { columnWidths?: Partial<ColumnWidths> }).columnWidths,
+  )
+
+  const resizeColumn = useCallback(
+    (col: keyof ColumnWidths, px: number) => {
+      updateConfig(widgetId, {
+        ...(config as unknown as Record<string, unknown>),
+        columnWidths: { ...widths, [col]: px },
+      })
+    },
+    [widgetId, config, widths, updateConfig],
+  )
 
   const density = useMemo<'compact' | 'normal' | 'wide'>(() => {
     // DESIGN.md 4.7 — 실측 기준. 3열≈240px, 5열≈420px.
@@ -49,10 +69,11 @@ export function JiraView({
 
   return (
     <div className="flex h-full flex-col">
+      <ColumnHeader widths={widths} density={density} onResize={resizeColumn} />
       <ul className="min-h-0 flex-1 overflow-y-auto">
         {issues.map((issue) => (
           <li key={issue.key}>
-            <IssueRow issue={issue} density={density} onOpen={openIssue} />
+            <IssueRow issue={issue} density={density} widths={widths} onOpen={openIssue} />
           </li>
         ))}
       </ul>

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useJiraData } from '#/widgets/jira/useJiraData'
 import { tryGetWidget } from '#/widgets/registry'
+import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
 import { WidgetShell } from '#/widgets/shell/WidgetShell'
 import type { WidgetInstance } from '#/widgets/types'
 
@@ -14,16 +15,12 @@ const DEFAULT_REFRESH_MS = 5 * 60 * 1000
  * 데이터 수명주기를 타입별로 갈아끼우되, 껍데기와 레이아웃은 공통이다.
  * 지금은 jira만 데이터 훅이 있고 나머지는 후속.
  */
-export function WidgetHost({
-  widget,
-  onOpenSettings,
-}: {
-  widget: WidgetInstance
-  onOpenSettings: () => void
-}) {
+export function WidgetHost({ widget }: { widget: WidgetInstance }) {
   const definition = tryGetWidget(widget.type)
   const removeWidget = useBoardStore((s) => s.removeWidget)
   const [width, setWidth] = useState(0)
+  const [configuring, setConfiguring] = useState(false)
+  const openConfig = useCallback(() => setConfiguring(true), [])
   const ref = useRef<HTMLDivElement | null>(null)
 
   // 본문 폭을 재서 View에 넘긴다 — 밀도 전환의 근거(DESIGN.md 4.7).
@@ -53,7 +50,7 @@ export function WidgetHost({
           widget={widget}
           width={width}
           onRemove={() => removeWidget(widget.id)}
-          onConfigure={onOpenSettings}
+          onConfigure={openConfig}
         />
       ) : (
         <WidgetShell
@@ -62,7 +59,7 @@ export function WidgetHost({
           fetchedAt={null}
           pollable={definition.pollable}
           onRefresh={() => {}}
-          onConfigure={onOpenSettings}
+          onConfigure={openConfig}
           onRemove={() => removeWidget(widget.id)}
         >
           <div className="grid h-full place-items-center text-caption text-text-tertiary">
@@ -70,6 +67,10 @@ export function WidgetHost({
           </div>
         </WidgetShell>
       )}
+      <WidgetConfigModal
+        widget={configuring ? widget : null}
+        onClose={() => setConfiguring(false)}
+      />
     </div>
   )
 }
