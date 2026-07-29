@@ -1,4 +1,3 @@
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JiraIssue, JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
@@ -62,11 +61,9 @@ export function JiraView({
     return 'wide'
   }, [width])
 
-  const openIssue = useCallback(
-    (key: string) => {
-      if (!baseUrl) return
-      void openUrl(`${baseUrl.replace(/\/$/, '')}/browse/${key}`)
-    },
+  // 티켓 키 → Jira 웹 URL. 연결 설정이 없으면 링크가 아니라 평범한 텍스트가 된다.
+  const browseUrl = useCallback(
+    (key: string) => (baseUrl ? `${baseUrl.replace(/\/$/, '')}/browse/${key}` : null),
     [baseUrl],
   )
 
@@ -97,7 +94,7 @@ export function JiraView({
               density={density}
               widths={widths}
               visible={visible}
-              onOpen={openIssue}
+              browseUrl={browseUrl}
             />
           </li>
         ))}

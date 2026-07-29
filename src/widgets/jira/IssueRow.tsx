@@ -1,3 +1,4 @@
+import { openUrl } from '@tauri-apps/plugin-opener'
 import type { JiraIssue } from '#/ipc/bindings'
 import { absoluteDate, absoluteTime, relativeTime } from '#/ui/relativeTime'
 import {
@@ -20,25 +21,25 @@ export function IssueRow({
   density,
   widths,
   visible,
-  onOpen,
+  browseUrl,
 }: {
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
   widths: ColumnWidths
   visible: ToggleableColumn[]
-  onOpen: (key: string) => void
+  /** 티켓 키 → Jira 웹 URL. 연결이 없으면 null. */
+  browseUrl: (key: string) => string | null
 }) {
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
   const statusCategory = issue.status?.statusCategory?.key ?? 'new'
   const shown = renderedColumns(density, visible)
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(issue.key)}
-      className="group grid w-full items-center gap-2 rounded py-1.5 pr-2 pl-3 text-left
-                 transition-colors duration-fast hover:bg-surface-inset
-                 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+    // 행 자체는 클릭 대상이 아니다. 키와 상위만 Jira로 나가는 링크이고,
+    // 제목 클릭(상세 모달)은 2차에서 붙는다.
+    <div
+      className="grid w-full items-center gap-2 rounded py-1.5 pr-2 pl-3 text-left
+                 transition-colors duration-fast hover:bg-surface-inset"
       style={{
         // 우선순위 막대를 border가 아니라 배경 그라디언트로 그린다.
         // `border-left` + `rounded` 조합은 둥근 모서리에서 테두리가 네 변을 돌기
@@ -51,12 +52,7 @@ export function IssueRow({
     >
       {shown.map((col) =>
         col === 'key' ? (
-          <span
-            key={col}
-            className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums"
-          >
-            {issue.key}
-          </span>
+          <IssueLink key={col} issueKey={issue.key} href={browseUrl(issue.key)} mono />
         ) : null,
       )}
 
@@ -77,9 +73,58 @@ export function IssueRow({
             issue={issue}
             density={density}
             statusCategory={statusCategory}
+            browseUrl={browseUrl}
           />
         ))}
-    </button>
+    </div>
+  )
+}
+
+/**
+ * Jira로 나가는 티켓 링크.
+ *
+ * 버튼이 아니라 링크인 이유: 실제로 다른 문서로 이동하는 동작이고,
+ * 버튼처럼 보이지 않아야 목록의 밀도를 해치지 않는다. 평소에는 그냥
+ * 텍스트이고 마우스를 올렸을 때만 밑줄이 생긴다.
+ *
+ * `href`를 두는 이유는 우클릭 메뉴와 상태바 미리보기를 살리기 위해서다.
+ * 다만 기본 이동은 막는다 — 그대로 두면 Tauri 웹뷰가 **앱 창 안에서**
+ * Jira를 열어버려서 돌아올 방법이 없다.
+ */
+function IssueLink({
+  issueKey,
+  href,
+  mono,
+  title,
+}: {
+  issueKey: string
+  href: string | null
+  mono?: boolean
+  title?: string
+}) {
+  const base = `min-w-0 truncate text-caption text-text-tertiary ${mono ? 'font-mono text-ticket-key tabular-nums' : ''}`
+
+  if (!href) {
+    return (
+      <span className={base} title={title}>
+        {issueKey}
+      </span>
+    )
+  }
+
+  return (
+    <a
+      href={href}
+      title={title ?? `${issueKey} — Jira에서 열기`}
+      onClick={(e) => {
+        e.preventDefault()
+        void openUrl(href)
+      }}
+      className={`${base} cursor-pointer hover:text-accent hover:underline
+                  focus-visible:outline-2 focus-visible:outline-accent`}
+    >
+      {issueKey}
+    </a>
   )
 }
 
@@ -95,11 +140,13 @@ function Cell({
   issue,
   density,
   statusCategory,
+  browseUrl,
 }: {
   col: ToggleableColumn
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
   statusCategory: string
+  browseUrl: (key: string) => string | null
 }) {
   switch (col) {
     case 'issueType':
@@ -161,15 +208,15 @@ function Cell({
       )
 
     case 'parent':
-      return (
-        <span
-          className="min-w-0 truncate font-mono text-caption text-text-tertiary"
-          title={
-            issue.parent ? `${issue.parent.key} ${issue.parent.summary ?? ''}`.trim() : undefined
-          }
-        >
-          {issue.parent?.key ?? '—'}
-        </span>
+      return issue.parent ? (
+        <IssueLink
+          issueKey={issue.parent.key}
+          href={browseUrl(issue.parent.key)}
+          mono
+          title={`${issue.parent.key} ${issue.parent.summary ?? ''}`.trim()}
+        />
+      ) : (
+        <span className="text-caption text-text-quaternary">—</span>
       )
 
     case 'updated':
