@@ -16,6 +16,17 @@ async jiraPresets() : Promise<Preset[]> {
     return await TAURI_INVOKE("jira_presets");
 },
 /**
+ * 프로젝트 목록. 위젯 설정의 범위 선택을 채운다.
+ */
+async jiraProjects() : Promise<Result<JiraProject[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_projects") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Jira 연결이 설정돼 있는가. 설정 안내를 띄울지 결정한다.
  */
 async jiraIsConfigured() : Promise<Result<boolean, string>> {
@@ -139,6 +150,14 @@ updated: string | null }
 export type JiraIssueType = { name: string; iconUrl?: string | null; subtask?: boolean }
 export type JiraPriority = { name: string; iconUrl?: string | null }
 /**
+ * 프로젝트 선택 드롭다운 한 항목.
+ */
+export type JiraProject = { 
+/**
+ * `ABC`. JQL에 그대로 들어가는 값이다.
+ */
+key: string; name: string }
+/**
  * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 JQL이거나 둘 중 하나.
  * 
  * 프리셋을 JQL 문자열로 굳혀 저장하지 않는 이유: 나중에 프리셋 정의를 고치면
@@ -192,7 +211,14 @@ export type JiraWidgetConfig = { query: JiraQuery;
 /**
  * DECISIONS 11.2 — 기본 30건.
  */
-maxResults: number }
+maxResults: number; 
+/**
+ * 프로젝트 키로 범위를 좁힌다. 빈 목록이면 전체.
+ * 
+ * 쿼리와 분리해서 두는 이유: 프리셋이든 생 JQL이든 똑같이 적용돼야 한다.
+ * 프리셋마다 프로젝트별 변종을 만드는 것은 조합 폭발이다.
+ */
+projects?: string[] }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  * 

@@ -697,3 +697,25 @@ pub const DETAIL_FIELDS: &[&str] = &[
 #[cfg(test)]
 #[path = "tests/types_tests.rs"]
 mod types_tests;
+
+// ---------------------------------------------------------------------------
+// 프로젝트 목록 (위젯 범위 좁히기용)
+// ---------------------------------------------------------------------------
+
+/// 프로젝트 선택 드롭다운 한 항목.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraProject {
+    /// `ABC`. JQL에 그대로 들어가는 값이다.
+    pub key: String,
+    pub name: String,
+}
+
+/// `/rest/api/3/project/search` 응답 중 우리가 쓰는 부분.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ProjectSearchPage {
+    #[serde(default)]
+    pub values: Vec<JiraProject>,
+    #[serde(default)]
+    pub is_last: bool,
+}

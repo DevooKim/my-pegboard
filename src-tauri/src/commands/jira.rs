@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::providers::jira::{JiraClient, JiraError, JiraIssue, JiraQuery, Preset, LIST_FIELDS};
+use crate::providers::jira::{
+    JiraClient, JiraError, JiraIssue, JiraProject, JiraQuery, Preset, LIST_FIELDS,
+};
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
 
@@ -43,6 +45,12 @@ pub struct JiraWidgetConfig {
     pub query: JiraQuery,
     /// DECISIONS 11.2 — 기본 30건.
     pub max_results: u32,
+    /// 프로젝트 키로 범위를 좁힌다. 빈 목록이면 전체.
+    ///
+    /// 쿼리와 분리해서 두는 이유: 프리셋이든 생 JQL이든 똑같이 적용돼야 한다.
+    /// 프리셋마다 프로젝트별 변종을 만드는 것은 조합 폭발이다.
+    #[serde(default)]
+    pub projects: Vec<String>,
 }
 
 impl Default for JiraWidgetConfig {
@@ -50,6 +58,7 @@ impl Default for JiraWidgetConfig {
         Self {
             query: crate::providers::jira::default_query(),
             max_results: 30,
+            projects: Vec::new(),
         }
     }
 }
@@ -59,6 +68,17 @@ impl Default for JiraWidgetConfig {
 #[specta::specta]
 pub fn jira_presets() -> Vec<Preset> {
     Preset::all().to_vec()
+}
+
+/// 프로젝트 목록. 위젯 설정의 범위 선택을 채운다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_projects(state: State<'_, AppState>) -> Result<Vec<JiraProject>, String> {
+    let Some(creds) = state.jira_credentials()? else {
+        return Ok(Vec::new());
+    };
+    let client = JiraClient::with_http_client(state.http.clone(), creds);
+    client.list_projects().await.map_err(|e| e.to_string())
 }
 
 /// Jira 연결이 설정돼 있는가. 설정 안내를 띄울지 결정한다.
@@ -142,6 +162,7 @@ pub async fn jira_fetch(
             None,
         ));
     };
+    let jql = scope_to_projects(&jql, &config.projects);
 
     let client = JiraClient::with_http_client(state.http.clone(), creds);
     match client
@@ -220,5 +241,112 @@ fn to_widget_error(state: &AppState, widget_id: &str, e: JiraError) -> JiraWidge
         is_auth_failure: e.is_auth_failure(),
         retry_after_secs: e.retry_after_secs(),
         stale,
+    }
+}
+
+/// 프로젝트 범위를 JQL 앞에 붙인다.
+///
+/// `ORDER BY` 앞에 끼워 넣어야 한다 — 뒤에 붙이면 문법 오류다.
+/// 원본 조건은 괄호로 감싼다. `A OR B`에 `project = X AND`를 그냥 이으면
+/// 연산자 우선순위 때문에 전혀 다른 쿼리가 된다.
+fn scope_to_projects(jql: &str, projects: &[String]) -> String {
+    if projects.is_empty() {
+        return jql.to_owned();
+    }
+
+    // 프로젝트 키는 Jira 규칙상 영숫자와 밑줄뿐이다. 그 외 문자가 섞인 값은
+    // 우리 UI가 만든 것이 아니므로(손으로 고친 board.json 등) 버린다.
+    // 따옴표 이스케이프로 막는 것보다 화이트리스트가 확실하다.
+    let keys = projects
+        .iter()
+        .filter(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        .map(|k| format!("\"{k}\""))
+        .collect::<Vec<_>>();
+
+    if keys.is_empty() {
+        return jql.to_owned();
+    }
+    let scope = format!("project IN ({})", keys.join(", "));
+
+    // ORDER BY는 대소문자를 가리지 않는다.
+    let split = jql
+        .to_uppercase()
+        .find(" ORDER BY ")
+        .map(|i| jql.split_at(i));
+
+    match split {
+        Some((conditions, order)) => {
+            let c = conditions.trim();
+            if c.is_empty() {
+                format!("{scope}{order}")
+            } else {
+                format!("{scope} AND ({c}){order}")
+            }
+        }
+        None => {
+            let c = jql.trim();
+            if c.is_empty() {
+                scope
+            } else {
+                format!("{scope} AND ({c})")
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::scope_to_projects;
+
+    #[test]
+    fn empty_projects_leaves_jql_untouched() {
+        let jql = "assignee = currentUser() ORDER BY updated DESC";
+        assert_eq!(scope_to_projects(jql, &[]), jql);
+    }
+
+    #[test]
+    fn scope_goes_before_order_by_not_after() {
+        // ORDER BY 뒤에 조건을 붙이면 Jira가 400을 낸다.
+        let out = scope_to_projects(
+            "assignee = currentUser() ORDER BY updated DESC",
+            &["ABC".into()],
+        );
+        assert_eq!(
+            out,
+            "project IN (\"ABC\") AND (assignee = currentUser()) ORDER BY updated DESC"
+        );
+    }
+
+    #[test]
+    fn original_conditions_are_parenthesised() {
+        // 괄호가 없으면 `X AND A OR B`가 되어 B가 프로젝트 밖으로 새어나간다.
+        let out = scope_to_projects("a = 1 OR b = 2", &["XYZ".into()]);
+        assert_eq!(out, "project IN (\"XYZ\") AND (a = 1 OR b = 2)");
+    }
+
+    #[test]
+    fn multiple_projects_are_comma_separated() {
+        let out = scope_to_projects("x = 1", &["ABC".into(), "XYZ".into()]);
+        assert_eq!(out, "project IN (\"ABC\", \"XYZ\") AND (x = 1)");
+    }
+
+    #[test]
+    fn handles_lowercase_order_by() {
+        let out = scope_to_projects("x = 1 order by created", &["ABC".into()]);
+        assert!(out.starts_with("project IN (\"ABC\") AND (x = 1)"));
+        assert!(out.ends_with(" order by created"));
+    }
+
+    #[test]
+    fn malformed_project_keys_are_dropped_entirely() {
+        // 손으로 고친 board.json에서 올 수 있는 값. 이스케이프가 아니라 거부한다.
+        let out = scope_to_projects("x = 1", &["A\" OR y = 2 OR \"".into()]);
+        assert_eq!(out, "x = 1", "잘못된 키는 무시돼야 한다: {out}");
+    }
+
+    #[test]
+    fn valid_keys_survive_alongside_invalid_ones() {
+        let out = scope_to_projects("x = 1", &["ABC".into(), "bad key!".into()]);
+        assert_eq!(out, "project IN (\"ABC\") AND (x = 1)");
     }
 }

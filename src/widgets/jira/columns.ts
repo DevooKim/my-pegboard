@@ -47,11 +47,16 @@ export function gridTemplate(widths: ColumnWidths, density: 'compact' | 'normal'
   return cols.join(' ')
 }
 
-/** 밀도별로 실제 존재하는, 드래그 가능한 열 경계. */
+/**
+ * 밀도별로 조절 가능한 열.
+ *
+ * `updated`는 항상 마지막 열이라 오른쪽에 경계가 없다 — 핸들을 놓을 자리가
+ * 없으므로 조절 대상에서 뺀다. compact에서는 상태가 6px 점으로 축약되므로
+ * 조절할 것이 없다.
+ */
 export function resizableColumns(
   density: 'compact' | 'normal' | 'wide',
 ): Array<keyof ColumnWidths> {
   if (density === 'compact') return ['key', 'assignee']
-  if (density === 'normal') return ['key', 'status', 'assignee']
-  return ['key', 'status', 'assignee', 'updated']
+  return ['key', 'status', 'assignee']
 }

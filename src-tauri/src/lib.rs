@@ -31,6 +31,7 @@ pub fn run() {
     let specta = SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![
         commands::app_info,
         commands::jira::jira_presets,
+            commands::jira::jira_projects,
         commands::jira::jira_is_configured,
         commands::jira::jira_verify,
         commands::jira::jira_save_credentials,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { commands, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
+import { commands, type JiraProject, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
 import type { WidgetConfigFormProps } from '#/widgets/types'
 
 const RAW = '__raw__'
@@ -13,10 +13,22 @@ const RAW = '__raw__'
  */
 export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraWidgetConfig>) {
   const [presets, setPresets] = useState<Preset[]>([])
+  const [projects, setProjects] = useState<JiraProject[]>([])
 
   useEffect(() => {
     void commands.jiraPresets().then(setPresets)
+    void commands.jiraProjects().then((r) => {
+      if (r.status === 'ok') setProjects(r.data)
+    })
   }, [])
+
+  const scoped = config.projects ?? []
+  const toggleProject = (key: string) => {
+    onChange({
+      ...config,
+      projects: scoped.includes(key) ? scoped.filter((k) => k !== key) : [...scoped, key],
+    })
+  }
 
   const selected = config.query.kind === 'preset' ? config.query.id : RAW
 
@@ -36,7 +48,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
                   : { kind: 'preset', id: v },
             })
           }}
-          className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
+          className="rounded border border-border-subtle bg-surface-inset px-2 py-2
                      text-body text-text-primary"
         >
           {/*
@@ -81,6 +93,42 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         </label>
       )}
 
+      {/*
+        프로젝트 범위. 쿼리와 분리해 둔 이유는 프리셋이든 생 JQL이든
+        똑같이 적용돼야 하기 때문이다 — 프리셋마다 프로젝트별 변종을
+        만들면 조합 폭발이 된다.
+      */}
+      <div className="flex flex-col gap-1">
+        <span className="text-caption text-text-secondary">프로젝트</span>
+        {projects.length === 0 ? (
+          <span className="text-caption text-text-tertiary">불러오는 중…</span>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            <Chip
+              active={scoped.length === 0}
+              onClick={() => onChange({ ...config, projects: [] })}
+            >
+              전체
+            </Chip>
+            {projects.map((p) => (
+              <Chip
+                key={p.key}
+                active={scoped.includes(p.key)}
+                onClick={() => toggleProject(p.key)}
+                title={p.name}
+              >
+                {p.key}
+              </Chip>
+            ))}
+          </div>
+        )}
+        <span className="text-caption text-text-tertiary">
+          {scoped.length === 0
+            ? '모든 프로젝트에서 검색합니다'
+            : `${scoped.join(', ')} 로 범위를 좁힙니다`}
+        </span>
+      </div>
+
       <label className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">표시 개수</span>
         <input
@@ -94,7 +142,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
             const n = Number(e.target.value)
             if (Number.isFinite(n)) onChange({ ...config, maxResults: clamp(n, 5, 100) })
           }}
-          className="w-24 rounded border border-border-subtle bg-surface-inset px-2 py-1.5
+          className="w-24 rounded border border-border-subtle bg-surface-inset px-2 py-1
                      text-body text-text-primary tabular-nums"
         />
         <span className="text-caption text-text-tertiary">
@@ -114,6 +162,33 @@ function currentJql(config: JiraWidgetConfig, presets: Preset[]): string {
   const q = config.query
   if (q.kind === 'raw') return q.jql
   return presets.find((p) => p.id === q.id)?.jql ?? ''
+}
+
+function Chip({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  title?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`rounded border px-2 py-0.5 text-caption transition-colors duration-fast ${
+        active
+          ? 'border-accent bg-accent/15 text-accent'
+          : 'border-border-subtle text-text-tertiary hover:bg-surface-inset'
+      }`}
+    >
+      {children}
+    </button>
+  )
 }
 
 function clamp(n: number, lo: number, hi: number): number {

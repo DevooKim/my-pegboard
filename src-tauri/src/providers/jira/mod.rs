@@ -58,5 +58,5 @@ pub use presets::{default_query, JiraQuery, Preset, PRESETS};
 pub use types::{
     Adf, AllowedValue, CommentPage, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue,
     JiraComment, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType, JiraPriority, JiraStatus,
-    JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraProject, JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
 };

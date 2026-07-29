@@ -17,7 +17,7 @@ use std::time::Duration;
 use super::error::{parse_retry_after, JiraError};
 use super::types::{
     CommentPage, CreateIssueInput, CreateMeta, CreatedIssue, JiraIdentity, JiraIssueDetail,
-    SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraProject, ProjectSearchPage, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
 };
 
 /// 요청 타임아웃. 위젯 체감 목표가 1초(CLAUDE.md 성능표)이므로
@@ -327,6 +327,40 @@ impl JiraClient {
             .await
             .map_err(JiraError::from)?;
         Self::handle(response, "comment").await
+    }
+
+    /// 사용자가 볼 수 있는 프로젝트 목록.
+    ///
+    /// 위젯 범위를 좁히는 데 쓴다 — "현재 스프린트 전체"가 285건이면
+    /// 위젯 하나에 담기지 않으므로 프로젝트로 거를 수 있어야 한다.
+    /// 페이지네이션은 끝까지 따라간다(보통 한 페이지에 끝난다).
+    pub async fn list_projects(&self) -> Result<Vec<JiraProject>, JiraError> {
+        let mut all = Vec::new();
+        let mut start_at = 0u32;
+
+        loop {
+            let response = self
+                .get("/rest/api/3/project/search")
+                .query(&[
+                    ("maxResults", "50"),
+                    ("startAt", &start_at.to_string()),
+                    ("orderBy", "key"),
+                ])
+                .send()
+                .await
+                .map_err(JiraError::from)?;
+            let page: ProjectSearchPage = Self::handle(response, "project/search").await?;
+
+            let fetched = page.values.len() as u32;
+            all.extend(page.values);
+
+            // is_last를 믿되, 빈 페이지가 오면 무한 루프를 끊는다.
+            if page.is_last || fetched == 0 {
+                break;
+            }
+            start_at += fetched;
+        }
+        Ok(all)
     }
 
     /// 생성 폼 스키마 조회 (DECISIONS 11.3).
