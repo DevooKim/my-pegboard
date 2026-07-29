@@ -31,7 +31,6 @@ export function IssueRow({
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
   const statusCategory = issue.status?.statusCategory?.key ?? 'new'
   const shown = renderedColumns(density, visible)
-  const has = (c: ToggleableColumn) => shown.includes(c)
 
   return (
     <button
@@ -45,12 +44,18 @@ export function IssueRow({
         gridTemplateColumns: gridTemplate(widths, density, visible),
       }}
     >
-      {has('key') && (
-        <span className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums">
-          {issue.key}
-        </span>
+      {shown.map((col) =>
+        col === 'key' ? (
+          <span
+            key={col}
+            className="min-w-0 truncate font-mono text-ticket-key text-text-tertiary tabular-nums"
+          >
+            {issue.key}
+          </span>
+        ) : null,
       )}
 
+      {/* 제목은 항상, 그리고 키 바로 다음에 온다 */}
       <span
         className="min-w-0 truncate text-body text-text-primary leading-tight-ko"
         title={issue.summary}
@@ -58,79 +63,130 @@ export function IssueRow({
         {issue.summary}
       </span>
 
-      {has('issueType') && (
+      {shown
+        .filter((c) => c !== 'key')
+        .map((col) => (
+          <Cell
+            key={col}
+            col={col}
+            issue={issue}
+            density={density}
+            statusCategory={statusCategory}
+          />
+        ))}
+    </button>
+  )
+}
+
+/**
+ * 열 하나의 내용.
+ *
+ * 행과 헤더가 **같은 `renderedColumns()` 순서를 map으로 돌기 때문에** 어긋날 수 없다.
+ * 예전에는 셀을 순서대로 하드코딩했는데, 열을 추가하면서 스프린트·상위를 빠뜨려
+ * 뒤의 값들이 한 칸씩 밀렸다. 그 사고를 구조적으로 막는다.
+ */
+function Cell({
+  col,
+  issue,
+  density,
+  statusCategory,
+}: {
+  col: ToggleableColumn
+  issue: JiraIssue
+  density: 'compact' | 'normal' | 'wide'
+  statusCategory: string
+}) {
+  switch (col) {
+    case 'issueType':
+      return (
         <span
           className="min-w-0 truncate text-caption text-text-tertiary"
           title={issue.issueType?.name ?? undefined}
         >
           {issue.issueType?.name ?? '—'}
         </span>
-      )}
+      )
 
-      {has('status') &&
-        (density === 'compact' ? (
-          <span
-            role="img"
-            className="size-1.5 rounded-full"
-            style={{ backgroundColor: statusColor(statusCategory) }}
-            title={issue.status?.name ?? '상태 없음'}
-            aria-label={issue.status?.name ?? '상태 없음'}
-          />
-        ) : (
-          <span
-            className="min-w-0 truncate rounded px-1.5 py-0.5 text-center text-caption"
-            style={{
-              color: statusColor(statusCategory),
-              backgroundColor: statusMuted(statusCategory),
-            }}
-          >
-            {issue.status?.name ?? '—'}
-          </span>
-        ))}
-
-      {has('priority') && (
+    case 'status':
+      return density === 'compact' ? (
         <span
-          className="min-w-0 truncate text-caption"
-          style={{ color: priorityColor(issue.priority?.name) || undefined }}
+          role="img"
+          className="size-1.5 rounded-full"
+          style={{ backgroundColor: statusColor(statusCategory) }}
+          title={issue.status?.name ?? '상태 없음'}
+          aria-label={issue.status?.name ?? '상태 없음'}
+        />
+      ) : (
+        <span
+          className="min-w-0 truncate rounded px-1.5 py-0.5 text-center text-caption"
+          style={{
+            color: statusColor(statusCategory),
+            backgroundColor: statusMuted(statusCategory),
+          }}
+        >
+          {issue.status?.name ?? '—'}
+        </span>
+      )
+
+    case 'priority':
+      // 색은 왼쪽 막대가 이미 말하고 있다. 여기까지 칠하면 같은 정보가 두 번
+      // 소리치고, 행에서 정작 눈에 띄어야 할 것(상태·마감)이 묻힌다.
+      return (
+        <span
+          className="min-w-0 truncate text-center text-caption text-text-tertiary"
           title={issue.priority?.name ?? undefined}
         >
           {priorityLabel(issue.priority?.name)}
         </span>
-      )}
+      )
 
-      {has('assignee') && <Assignee issue={issue} showName={density === 'wide'} />}
+    case 'assignee':
+      return <Assignee issue={issue} showName={density === 'wide'} />
 
-      {/*
-        티켓이 마지막으로 수정된 시각. 헤더의 "갱신 시각"과 헷갈리지 않도록
-        title로 무엇의 시간인지 밝힌다. 목록이 updated DESC로 정렬돼 있으므로
-        정보 가치가 크지 않아 넓을 때만 보여준다.
-      */}
-      {has('updated') && (
+    case 'sprint':
+      return (
         <span
-          className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
+          className="min-w-0 truncate text-caption text-text-tertiary"
+          title={issue.sprint?.name ?? undefined}
+        >
+          {issue.sprint?.name ?? '—'}
+        </span>
+      )
+
+    case 'parent':
+      return (
+        <span
+          className="min-w-0 truncate font-mono text-caption text-text-tertiary"
           title={
-            issue.updated
-              ? `티켓 수정: ${new Date(issue.updated).toLocaleString('ko-KR')}`
-              : undefined
+            issue.parent ? `${issue.parent.key} ${issue.parent.summary ?? ''}`.trim() : undefined
           }
         >
-          {issue.updated ? relativeTime(issue.updated) : '—'}
+          {issue.parent?.key ?? '—'}
         </span>
-      )}
+      )
 
-      {has('created') && (
-        <span
-          className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
-          title={
-            issue.created ? `생성: ${new Date(issue.created).toLocaleString('ko-KR')}` : undefined
-          }
-        >
-          {issue.created ? relativeTime(issue.created) : '—'}
-        </span>
-      )}
+    case 'updated':
+      return <RelativeCell value={issue.updated} label="티켓 수정" />
 
-      {has('dueDate') && <DueDate value={issue.dueDate} />}
-    </button>
+    case 'created':
+      return <RelativeCell value={issue.created} label="생성" />
+
+    case 'dueDate':
+      return <DueDate value={issue.dueDate} />
+
+    default:
+      return null
+  }
+}
+
+function RelativeCell({ value, label }: { value: string | null | undefined; label: string }) {
+  return (
+    <span
+      className="min-w-0 truncate text-caption text-text-quaternary tabular-nums"
+      title={value ? `${label}: ${new Date(value).toLocaleString('ko-KR')}` : undefined}
+    >
+      {value ? relativeTime(value) : '—'}
+    </span>
   )
 }
 

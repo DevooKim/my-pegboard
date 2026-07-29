@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   clampColumn,
   DEFAULT_COLUMN_WIABCS,
+  DEFAULT_VISIBLE_COLUMNS,
   gridTemplate,
   MAX_COLUMN_WIABC,
   MIN_COLUMN_WIABC,
   nextWidth,
+  renderedColumns,
   resizableColumns,
+  TOGGLEABLE_COLUMNS,
+  type ToggleableColumn,
   withDefaults,
 } from '#/widgets/jira/columns'
 
@@ -100,5 +104,51 @@ describe('resizableColumns', () => {
     // 명시적으로 켠 경우에도 마찬가지다.
     expect(resizableColumns('normal', ['key', 'updated'])).not.toContain('updated')
     expect(resizableColumns('wide', ['key', 'updated'])).toContain('updated')
+  })
+})
+
+describe('헤더와 행의 열 정렬', () => {
+  /**
+   * 실제로 겪은 버그: 열을 추가하면서 행에 스프린트·상위 셀을 빠뜨려
+   * 뒤의 값들이 한 칸씩 왼쪽으로 밀렸다. 헤더는 5칸인데 데이터는 4칸이었다.
+   *
+   * 이제 헤더와 행이 같은 renderedColumns()를 map으로 돌기 때문에
+   * 구조적으로 어긋날 수 없다. 그 계약을 여기서 고정한다.
+   */
+  const densities = ['compact', 'normal', 'wide'] as const
+
+  it('grid 열 개수가 렌더 열 개수 + 제목과 항상 일치한다', () => {
+    for (const d of densities) {
+      for (const visible of [
+        DEFAULT_VISIBLE_COLUMNS,
+        TOGGLEABLE_COLUMNS.slice(),
+        ['key'] as ToggleableColumn[],
+        ['sprint', 'dueDate'] as ToggleableColumn[],
+        [] as ToggleableColumn[],
+      ]) {
+        const tracks = gridTemplate(DEFAULT_COLUMN_WIABCS, d, visible)
+          // minmax(0, 1fr)에 공백이 있어 단순 split이 안 된다
+          .replace(/minmax\([^)]*\)/g, 'FR')
+          .split(/\s+/)
+          .filter(Boolean)
+        const cells = renderedColumns(d, visible).length + 1 // +1 = 제목
+        expect(tracks).toHaveLength(cells)
+      }
+    }
+  })
+
+  it('렌더 순서는 TOGGLEABLE_COLUMNS 순서를 따른다 (설정에서 고른 순서가 아니라)', () => {
+    // 사용자가 아무 순서로 켜도 화면 순서는 일정해야 한다.
+    const shuffled = ['dueDate', 'key', 'sprint', 'status'] as ToggleableColumn[]
+    expect(renderedColumns('wide', shuffled)).toEqual(['key', 'status', 'sprint', 'dueDate'])
+  })
+
+  it('조절 가능한 열은 항상 렌더되는 열의 부분집합이다', () => {
+    for (const d of densities) {
+      const rendered = renderedColumns(d, TOGGLEABLE_COLUMNS.slice())
+      for (const c of resizableColumns(d, TOGGLEABLE_COLUMNS.slice())) {
+        expect(rendered).toContain(c)
+      }
+    }
   })
 })
