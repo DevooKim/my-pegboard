@@ -56,6 +56,7 @@ describe('헤더와 행의 글자 시작점', () => {
         density="wide"
         widths={DEFAULT_COLUMN_WIABCS}
         visible={visible}
+        now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
       />,
     )
@@ -77,6 +78,7 @@ describe('헤더와 행의 글자 시작점', () => {
         density="wide"
         widths={DEFAULT_COLUMN_WIABCS}
         visible={visible}
+        now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
       />,
     )
@@ -111,6 +113,7 @@ describe('헤더와 행의 글자 시작점', () => {
         density="wide"
         widths={DEFAULT_COLUMN_WIABCS}
         visible={visible}
+        now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
       />,
     )
@@ -144,6 +147,7 @@ describe('헤더와 행의 글자 시작점', () => {
         density="wide"
         widths={DEFAULT_COLUMN_WIABCS}
         visible={visible}
+        now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
       />,
     )

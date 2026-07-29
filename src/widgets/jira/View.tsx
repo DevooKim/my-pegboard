@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JiraIssue, JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
+import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
 import { ColumnHeader } from './ColumnHeader'
 import { type ColumnWidths, visibleColumns, withDefaults } from './columns'
@@ -28,6 +29,8 @@ export function JiraView({
     (config as JiraWidgetConfig & { columnWidths?: Partial<ColumnWidths> }).columnWidths,
   )
 
+  // 행의 상대 시간도 1분마다 갱신한다. key로 넘겨 IssueRow를 다시 그린다.
+  const now = useNow()
   const visible = visibleColumns(config.columns)
 
   // 목록에 스크롤바가 생기면 그만큼 헤더를 밀어줘야 열이 어긋나지 않는다.
@@ -85,7 +88,11 @@ export function JiraView({
       className="flex h-full flex-col"
       style={{ ['--pegboard-scrollbar' as string]: `${scrollbar}px` }}
     >
-      <ColumnHeader widths={widths} density={density} visible={visible} onResize={resizeColumn} />
+      {/* 목록에 스크롤바가 생기면 그만큼 헤더를 좁혀야 열이 어긋나지 않는다.
+          헤더 안쪽 패딩으로 하면 1fr이 넓어져 뒤 트랙이 밀리므로 바깥에서 준다. */}
+      <div style={{ paddingRight: scrollbar }}>
+        <ColumnHeader widths={widths} density={density} visible={visible} onResize={resizeColumn} />
+      </div>
       <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
         {issues.map((issue) => (
           <li key={issue.key}>
@@ -94,6 +101,7 @@ export function JiraView({
               density={density}
               widths={widths}
               visible={visible}
+              now={now}
               browseUrl={browseUrl}
             />
           </li>

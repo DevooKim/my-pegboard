@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 /**
  * "3분 전", "2시간 전". 절대 시각보다 짧고, 대시보드에서는 더 유용하다.
  *
@@ -58,4 +60,22 @@ export function absoluteDate(ymd: string): string {
     day: 'numeric',
     weekday: 'short',
   })
+}
+
+/**
+ * 1분마다 리렌더를 유발하는 훅.
+ *
+ * 상대 시간("방금", "15분 전")은 **데이터가 바뀌지 않아도 시간이 흐르면
+ * 틀린 값이 된다.** 자동 새로고침을 꺼두면 리렌더가 아예 일어나지 않아
+ * "방금"이 영원히 남는다 — 실제로 겪은 문제다.
+ *
+ * 1분 간격인 이유: relativeTime의 최소 단위가 분이라 그보다 잦게 돌 이유가 없다.
+ */
+export function useNow(intervalMs = 60_000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return now
 }

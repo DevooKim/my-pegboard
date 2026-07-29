@@ -22,12 +22,15 @@ export function IssueRow({
   density,
   widths,
   visible,
+  now,
   browseUrl,
 }: {
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
   widths: ColumnWidths
   visible: ToggleableColumn[]
+  /** 현재 시각(ms). 1분마다 바뀌어 상대 시간을 다시 계산하게 한다. */
+  now: number
   /** 티켓 키 → Jira 웹 URL. 연결이 없으면 null. */
   browseUrl: (key: string) => string | null
 }) {
@@ -76,6 +79,7 @@ export function IssueRow({
               issue={issue}
               density={density}
               statusCategory={statusCategory}
+              now={now}
               browseUrl={browseUrl}
             />
           </div>
@@ -144,12 +148,14 @@ function Cell({
   issue,
   density,
   statusCategory,
+  now,
   browseUrl,
 }: {
   col: ToggleableColumn
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
   statusCategory: string
+  now: number
   browseUrl: (key: string) => string | null
 }) {
   switch (col) {
@@ -176,10 +182,11 @@ function Cell({
         // 배지는 글자만 감싼다 — min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
         // 열 전체가 색칠된 것처럼 보인다.
         //
-        // `-ml-1.5`는 배지의 좌측 패딩(px-1.5 = 6px)을 정확히 상쇄한다.
-        // 배지 배경은 유지하되 **글자 시작점**은 헤더와 같은 x에 놓기 위해서다.
+        // 음수 마진으로 패딩을 상쇄하지 않는다. 그러면 배지 배경이 트랙 밖으로
+        // 삐져나가고 글자만 왼쪽으로 당겨져 오히려 이웃 열과 어긋나 보인다.
+        // 트랙 자체는 이미 헤더와 픽셀 단위로 일치한다(실측).
         <span
-          className="-ml-1.5 max-w-full truncate rounded px-1.5 py-0.5 text-caption"
+          className="max-w-full truncate rounded px-1.5 py-0.5 text-caption"
           style={{
             color: statusColor(statusCategory),
             backgroundColor: statusMuted(statusCategory),
@@ -229,26 +236,34 @@ function Cell({
       )
 
     case 'updated':
-      return <RelativeCell value={issue.updated} label="티켓 수정" />
+      return <RelativeCell value={issue.updated} label="티켓 수정" now={now} />
 
     case 'created':
-      return <RelativeCell value={issue.created} label="생성" />
+      return <RelativeCell value={issue.created} label="생성" now={now} />
 
     case 'dueDate':
-      return <DueDate value={issue.dueDate} />
+      return <DueDate value={issue.dueDate} now={now} />
 
     default:
       return null
   }
 }
 
-function RelativeCell({ value, label }: { value: string | null | undefined; label: string }) {
+function RelativeCell({
+  value,
+  label,
+  now,
+}: {
+  value: string | null | undefined
+  label: string
+  now: number
+}) {
   return (
     <span
       className="w-full min-w-0 truncate text-caption text-text-quaternary tabular-nums"
       title={value ? `${label}: ${absoluteTime(value)}` : undefined}
     >
-      {value ? relativeTime(value) : '—'}
+      {value ? relativeTime(value, new Date(now)) : '—'}
     </span>
   )
 }
@@ -267,7 +282,7 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
   }
   return (
     <span
-      className="flex w-full min-w-0 items-center gap-1.5"
+      className="flex w-full min-w-0 items-center gap-1"
       title={assignee.displayName ?? undefined}
     >
       {assignee.avatarUrl ? (
@@ -297,11 +312,11 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
  * 마감일. 지났으면 빨강, 오늘·내일이면 앰버.
  * 실측상 절반 이하만 채워져 있어 없는 경우가 흔하다.
  */
-function DueDate({ value }: { value: string | null | undefined }) {
+function DueDate({ value, now }: { value: string | null | undefined; now: number }) {
   if (!value) return <span className="w-full text-caption text-text-quaternary">—</span>
 
   const due = new Date(`${value}T23:59:59`)
-  const days = Math.ceil((due.getTime() - Date.now()) / 86_400_000)
+  const days = Math.ceil((due.getTime() - now) / 86_400_000)
   const color = days < 0 ? 'text-danger' : days <= 1 ? 'text-stale' : 'text-text-quaternary'
 
   return (

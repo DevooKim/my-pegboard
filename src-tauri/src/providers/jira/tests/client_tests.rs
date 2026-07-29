@@ -13,20 +13,20 @@ use super::*;
 fn builds_basic_auth_header() {
     // base64("me@example.com:tok123")
     let header = auth_header("me@example.com", "tok123");
-    assert_eq!(header, "Basic bWVAZ29vcm0uaW86dG9rMTIz");
+    assert_eq!(header, "Basic bWVAZXhhbXBsZS5jb206dG9rMTIz");
 }
 
 #[test]
 fn auth_header_roundtrips_to_email_colon_token() {
     use base64::Engine as _;
-    let header = auth_header("you@example.com", "ATATT3xFfGF0-secret");
+    let header = auth_header("you@example.com", "fake-token-for-tests");
     let encoded = header.strip_prefix("Basic ").expect("Basic prefix");
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .unwrap();
     assert_eq!(
         String::from_utf8(decoded).unwrap(),
-        "you@example.com:ATATT3xFfGF0-secret"
+        "you@example.com:fake-token-for-tests"
     );
 }
 

@@ -12,6 +12,19 @@ import {
 } from '#/widgets/jira/columns'
 
 /**
+ * 값 쪽 셀이 안쪽 여백을 갖는 열의 헤더 들여쓰기.
+ *
+ * 그리드 트랙은 이미 픽셀 단위로 일치한다(실측). 남는 차이는 셀 **내용**의
+ * 여백이다 — 상태 배지는 배경을 그리려고 px-1.5(6px)를 갖고, 담당자는
+ * 아바타(20px)와 gap이 이름을 밀어낸다. 헤더 라벨에 같은 만큼을 줘서
+ * 글자 시작점을 맞춘다.
+ */
+const CELL_INDENT: Partial<Record<ToggleableColumn | 'summary', string>> = {
+  status: 'pl-1.5',
+  assignee: 'pl-1',
+}
+
+/**
  * 열 머리글 + 리사이즈 핸들.
  *
  * 헤더가 있어야 하는 이유는 두 가지다. 열을 끌 지점이 필요하고,
@@ -79,8 +92,9 @@ export function ColumnHeader({
 
   return (
     <div
-      // 목록에 스크롤바가 생기면 헤더와 열이 어긋난다. 같은 폭을 비워 맞춘다.
-      className="grid shrink-0 items-center gap-2 border-border-subtle border-b py-1 pr-[var(--pegboard-scrollbar,0px)] pl-3
+      // 오른쪽 패딩을 헤더 '안'에 주면 1fr(제목)이 그만큼 넓어져 뒤 트랙이 전부
+      // 밀린다. 스크롤바 보정은 바깥 래퍼가 담당한다(View.tsx).
+      className="grid shrink-0 items-center gap-2 border-border-subtle border-b py-1 pr-2 pl-3
                  text-caption text-text-quaternary"
       style={{ gridTemplateColumns: gridTemplate(widths, density, visible) }}
     >
@@ -103,6 +117,7 @@ export function ColumnHeader({
                     ? ''
                     : COLUMN_LABELS[cell]
               }
+              indent={CELL_INDENT[cell] ?? ''}
               handle={canDrag}
               {...(canDrag && target
                 ? {
@@ -123,6 +138,7 @@ export function ColumnHeader({
 function HeaderCell({
   label,
   align,
+  indent = '',
   handle,
   onPointerDown,
   onPointerMove,
@@ -131,6 +147,7 @@ function HeaderCell({
 }: {
   label: string
   align: string
+  indent?: string
   handle: boolean
   onPointerDown?: (e: React.PointerEvent) => void
   onPointerMove?: (e: React.PointerEvent) => void
@@ -141,7 +158,7 @@ function HeaderCell({
     // `w-full`이 핵심이다. flex 래퍼 안의 span은 기본적으로 콘텐츠 폭으로
     // 줄어들어 트랙 가운데 놓인다 — 헤더 글자가 중앙에 보이던 원인이다.
     // 트랙을 꽉 채워야 text-left가 실제로 왼쪽 끝을 잡는다.
-    <span className={`relative w-full min-w-0 truncate ${align}`}>
+    <span className={`relative w-full min-w-0 truncate ${align} ${indent}`}>
       {label}
       {handle && (
         // 열 너비는 포인터 전용 조작이다. 키보드로는 조절할 수 없지만

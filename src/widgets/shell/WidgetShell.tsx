@@ -1,6 +1,6 @@
 import { RefreshCw, Settings2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { absoluteTime, relativeTime } from '#/ui/relativeTime'
+import { absoluteTime, relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetStatus } from '#/widgets/types'
 
 /**
@@ -32,6 +32,9 @@ export function WidgetShell({
   onRemove: () => void
   children: ReactNode
 }) {
+  // 데이터가 안 바뀌어도 시간은 흐른다. 자동 새로고침을 꺼두면 리렌더가
+  // 없어 "방금"이 그대로 남으므로, 1분마다 스스로 다시 그린다.
+  const now = useNow()
   const refreshing = status === 'loading'
   const isStale = status === 'stale' || status === 'error-transient'
 
@@ -63,7 +66,7 @@ export function WidgetShell({
             }`}
             title={`마지막 갱신: ${absoluteTime(fetchedAt)}`}
           >
-            {relativeTime(fetchedAt)}
+            {relativeTime(fetchedAt, new Date(now))}
           </span>
         )}
 
