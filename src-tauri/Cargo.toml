@@ -1,0 +1,25 @@
+[package]
+name = "my-pegboard-storage"
+version = "0.1.0"
+edition = "2021"
+description = "Storage + secrets layer for my-pegboard"
+
+[lib]
+name = "my_pegboard_storage"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+keyring = { version = "3", features = ["apple-native"] }
+specta = { version = "2.0.0-rc.22", features = ["derive", "serde_json", "chrono"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+# Keychain tests write to the real macOS login keychain. Never enabled in CI.
+keychain-tests = []
