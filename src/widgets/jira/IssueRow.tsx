@@ -2,8 +2,10 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import type { JiraIssue } from '#/ipc/bindings'
 import { absoluteDate, absoluteTime, relativeTime } from '#/ui/relativeTime'
 import {
+  alignClass,
   type ColumnWidths,
   gridTemplate,
+  justifyClass,
   renderedColumns,
   type ToggleableColumn,
 } from '#/widgets/jira/columns'
@@ -58,7 +60,7 @@ export function IssueRow({
 
       {/* 제목은 항상, 그리고 키 바로 다음에 온다 */}
       <span
-        className="min-w-0 truncate text-body text-text-primary leading-tight-ko"
+        className={`min-w-0 truncate text-body text-text-primary leading-tight-ko ${alignClass('summary')}`}
         title={issue.summary}
       >
         {issue.summary}
@@ -67,14 +69,17 @@ export function IssueRow({
       {shown
         .filter((c) => c !== 'key')
         .map((col) => (
-          <Cell
-            key={col}
-            col={col}
-            issue={issue}
-            density={density}
-            statusCategory={statusCategory}
-            browseUrl={browseUrl}
-          />
+          // 정렬은 셀 안이 아니라 래퍼가 담당한다. 셀마다 클래스를 붙이면
+          // 새 열을 추가할 때 반드시 하나를 빠뜨린다.
+          <div key={col} className={`flex min-w-0 items-center ${justifyClass(col)}`}>
+            <Cell
+              col={col}
+              issue={issue}
+              density={density}
+              statusCategory={statusCategory}
+              browseUrl={browseUrl}
+            />
+          </div>
         ))}
     </div>
   )
@@ -169,8 +174,10 @@ function Cell({
           aria-label={issue.status?.name ?? '상태 없음'}
         />
       ) : (
+        // 배지는 글자만 감싼다. min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
+        // 열 전체가 색칠된 것처럼 보인다.
         <span
-          className="min-w-0 truncate rounded px-1.5 py-0.5 text-center text-caption"
+          className="max-w-full truncate rounded px-1.5 py-0.5 text-caption"
           style={{
             color: statusColor(statusCategory),
             backgroundColor: statusMuted(statusCategory),
@@ -186,7 +193,7 @@ function Cell({
       // 색에만 기대지 않도록 글자로도 읽힌다.
       return (
         <span
-          className="min-w-0 truncate text-center text-caption"
+          className="truncate text-caption"
           style={{ color: priorityTextColor(issue.priority?.name) }}
           title={issue.priority?.name ?? undefined}
         >

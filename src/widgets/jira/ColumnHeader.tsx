@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import {
+  alignClass,
   COLUMN_LABELS,
   type ColumnWidths,
   DEFAULT_VISIBLE_COLUMNS,
@@ -94,6 +95,7 @@ export function ColumnHeader({
         return (
           <HeaderCell
             key={cell}
+            align={alignClass(cell)}
             label={
               cell === 'summary'
                 ? '제목'
@@ -119,6 +121,7 @@ export function ColumnHeader({
 
 function HeaderCell({
   label,
+  align,
   handle,
   onPointerDown,
   onPointerMove,
@@ -126,6 +129,7 @@ function HeaderCell({
   onPointerCancel,
 }: {
   label: string
+  align: string
   handle: boolean
   onPointerDown?: (e: React.PointerEvent) => void
   onPointerMove?: (e: React.PointerEvent) => void
@@ -133,7 +137,7 @@ function HeaderCell({
   onPointerCancel?: (e: React.PointerEvent) => void
 }) {
   return (
-    <span className="relative min-w-0 truncate">
+    <span className={`relative min-w-0 truncate ${align}`}>
       {label}
       {handle && (
         // 열 너비는 포인터 전용 조작이다. 키보드로는 조절할 수 없지만

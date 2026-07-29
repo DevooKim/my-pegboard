@@ -150,3 +150,37 @@ export function resizableColumns(
     (c) => !(c === 'status' && density === 'compact'),
   )
 }
+
+/**
+ * 열별 정렬. **헤더와 행이 이 하나의 표를 공유한다** — 따로 두면 반드시 어긋난다.
+ *
+ * 좌·중앙 두 가지만 쓴다. 오른쪽 정렬을 쓰지 않는 이유는 시간 값이
+ * "2일 전"·"19일 지남"처럼 길이가 제각각이라 오른쪽에 붙여도 자릿수가
+ * 맞지 않고, 헤더와 멀어져 어느 열인지 읽기 어려워지기 때문이다.
+ *
+ *   왼쪽  자유 길이 텍스트 — 왼쪽 끝이 맞아야 훑기 좋다.
+ *   중앙  고정 어휘 값(상태·우선순위) + 시간 — 폭이 좁고 값이 짧다.
+ */
+export const COLUMN_ALIGN: Record<ToggleableColumn | 'summary', 'left' | 'center'> = {
+  key: 'left',
+  summary: 'left',
+  issueType: 'left',
+  status: 'center',
+  priority: 'center',
+  assignee: 'left',
+  sprint: 'left',
+  parent: 'left',
+  updated: 'center',
+  created: 'center',
+  dueDate: 'center',
+}
+
+/** 텍스트 정렬 클래스. */
+export function alignClass(col: ToggleableColumn | 'summary'): string {
+  return COLUMN_ALIGN[col] === 'center' ? 'text-center' : 'text-left'
+}
+
+/** flex 컨테이너(담당자 셀 등)에서 쓰는 정렬. */
+export function justifyClass(col: ToggleableColumn | 'summary'): string {
+  return COLUMN_ALIGN[col] === 'center' ? 'justify-center' : 'justify-start'
+}
