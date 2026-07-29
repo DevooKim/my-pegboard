@@ -43,6 +43,7 @@ export function IssueRow({
 
       {density === 'compact' ? (
         <span
+          role="img"
           className="size-1.5 shrink-0 rounded-full"
           style={{ backgroundColor: statusColor(statusCategory) }}
           title={issue.status?.name ?? '상태 없음'}
@@ -76,6 +77,7 @@ function Assignee({ issue, showName }: { issue: JiraIssue; showName: boolean }) 
   if (!assignee) {
     return (
       <span
+        role="img"
         className="size-5 shrink-0 rounded-full border border-dashed border-border-subtle"
         title="미할당"
         aria-label="미할당"

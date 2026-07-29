@@ -72,8 +72,12 @@ export interface WidgetConfigFormProps<TConfig> {
 /**
  * 위젯 타입 정의. registry에 등록되는 단위.
  */
-// biome-ignore lint/suspicious/noExplicitAny: TData 기본값이 unknown이면 구체 타입 View를
-// 레지스트리에 담을 수 없다(반공변). 타입 안전성은 각 위젯 정의 시점에 보장된다.
+/**
+ * TData 기본값이 `any`인 이유: `unknown`이면 구체 타입을 가진 View를
+ * 레지스트리에 담을 수 없다(props 반공변). 타입 안전성은 각 위젯을
+ * 정의하는 시점에 보장된다.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: 위 주석 참조 — 레지스트리 경계의 불가피한 any
 export interface WidgetDefinition<TConfig = Record<string, unknown>, TData = any> {
   type: WidgetType
   /** 위젯 추가 메뉴에 표시될 이름 */

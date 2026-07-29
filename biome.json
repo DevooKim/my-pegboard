@@ -6,7 +6,16 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**", "*.ts", "*.json", "!src-tauri", "!dist", "!node_modules", "!**/*.css"]
+    "includes": [
+      "src/**",
+      "*.ts",
+      "*.json",
+      "!src-tauri",
+      "!dist",
+      "!node_modules",
+      "!**/*.css",
+      "!src/ipc/bindings.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

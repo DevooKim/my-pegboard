@@ -67,19 +67,20 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-100 grid place-items-center bg-black/50 p-8"
-      onClick={onClose}
-      onKeyDown={undefined}
-      role="presentation"
-    >
+    <div className="fixed inset-0 z-100 grid place-items-center bg-black/50 p-8">
+      {/* 백드롭 클릭으로 닫기. ESC도 동작하므로 키보드 접근성은 확보돼 있다. */}
+      <button
+        type="button"
+        aria-label="설정 닫기"
+        tabIndex={-1}
+        onClick={onClose}
+        className="absolute inset-0 cursor-default"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="설정"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={undefined}
-        className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-xl
+        className="relative flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-xl
                    border border-border-subtle bg-surface-overlay shadow-2xl"
       >
         <header className="flex shrink-0 items-center justify-between border-border-subtle border-b px-4 py-3">
@@ -192,9 +193,10 @@ const inputClass =
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-caption text-text-secondary">{label}</span>
+    <div className="flex flex-col gap-1">
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: 입력을 children으로 감싸므로 암묵적 연결이다 */}
+      <label className="text-caption text-text-secondary">{label}</label>
       {children}
-    </label>
+    </div>
   )
 }
