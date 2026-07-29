@@ -3,6 +3,9 @@
 //! 프론트엔드가 Rust에 접근하는 유일한 경로. 모든 외부 API 호출이 여기를 거치며,
 //! 토큰은 이 경계를 넘어가지 않는다.
 
+pub mod board;
+pub mod jira;
+
 use serde::Serialize;
 
 #[derive(Debug, Serialize, specta::Type)]

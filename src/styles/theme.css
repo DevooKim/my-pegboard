@@ -8,7 +8,9 @@
    OWN-WORLD   차가운 무채색 램프(청록 기운의 잉크 계열) + 시안 액센트 1개 +
                앰버 stale. 위젯은 1px 경계선으로만 떠 있고 그림자는 진짜로 떠 있는
                것(드래그·모달·팝오버)에만 쓴다.
-   FORM        사용자 결정: slate-amber (제시된 3안 중 1안 채택)
+   FORM        slate-amber — ★사용자 승인 전 (미확정)
+               구현 과정에서 선택한 방향이며 사용자가 실제로 고른 것이 아니다.
+               바꾸려면 --palette-* 값만 교체하면 된다 (의미 토큰은 그대로).
    FINISH      unreviewed and undocumented is unfinished
 
    Tailwind 4 CSS-first. tailwind.config.js 없음.

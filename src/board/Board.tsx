@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react'
 import GridLayout, { type Layout, type LayoutItem, useContainerWidth } from 'react-grid-layout'
+import { WidgetHost } from '#/board/WidgetHost'
 import { GRID_COLUMNS, useBoardStore, useWidgets } from '#/store/board'
 import { tryGetWidget } from '#/widgets/registry'
 
@@ -69,36 +70,11 @@ export function Board() {
         >
           {widgets.map((w) => (
             <div key={w.id}>
-              <WidgetSlot type={w.type} id={w.id} />
+              <WidgetHost widget={w} />
             </div>
           ))}
         </GridLayout>
       )}
-    </div>
-  )
-}
-
-/**
- * 레지스트리에서 위젯 정의를 찾아 렌더한다.
- * 등록되지 않은 타입은 조용히 사라지게 두지 않는다 — 사용자가 코드를 읽지 않으므로
- * 안 보이는 것보다 "왜 안 보이는지"가 보여야 한다.
- */
-function WidgetSlot({ type, id }: { type: string; id: string }) {
-  const definition = tryGetWidget(type as never)
-  if (!definition) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[--color-border-subtle] p-4 text-center text-sm text-[--color-text-muted]">
-        알 수 없는 위젯 타입: {type}
-      </div>
-    )
-  }
-  // WidgetShell은 후속 단계에서 붙는다.
-  return (
-    <div className="h-full rounded-lg border border-[--color-border-subtle] bg-[--color-surface-raised] p-3">
-      <div data-widget-drag-handle className="cursor-move text-sm text-[--color-text-muted]">
-        {definition.label}
-      </div>
-      <div className="mt-2 text-xs text-[--color-text-muted]">{id.slice(0, 8)}</div>
     </div>
   )
 }

@@ -7,10 +7,13 @@
 pub mod commands;
 pub mod logging;
 pub mod providers;
+pub mod state;
+mod bindings_export;
 pub mod secrets;
 pub mod storage;
 
 use tauri::Manager;
+use tauri_specta::{collect_commands, Builder as SpectaBuilder};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,17 +28,39 @@ pub fn run() {
         }
     }));
 
+    let specta = SpectaBuilder::<tauri::Wry>::new().commands(collect_commands![
+        commands::app_info,
+        commands::jira::jira_presets,
+        commands::jira::jira_is_configured,
+        commands::jira::jira_verify,
+        commands::jira::jira_save_credentials,
+        commands::jira::jira_fetch,
+        commands::jira::jira_cached,
+            commands::board::board_load,
+            commands::board::board_save,
+    ]);
+
+
     builder
+        .invoke_handler(specta.invoke_handler())
         .setup(|app| {
             let log_dir = app
                 .path()
                 .app_log_dir()
                 .expect("로그 디렉토리 경로를 확인할 수 없습니다");
             logging::init(&log_dir);
+
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("앱 데이터 디렉토리 경로를 확인할 수 없습니다");
+            std::fs::create_dir_all(&data_dir).ok();
+            let state = state::AppState::new(data_dir)?;
+            app.manage(state);
+
             tracing::info!("my-pegboard 시작");
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::app_info,])
         .run(tauri::generate_context!())
         .expect("Tauri 앱 실행에 실패했습니다");
 }

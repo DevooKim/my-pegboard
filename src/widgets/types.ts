@@ -57,6 +57,11 @@ export interface WidgetViewProps<TConfig, TData> {
   widgetId: string
   config: TConfig
   envelope: WidgetEnvelope<TData>
+  /**
+   * 위젯 본문의 실제 픽셀 폭. 밀도 전환의 근거다.
+   * 그리드 열 수가 아니라 픽셀인 이유: 창 크기에 따라 같은 열 수라도 폭이 다르다.
+   */
+  width: number
 }
 
 export interface WidgetConfigFormProps<TConfig> {
@@ -67,7 +72,9 @@ export interface WidgetConfigFormProps<TConfig> {
 /**
  * 위젯 타입 정의. registry에 등록되는 단위.
  */
-export interface WidgetDefinition<TConfig = Record<string, unknown>, TData = unknown> {
+// biome-ignore lint/suspicious/noExplicitAny: TData 기본값이 unknown이면 구체 타입 View를
+// 레지스트리에 담을 수 없다(반공변). 타입 안전성은 각 위젯 정의 시점에 보장된다.
+export interface WidgetDefinition<TConfig = Record<string, unknown>, TData = any> {
   type: WidgetType
   /** 위젯 추가 메뉴에 표시될 이름 */
   label: string
