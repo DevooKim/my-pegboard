@@ -44,207 +44,237 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
   const selected = config.query.kind === 'preset' ? config.query.id : RAW
 
   return (
-    <div className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">위젯 이름</span>
-        <input
-          data-selectable
-          value={config.title ?? ''}
-          onChange={(e) => onChange({ ...config, title: e.target.value })}
-          placeholder={defaultTitle}
-          className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
+    <div className="flex flex-col">
+      <Section title="무엇을 가져올까">
+        <label className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">위젯 이름</span>
+          <input
+            data-selectable
+            value={config.title ?? ''}
+            onChange={(e) => onChange({ ...config, title: e.target.value })}
+            placeholder={defaultTitle}
+            className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
                      text-body text-text-primary placeholder:text-text-quaternary"
-        />
-        <span className="text-caption text-text-tertiary">비워두면 쿼리 이름을 씁니다</span>
-      </label>
+          />
+          <span className="text-caption text-text-tertiary">비워두면 쿼리 이름을 씁니다</span>
+        </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">쿼리</span>
-        <select
-          value={selected}
-          onChange={(e) => {
-            const v = e.target.value
-            onChange({
-              ...config,
-              query:
-                v === RAW
-                  ? { kind: 'raw', jql: currentJql(config, presets) }
-                  : { kind: 'preset', id: v },
-            })
-          }}
-          className="rounded border border-border-subtle bg-surface-inset px-2 py-2
+        <label className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">쿼리</span>
+          <select
+            value={selected}
+            onChange={(e) => {
+              const v = e.target.value
+              onChange({
+                ...config,
+                query:
+                  v === RAW
+                    ? { kind: 'raw', jql: currentJql(config, presets) }
+                    : { kind: 'preset', id: v },
+              })
+            }}
+            className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5
                      text-body text-text-primary"
-        >
-          {/*
+          >
+            {/*
             프리셋을 아직 못 불러왔는데 현재 설정이 프리셋이면, 그 id를 임시 옵션으로
             넣어둔다. 안 그러면 select가 매칭되는 option을 못 찾아 마지막 항목(RAW)을
             고른 것처럼 보이고, 사용자가 건드리지도 않은 설정이 바뀐 듯 보인다.
           */}
-          {presets.length === 0 && selected !== RAW && (
-            <option value={selected}>불러오는 중…</option>
-          )}
-          {presets.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          <option value={RAW}>직접 입력 (JQL)</option>
-        </select>
-        {config.query.kind === 'preset' && (
-          <span className="text-caption text-text-tertiary">
-            {presets.find((p) => p.id === presetId(config))?.description}
-          </span>
-        )}
-      </label>
-
-      {config.query.kind === 'raw' && (
-        <label className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">JQL</span>
-          <textarea
-            data-selectable
-            value={config.query.jql}
-            onChange={(e) => onChange({ ...config, query: { kind: 'raw', jql: e.target.value } })}
-            rows={3}
-            spellCheck={false}
-            placeholder="project = ABC AND status != Done ORDER BY updated DESC"
-            className="resize-none rounded border border-border-subtle bg-surface-inset px-2 py-1.5
-                       font-mono text-caption text-text-primary"
-          />
-          {/* 검증하지 않는다 — 틀리면 Jira가 훨씬 나은 메시지를 준다 */}
-          <span className="text-caption text-text-tertiary">
-            문법 오류는 저장 후 위젯에 Jira의 메시지가 그대로 표시됩니다
-          </span>
-        </label>
-      )}
-
-      {/* 프로젝트 범위와 정렬은 프리셋 전용이다 (생 JQL에는 사용자가 직접 쓴다) */}
-      {isPreset && (
-        <div className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">프로젝트</span>
-          {projects.length === 0 ? (
-            <span className="text-caption text-text-tertiary">불러오는 중…</span>
-          ) : (
-            <div className="flex flex-wrap gap-1">
-              <Chip
-                active={scoped.length === 0}
-                onClick={() => onChange({ ...config, projects: [] })}
-              >
-                전체
-              </Chip>
-              {projects.map((p) => (
-                <Chip
-                  key={p.key}
-                  active={scoped.includes(p.key)}
-                  onClick={() => toggleProject(p.key)}
-                  title={p.name}
-                >
-                  {p.key}
-                </Chip>
-              ))}
-            </div>
-          )}
-          <span className="text-caption text-text-tertiary">
-            {scoped.length === 0
-              ? '모든 프로젝트에서 검색합니다'
-              : `${scoped.join(', ')} 로 범위를 좁힙니다`}
-          </span>
-        </div>
-      )}
-
-      {isPreset && (
-        <div className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">정렬</span>
-          <div className="flex gap-1">
-            <select
-              value={config.sortField ?? 'updated'}
-              onChange={(e) => onChange({ ...config, sortField: e.target.value as SortField })}
-              className="flex-1 rounded border border-border-subtle bg-surface-inset px-2 py-2
-                         text-body text-text-primary"
-            >
-              <option value="updated">수정일</option>
-              <option value="created">생성일</option>
-              <option value="due">마감일</option>
-              <option value="priority">우선순위</option>
-              <option value="key">키</option>
-            </select>
-            <select
-              value={config.sortDirection ?? 'desc'}
-              onChange={(e) =>
-                onChange({ ...config, sortDirection: e.target.value as SortDirection })
-              }
-              className="w-28 rounded border border-border-subtle bg-surface-inset px-2 py-2
-                         text-body text-text-primary"
-            >
-              <option value="desc">내림차순</option>
-              <option value="asc">오름차순</option>
-            </select>
-          </div>
-          {(config.sortField ?? 'updated') === 'due' && (
-            // 실측 9/22만 채워져 있다. 정렬하면 나머지가 뭉텅이로 몰린다.
-            <span className="text-caption text-stale">
-              마감일이 없는 티켓이 많으면 한쪽에 몰려 보입니다
+            {presets.length === 0 && selected !== RAW && (
+              <option value={selected}>불러오는 중…</option>
+            )}
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            <option value={RAW}>직접 입력 (JQL)</option>
+          </select>
+          {config.query.kind === 'preset' && (
+            <span className="text-caption text-text-tertiary">
+              {presets.find((p) => p.id === presetId(config))?.description}
             </span>
           )}
-        </div>
-      )}
+        </label>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">표시할 열</span>
-        <div className="flex flex-wrap gap-1">
-          {TOGGLEABLE_COLUMNS.map((col) => {
-            const shown = visibleColumns(config.columns)
-            const on = shown.includes(col)
-            return (
-              <Chip
-                key={col}
-                active={on}
-                onClick={() => {
-                  const next = on ? shown.filter((c) => c !== col) : [...shown, col]
-                  onChange({ ...config, columns: next as ToggleableColumn[] })
-                }}
+        {config.query.kind === 'raw' && (
+          <label className="flex flex-col gap-1">
+            <span className="text-caption text-text-secondary">JQL</span>
+            <textarea
+              data-selectable
+              value={config.query.jql}
+              onChange={(e) => onChange({ ...config, query: { kind: 'raw', jql: e.target.value } })}
+              rows={3}
+              spellCheck={false}
+              placeholder="project = ABC AND status != Done ORDER BY updated DESC"
+              className="resize-none rounded border border-border-subtle bg-surface-inset px-2 py-1.5
+                       font-mono text-caption text-text-primary"
+            />
+            {/* 검증하지 않는다 — 틀리면 Jira가 훨씬 나은 메시지를 준다 */}
+            <span className="text-caption text-text-tertiary">
+              문법 오류는 저장 후 위젯에 Jira의 메시지가 그대로 표시됩니다
+            </span>
+          </label>
+        )}
+
+        {/* 프로젝트 범위와 정렬은 프리셋 전용이다 (생 JQL에는 사용자가 직접 쓴다) */}
+        {isPreset && (
+          <div className="flex flex-col gap-1">
+            <span className="text-caption text-text-secondary">프로젝트</span>
+            {projects.length === 0 ? (
+              <span className="text-caption text-text-tertiary">불러오는 중…</span>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                <Chip
+                  active={scoped.length === 0}
+                  onClick={() => onChange({ ...config, projects: [] })}
+                >
+                  전체
+                </Chip>
+                {projects.map((p) => (
+                  <Chip
+                    key={p.key}
+                    active={scoped.includes(p.key)}
+                    onClick={() => toggleProject(p.key)}
+                    title={p.name}
+                  >
+                    {p.key}
+                  </Chip>
+                ))}
+              </div>
+            )}
+            <span className="text-caption text-text-tertiary">
+              {scoped.length === 0
+                ? '모든 프로젝트에서 검색합니다'
+                : `${scoped.join(', ')} 로 범위를 좁힙니다`}
+            </span>
+          </div>
+        )}
+
+        {isPreset && (
+          <div className="flex flex-col gap-1">
+            <span className="text-caption text-text-secondary">정렬</span>
+            <div className="flex gap-1">
+              <select
+                value={config.sortField ?? 'updated'}
+                onChange={(e) => onChange({ ...config, sortField: e.target.value as SortField })}
+                className="flex-1 rounded border border-border-subtle bg-surface-inset px-2 py-2.5
+                         text-body text-text-primary"
               >
-                {COLUMN_LABELS[col]}
-              </Chip>
-            )
-          })}
-        </div>
-        <span className="text-caption text-text-tertiary">제목은 항상 표시됩니다</span>
-      </div>
+                <option value="updated">수정일</option>
+                <option value="created">생성일</option>
+                <option value="due">마감일</option>
+                <option value="priority">우선순위</option>
+                <option value="key">키</option>
+              </select>
+              <select
+                value={config.sortDirection ?? 'desc'}
+                onChange={(e) =>
+                  onChange({ ...config, sortDirection: e.target.value as SortDirection })
+                }
+                className="w-28 rounded border border-border-subtle bg-surface-inset px-2 py-2.5
+                         text-body text-text-primary"
+              >
+                <option value="desc">내림차순</option>
+                <option value="asc">오름차순</option>
+              </select>
+            </div>
+            {(config.sortField ?? 'updated') === 'due' && (
+              // 실측 9/22만 채워져 있다. 정렬하면 나머지가 뭉텅이로 몰린다.
+              <span className="text-caption text-stale">
+                마감일이 없는 티켓이 많으면 한쪽에 몰려 보입니다
+              </span>
+            )}
+          </div>
+        )}
+      </Section>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">자동 새로고침</span>
-        <div className="flex items-center gap-2">
+      <Section title="어떻게 보여줄까">
+        <div className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">표시할 열</span>
+          <div className="flex flex-wrap gap-1">
+            {TOGGLEABLE_COLUMNS.map((col) => {
+              const shown = visibleColumns(config.columns)
+              const on = shown.includes(col)
+              return (
+                <Chip
+                  key={col}
+                  active={on}
+                  onClick={() => {
+                    const next = on ? shown.filter((c) => c !== col) : [...shown, col]
+                    onChange({ ...config, columns: next as ToggleableColumn[] })
+                  }}
+                >
+                  {COLUMN_LABELS[col]}
+                </Chip>
+              )
+            })}
+          </div>
+          <span className="text-caption text-text-tertiary">제목은 항상 표시됩니다</span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">표시 개수</span>
           <NumberField
-            value={Math.round((config.refreshSecs ?? 300) / 60)}
-            min={0}
-            max={120}
-            // 0은 '자동 갱신 안 함'. 그 외에는 1분이 하한이다.
-            clamp={(n) => (n <= 0 ? 0 : Math.min(120, Math.max(1, n)))}
-            onCommit={(mins) => onChange({ ...config, refreshSecs: mins * 60 })}
+            value={config.maxResults}
+            min={5}
+            max={100}
+            clamp={(n) => clamp(n, 5, 100)}
+            onCommit={(n) => onChange({ ...config, maxResults: n })}
           />
-          <span className="text-caption text-text-tertiary">분마다</span>
+          <span className="text-caption text-text-tertiary">
+            많을수록 응답이 커집니다. 기본 15건.
+          </span>
         </div>
-        <span className="text-caption text-text-tertiary">
-          {(config.refreshSecs ?? 300) === 0
-            ? '자동 갱신하지 않습니다 — 새로고침 버튼으로만 갱신됩니다'
-            : `${Math.round((config.refreshSecs ?? 300) / 60)}분마다 자동으로 갱신합니다`}
-        </span>
-      </div>
+      </Section>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-caption text-text-secondary">표시 개수</span>
-        <NumberField
-          value={config.maxResults}
-          min={5}
-          max={100}
-          clamp={(n) => clamp(n, 5, 100)}
-          onCommit={(n) => onChange({ ...config, maxResults: n })}
-        />
-        <span className="text-caption text-text-tertiary">
-          많을수록 응답이 커집니다. 기본 15건.
-        </span>
-      </div>
+      <Section title="언제 갱신할까" last>
+        <div className="flex flex-col gap-1">
+          <span className="text-caption text-text-secondary">자동 새로고침</span>
+          <div className="flex items-center gap-2">
+            <NumberField
+              value={Math.round((config.refreshSecs ?? 300) / 60)}
+              min={0}
+              max={120}
+              // 0은 '자동 갱신 안 함'. 그 외에는 1분이 하한이다.
+              clamp={(n) => (n <= 0 ? 0 : Math.min(120, Math.max(1, n)))}
+              onCommit={(mins) => onChange({ ...config, refreshSecs: mins * 60 })}
+            />
+            <span className="text-caption text-text-tertiary">분마다</span>
+          </div>
+          <span className="text-caption text-text-tertiary">
+            {(config.refreshSecs ?? 300) === 0
+              ? '자동 갱신하지 않습니다 — 새로고침 버튼으로만 갱신됩니다'
+              : `${Math.round((config.refreshSecs ?? 300) / 60)}분마다 자동으로 갱신합니다`}
+          </span>
+        </div>
+      </Section>
     </div>
+  )
+}
+
+/**
+ * 설정 폼의 구획.
+ *
+ * 항목이 열 개를 넘어가면서 한 덩어리로는 무엇이 무엇인지 읽히지 않는다.
+ * "무엇을 / 어떻게 / 언제"라는 질문 순서로 나눈다 — 사용자가 고치려는
+ * 항목이 어느 구획에 있을지 예측할 수 있게.
+ */
+function Section({
+  title,
+  last,
+  children,
+}: {
+  title: string
+  last?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <section className={`flex flex-col gap-3 py-4 ${last ? '' : 'border-border-subtle border-b'}`}>
+      <h3 className="text-caption text-text-quaternary uppercase tracking-wide">{title}</h3>
+      {children}
+    </section>
   )
 }
 

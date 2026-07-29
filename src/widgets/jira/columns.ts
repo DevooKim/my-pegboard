@@ -164,8 +164,3 @@ export function resizableColumns(
 export function alignClass(_col: ToggleableColumn | 'summary'): string {
   return 'text-left'
 }
-
-/** flex 컨테이너(담당자 셀 등)에서 쓰는 정렬. */
-export function justifyClass(_col: ToggleableColumn | 'summary'): string {
-  return 'justify-start'
-}

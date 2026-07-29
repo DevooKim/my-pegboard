@@ -93,26 +93,27 @@ export function ColumnHeader({
         const canDrag = target !== undefined && adjustable.includes(target)
 
         return (
-          <HeaderCell
-            key={cell}
-            align={alignClass(cell)}
-            label={
-              cell === 'summary'
-                ? '제목'
-                : density === 'compact' && cell === 'status'
-                  ? ''
-                  : COLUMN_LABELS[cell]
-            }
-            handle={canDrag}
-            {...(canDrag && target
-              ? {
-                  onPointerDown: beginDrag(target, invert),
-                  onPointerMove,
-                  onPointerUp: endDrag,
-                  onPointerCancel: endDrag,
-                }
-              : {})}
-          />
+          <div key={cell} className="flex min-w-0 items-center">
+            <HeaderCell
+              align={alignClass(cell)}
+              label={
+                cell === 'summary'
+                  ? '제목'
+                  : density === 'compact' && cell === 'status'
+                    ? ''
+                    : COLUMN_LABELS[cell]
+              }
+              handle={canDrag}
+              {...(canDrag && target
+                ? {
+                    onPointerDown: beginDrag(target, invert),
+                    onPointerMove,
+                    onPointerUp: endDrag,
+                    onPointerCancel: endDrag,
+                  }
+                : {})}
+            />
+          </div>
         )
       })}
     </div>
@@ -137,7 +138,10 @@ function HeaderCell({
   onPointerCancel?: (e: React.PointerEvent) => void
 }) {
   return (
-    <span className={`relative min-w-0 truncate ${align}`}>
+    // `w-full`이 핵심이다. flex 래퍼 안의 span은 기본적으로 콘텐츠 폭으로
+    // 줄어들어 트랙 가운데 놓인다 — 헤더 글자가 중앙에 보이던 원인이다.
+    // 트랙을 꽉 채워야 text-left가 실제로 왼쪽 끝을 잡는다.
+    <span className={`relative w-full min-w-0 truncate ${align}`}>
       {label}
       {handle && (
         // 열 너비는 포인터 전용 조작이다. 키보드로는 조절할 수 없지만

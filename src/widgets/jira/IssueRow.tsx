@@ -5,7 +5,6 @@ import {
   alignClass,
   type ColumnWidths,
   gridTemplate,
-  justifyClass,
   renderedColumns,
   type ToggleableColumn,
 } from '#/widgets/jira/columns'
@@ -71,7 +70,7 @@ export function IssueRow({
         .map((col) => (
           // 정렬은 셀 안이 아니라 래퍼가 담당한다. 셀마다 클래스를 붙이면
           // 새 열을 추가할 때 반드시 하나를 빠뜨린다.
-          <div key={col} className={`flex min-w-0 items-center ${justifyClass(col)}`}>
+          <div key={col} className="flex min-w-0 items-center">
             <Cell
               col={col}
               issue={issue}
@@ -174,8 +173,11 @@ function Cell({
           aria-label={issue.status?.name ?? '상태 없음'}
         />
       ) : (
-        // 배지는 글자만 감싼다. min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
+        // 배지는 글자만 감싼다 — min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
         // 열 전체가 색칠된 것처럼 보인다.
+        //
+        // `-ml-1.5`는 배지의 좌측 패딩(px-1.5 = 6px)을 정확히 상쇄한다.
+        // 배지 배경은 유지하되 **글자 시작점**은 헤더와 같은 x에 놓기 위해서다.
         <span
           className="-ml-1.5 max-w-full truncate rounded px-1.5 py-0.5 text-caption"
           style={{
