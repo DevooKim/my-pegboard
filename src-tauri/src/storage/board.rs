@@ -56,6 +56,9 @@ pub enum WidgetType {
     Jira,
     Github,
     Todo,
+    /// Spike: iframe widget. Without this variant `board_save` rejects the whole
+    /// board file, so a web widget would vanish on restart.
+    Web,
 }
 
 impl WidgetType {
@@ -65,6 +68,7 @@ impl WidgetType {
             WidgetType::Jira => 4,
             WidgetType::Github => 4,
             WidgetType::Todo => 8,
+            WidgetType::Web => 4,
         }
     }
 
@@ -73,6 +77,7 @@ impl WidgetType {
             WidgetType::Jira => "jira",
             WidgetType::Github => "github",
             WidgetType::Todo => "todo",
+            WidgetType::Web => "web",
         }
     }
 }

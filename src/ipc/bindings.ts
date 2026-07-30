@@ -350,7 +350,12 @@ export type WidgetLayout = { x: number; y: number; w: number; h: number }
  * Widget type. DECISIONS 3 caps instances per type, not overall — Todo widgets
  * are free while Jira widgets cost API quota.
  */
-export type WidgetType = "jira" | "github" | "todo"
+export type WidgetType = "jira" | "github" | "todo" | 
+/**
+ * Spike: iframe widget. Without this variant `board_save` rejects the whole
+ * board file, so a web widget would vanish on restart.
+ */
+"web"
 
 /** tauri-specta globals **/
 

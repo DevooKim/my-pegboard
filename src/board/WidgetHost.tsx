@@ -56,6 +56,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
           onRemove={() => setConfirmingRemove(true)}
           onConfigure={openConfig}
         />
+      ) : widget.type === 'web' ? (
+        <WebHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
       ) : (
         <WidgetShell
           title={definition.deriveTitle(widget.config)}
@@ -88,6 +95,50 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         onCancel={() => setConfirmingRemove(false)}
       />
     </div>
+  )
+}
+
+/**
+ * 웹 위젯 호스트 (spike).
+ *
+ * Rust 데이터 훅이 없다 — iframe이 스스로 로드하므로 envelope은 껍데기다.
+ * 새로고침은 View 안의 iframe을 다시 만드는 것이라, 여기서는 remount용
+ * key만 올려준다.
+ */
+function WebHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('web')
+  const [reloadKey, setReloadKey] = useState(0)
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(widget.config)}
+      status="ready"
+      fetchedAt={null}
+      pollable
+      onRefresh={() => setReloadKey((n) => n + 1)}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View
+        key={reloadKey}
+        widgetId={widget.id}
+        config={widget.config}
+        envelope={{ status: 'ready', data: null, fetchedAt: null, error: null }}
+        width={width}
+      />
+    </WidgetShell>
   )
 }
 
