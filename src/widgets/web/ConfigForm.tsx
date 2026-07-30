@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { WidgetConfigFormProps } from '#/widgets/types'
+import { isKnownBlocked } from './blocked'
 import type { WebWidgetConfig } from './index'
 
 /**
@@ -10,6 +11,7 @@ import type { WebWidgetConfig } from './index'
  * 파일을 열지 않는다는 원칙(CLAUDE.md)을 실험 코드에서도 지킨다.
  */
 export function WebConfigForm({ config, onChange }: WidgetConfigFormProps<WebWidgetConfig>) {
+  const blockedDomain = isKnownBlocked(config.url)
   return (
     <div className="flex flex-col">
       <Section>
@@ -37,10 +39,20 @@ export function WebConfigForm({ config, onChange }: WidgetConfigFormProps<WebWid
                        font-mono text-caption text-text-primary placeholder:text-text-quaternary"
           />
           {/*
-            검증하지 않고 그냥 보여준다. 어차피 https가 아니면 CSP(frame-src https:)가
-            막고, 그 사실은 위젯 본문에 드러난다.
+            차단 여부는 런타임에 감지할 수 없다(blocked.ts 참조). 대신 알려진
+            도메인이면 **위젯을 배치하기 전에** 여기서 알려준다.
           */}
-          <span className="text-caption text-text-tertiary">https 주소만 표시할 수 있습니다</span>
+          {blockedDomain ? (
+            <span className="text-caption text-stale leading-relaxed-ko">
+              {blockedDomain}은 임베드를 거부합니다 — 빈 화면이 표시됩니다. 대신 브라우저에서 열어야
+              합니다.
+            </span>
+          ) : (
+            <span className="text-caption text-text-tertiary leading-relaxed-ko">
+              https 주소와 로컬 서버(http://localhost, 127.0.0.1)를 넣을 수 있습니다. 일부 사이트는
+              임베드를 거부해 빈 화면이 됩니다.
+            </span>
+          )}
         </label>
       </Section>
 

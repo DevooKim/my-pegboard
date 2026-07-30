@@ -1,11 +1,9 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ExternalLink } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { WidgetViewProps } from '#/widgets/types'
+import { isKnownBlocked } from './blocked'
 import type { WebWidgetConfig } from './index'
-
-/** load 이벤트를 이만큼 기다려도 안 오면 '거부당했을 가능성'을 띄운다. */
-const LOAD_TIMEOUT_MS = 5000
 
 /**
  * 웹 위젯 본문 — iframe 하나.
@@ -23,37 +21,27 @@ const LOAD_TIMEOUT_MS = 5000
  * - 그래서 화면에는 **아무 말 없는 빈 사각형**만 남는다.
  *   이 앱의 대전제("조용한 실패 금지")와 정면으로 충돌한다.
  *
- * ## 그래서 쓴 휴리스틱 (그리고 그 한계)
+ * ## 감지를 포기하고 택한 것
  *
- * `load`가 5초 안에 안 오면 "거부당한 것 같다" 오버레이를 띄운다.
+ * 처음엔 "load가 5초 안에 안 오면 차단"이라는 휴리스틱을 넣었다.
+ * **실측해보니 쓸모가 없었다** — github·google·news.ycombinator 전부
+ * 800ms 안에 load를 발화시킨다. 차단돼도 load는 온다. 타임아웃은
+ * 진짜 느린 사이트에만 걸려서, 정작 필요한 경우는 못 잡고
+ * 멀쩡한 사이트에 거짓 경고만 씌운다.
  *
- * **이 휴리스틱은 불완전하다.** 엔진에 따라 차단된 프레임에서도 `load`가
- * (빈 문서에 대해) 발화한다 — 실제로 Chromium/WebKit 모두 그렇다.
- * 그러면 우리는 '로드 성공'으로 판단하고 오버레이를 띄우지 않는데,
- * 화면은 여전히 백지다. 반대로 그냥 느린 사이트는 5초를 넘겨서
- * 멀쩡히 뜰 페이지에 거짓 경고를 씌운다. 양쪽으로 다 틀릴 수 있다.
+ * 그래서 런타임 감지를 버리고 두 가지로 대신한다:
  *
- * → 그래서 오버레이와 별개로 헤더 아래 '브라우저에서 열기'를 **상시** 둔다.
- *   감지가 실패해도 위젯이 무용지물이 되지는 않게.
+ * 1. **알려진 차단 도메인 목록**(`blocked.ts`) — 설정 단계에서 미리 경고.
+ *    완전하지 않지만 가장 흔한 경우는 잡는다.
+ * 2. **상시 '브라우저에서 열기'** — 목록에 없어 조용히 실패하더라도
+ *    위젯이 막다른 길이 되지 않게.
  */
 export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
-  const [loaded, setLoaded] = useState(false)
-  const [timedOut, setTimedOut] = useState(false)
   // URL·설정이 바뀌면 iframe을 통째로 새로 만든다(key). 그래야 로드 상태도 초기화된다.
   const [reloadNonce, setReloadNonce] = useState(0)
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const url = config.url.trim()
   const frameKey = `${url}|${config.allowSession}|${reloadNonce}`
-
-  // 로드 감시 타이머. iframe이 새로 만들어질 때마다 다시 건다.
-  useEffect(() => {
-    if (!url) return
-    setLoaded(false)
-    setTimedOut(false)
-    timer.current = setTimeout(() => setTimedOut(true), LOAD_TIMEOUT_MS)
-    return () => clearTimeout(timer.current)
-  }, [url])
 
   // 자동 새로고침. 0이면 걸지 않는다.
   useEffect(() => {
@@ -85,8 +73,8 @@ export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
     .filter(Boolean)
     .join(' ')
 
-  // load가 안 왔고 타임아웃까지 지났으면 '거부당한 듯'으로 본다.
-  const looksBlocked = timedOut && !loaded
+  // 런타임 감지는 불가능하므로 알려진 목록으로 판단한다(위 주석 참조).
+  const blockedDomain = isKnownBlocked(url)
 
   return (
     <div className="flex h-full flex-col">
@@ -118,12 +106,6 @@ export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
           title={config.title ?? url}
           sandbox={sandbox}
           referrerPolicy="no-referrer"
-          onLoad={() => {
-            // 주의: 차단된 프레임에서도 이 핸들러가 불릴 수 있다(위 주석 참조).
-            // 즉 loaded=true가 '정상 표시'를 보장하지 않는다.
-            setLoaded(true)
-            setTimedOut(false)
-          }}
           className="block border-0 bg-white"
           style={{
             width: compensated,
@@ -133,18 +115,16 @@ export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
           }}
         />
 
-        {looksBlocked && (
+        {blockedDomain && (
           <div
             className="absolute inset-0 grid place-items-center gap-2 bg-surface-raised/95 p-4
                        text-center"
           >
             <div className="flex flex-col items-center gap-2">
-              <p className="text-body text-text-primary">
-                이 사이트는 embed를 거부하는 것 같습니다
-              </p>
-              <p className="text-caption text-text-tertiary">
-                {LOAD_TIMEOUT_MS / 1000}초 안에 로드되지 않았습니다. X-Frame-Options 또는
-                frame-ancestors로 막혔거나, 그냥 느린 것일 수도 있습니다.
+              <p className="text-body text-text-primary">{blockedDomain}은 임베드를 거부합니다</p>
+              <p className="text-caption text-text-tertiary leading-relaxed-ko">
+                이 사이트는 X-Frame-Options로 다른 앱에 표시되는 것을 막습니다. 우리가 우회할 수
+                없으니 브라우저에서 여세요.
               </p>
               <div className="flex gap-2">
                 <button
@@ -155,14 +135,6 @@ export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
                 >
                   <ExternalLink size={12} />
                   브라우저에서 열기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReloadNonce((n) => n + 1)}
-                  className="rounded border border-border-subtle px-2 py-1 text-caption
-                             text-text-tertiary hover:bg-surface-inset"
-                >
-                  다시 시도
                 </button>
               </div>
             </div>
