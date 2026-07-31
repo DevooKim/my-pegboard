@@ -6,6 +6,7 @@ import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
 import { ColumnHeader } from './ColumnHeader'
 import { type ColumnWidths, visibleColumns, withDefaults } from './columns'
+import { IssueDetailModal } from './IssueDetailModal'
 import { IssueRow } from './IssueRow'
 
 /**
@@ -35,6 +36,9 @@ export function JiraView({
 
   // 목록에 스크롤바가 생기면 그만큼 헤더를 밀어줘야 열이 어긋나지 않는다.
   // macOS는 오버레이 스크롤바라 보통 0이지만, 마우스를 연결하면 폭이 생긴다.
+  // 열려 있는 상세 모달. seed는 목록이 이미 가진 값 — 0ms 골격의 재료다 (D2).
+  const [detail, setDetail] = useState<{ key: string; seed: JiraIssue | null } | null>(null)
+
   const listRef = useRef<HTMLUListElement | null>(null)
   const [scrollbar, setScrollbar] = useState(0)
   useEffect(() => {
@@ -103,10 +107,18 @@ export function JiraView({
               visible={visible}
               now={now}
               browseUrl={browseUrl}
+              onOpen={() => setDetail({ key: issue.key, seed: issue })}
             />
           </li>
         ))}
       </ul>
+
+      {/* Modal이 포털이라 위치는 무관하다. 목록 뒤에 두어 읽는 순서를 맞춘다. */}
+      <IssueDetailModal
+        issueKey={detail?.key ?? null}
+        seed={detail?.seed ?? null}
+        onClose={() => setDetail(null)}
+      />
 
       {/* 목록은 그대로 두고 실패만 아래에 얇게 알린다 */}
       {envelope.status === 'error-transient' && envelope.error && (

@@ -24,6 +24,7 @@ export function IssueRow({
   visible,
   now,
   browseUrl,
+  onOpen,
 }: {
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
@@ -33,17 +34,44 @@ export function IssueRow({
   now: number
   /** 티켓 키 → Jira 웹 URL. 연결이 없으면 null. */
   browseUrl: (key: string) => string | null
+  /** 행 클릭 → 상세 모달 (D1). */
+  onOpen: (key: string) => void
 }) {
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
   const statusCategory = issue.status?.statusCategory?.key ?? 'new'
   const shown = renderedColumns(density, visible)
 
+  const openDetail = () => onOpen(issue.key)
+
+  // ⌘+클릭은 브라우저로. "새 창에서 열기"라는 익숙한 관습을 그대로 쓴다.
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      const href = browseUrl(issue.key)
+      if (href) void openUrl(href)
+      return
+    }
+    openDetail()
+  }
+
   return (
-    // 행 자체는 클릭 대상이 아니다. 키와 상위만 Jira로 나가는 링크이고,
-    // 제목 클릭(상세 모달)은 2차에서 붙는다.
+    // 행 전체가 상세 모달을 여는 버튼이다 (D1). 안에 링크(<a>)가 있으므로
+    // <button>으로 감쌀 수 없다 — 중첩이 HTML 위반이라 role로 대신한다.
+    // 키·상위 링크는 stopPropagation으로 여기까지 오지 않는다.
+    // biome-ignore lint/a11y/useSemanticElements: 내부에 <a>가 있어 <button> 중첩이 불가능하다
     <div
-      className="grid w-full items-center gap-2 rounded py-1.5 pr-2 pl-3 text-left
-                 transition-colors duration-fast hover:bg-surface-inset"
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          openDetail()
+        }
+      }}
+      title={`${issue.key} — 클릭하면 상세, ⌘+클릭하면 Jira`}
+      className="grid w-full cursor-pointer items-center gap-2 rounded py-1.5 pr-2 pl-3 text-left
+                 transition-colors duration-fast hover:bg-surface-inset
+                 focus-visible:outline-2 focus-visible:outline-accent"
       style={{
         // 우선순위 막대를 border가 아니라 배경 그라디언트로 그린다.
         // `border-left` + `rounded` 조합은 둥근 모서리에서 테두리가 네 변을 돌기
@@ -110,7 +138,10 @@ function IssueLink({
   mono?: boolean
   title?: string
 }) {
-  const base = `w-full min-w-0 truncate text-caption text-text-tertiary ${mono ? 'font-mono text-ticket-key tabular-nums' : ''}`
+  // `ticket-key`는 컴포넌트 클래스지 유틸리티가 아니다 — `text-` 접두어를 붙이면
+  // Tailwind가 찾지 못해 아무것도 적용되지 않는다. 이 클래스가 font-mono·크기·
+  // 자간·tabular-nums를 모두 갖고 있으므로 옆에 따로 붙일 필요가 없다.
+  const base = `w-full min-w-0 truncate text-caption text-text-tertiary ${mono ? 'ticket-key' : ''}`
 
   if (!href) {
     return (
@@ -126,6 +157,8 @@ function IssueLink({
       title={title ?? `${issueKey} — Jira에서 열기`}
       onClick={(e) => {
         e.preventDefault()
+        // 행 클릭(상세 모달)까지 번지면 브라우저와 모달이 동시에 열린다.
+        e.stopPropagation()
         void openUrl(href)
       }}
       className={`${base} cursor-pointer hover:text-accent hover:underline

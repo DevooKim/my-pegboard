@@ -58,6 +58,7 @@ describe('헤더와 행의 글자 시작점', () => {
         visible={visible}
         now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
+        onOpen={() => {}}
       />,
     )
     expect(trackChildren(header.container)).toHaveLength(trackChildren(row.container).length)
@@ -80,6 +81,7 @@ describe('헤더와 행의 글자 시작점', () => {
         visible={visible}
         now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
+        onOpen={() => {}}
       />,
     )
     const h = header.container.querySelector<HTMLElement>('.grid')?.style.gridTemplateColumns
@@ -115,6 +117,7 @@ describe('헤더와 행의 글자 시작점', () => {
         visible={visible}
         now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
+        onOpen={() => {}}
       />,
     )
     const offenders: string[] = []
@@ -149,6 +152,7 @@ describe('헤더와 행의 글자 시작점', () => {
         visible={visible}
         now={Date.parse('2026-07-30T00:00:00+0900')}
         browseUrl={() => null}
+        onOpen={() => {}}
       />,
     )
     const pad = (el: Element | null) =>
