@@ -361,6 +361,42 @@ fn detail_serializes_camel_case() {
     assert!(json.get("issueType").is_some());
     assert!(json.get("reporter").is_some());
     assert_eq!(json["reporter"]["accountId"], "6a1b2c3d4e5f6a7b8c9d0e1f");
+    // 2차에 추가된 세 필드. 이 fixture에는 값이 없지만 **키는 나가야** 한다 —
+    // 프론트가 `detail.dueDate`를 읽을 때 undefined와 "필드 자체가 없음"을
+    // 구분하지 않아도 되게.
+    assert!(json.get("dueDate").is_some(), "dueDate 키가 없다");
+    assert!(json.get("parent").is_some(), "parent 키가 없다");
+    assert!(json.get("sprint").is_some(), "sprint 키가 없다");
+}
+
+/// `DETAIL_FIELDS`는 `duedate`/`parent`/`customfield_10020`을 요청하는데
+/// 2차 전까지 타입이 그것을 버리고 있었다. 상세 모달은 상위 티켓으로
+/// 전환(D4)해야 하므로 parent가 반드시 살아야 한다.
+#[test]
+fn detail_keeps_due_date_parent_and_sprint() {
+    let raw = serde_json::json!({
+        "key": "ABC-142",
+        "fields": {
+            "summary": "요약",
+            "duedate": "2026-08-04",
+            "parent": { "key": "ABC-400", "fields": { "summary": "로그인 개선" } },
+            "customfield_10020": [
+                { "name": "Sprint 11", "state": "closed" },
+                { "name": "Sprint 12", "state": "active" }
+            ]
+        }
+    });
+
+    let detail: JiraIssueDetail = serde_json::from_value(raw).unwrap();
+    assert_eq!(detail.due_date.as_deref(), Some("2026-08-04"));
+
+    let parent = detail.parent.expect("parent가 보존돼야 한다");
+    assert_eq!(parent.key, "ABC-400");
+    assert_eq!(parent.summary.as_deref(), Some("로그인 개선"));
+
+    // 활성 스프린트를 고른다 — 목록용 JiraIssue와 같은 규칙.
+    let sprint = detail.sprint.expect("sprint가 보존돼야 한다");
+    assert_eq!(sprint.name, "Sprint 12");
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +456,16 @@ fn dth_requires_only_project_issuetype_summary() {
     assert_eq!(required, vec!["issuetype", "project", "summary"]);
 }
 
+/// ⚠️ **이 fixture는 합성 케이스다. 실물과 다르다.**
+///
+/// 2026-07-31 라이브 확인 결과, 실제 EDU의 `reporter`는 `hasDefaultValue: true`라
+/// 폼에 그릴 필요가 없다(서버가 채운다). 실측 4개 조합(DTH/EDU/GRM/PX) 모두
+/// 사용자 입력이 필요한 필수 필드는 project·issuetype·summary 3개뿐이다.
+///
+/// 그래도 이 테스트를 고치지 않는 이유: 검증 대상이 "EDU의 현재 설정"이 아니라
+/// **"required이고 기본값이 없는 필드가 있으면 폼이 그것을 집어낸다"는 규칙**이기
+/// 때문이다. 프로젝트 설정은 언제든 바뀔 수 있고, 그때 이 규칙이 살아 있어야 한다.
+/// (DECISIONS 11.3 / 스펙 4.2, C1)
 #[test]
 fn edu_additionally_requires_reporter() {
     // 이게 DECISIONS 21장 "MCP 실측이 추측을 이김"의 그 케이스다.
@@ -751,4 +797,87 @@ fn detail_fields_superset_of_list_fields() {
     assert!(DETAIL_FIELDS.contains(&"reporter"));
     assert!(DETAIL_FIELDS.contains(&"labels"));
     assert!(DETAIL_FIELDS.contains(&"created"));
+}
+
+// ---------------------------------------------------------------------------
+// 프로젝트 + 이슈타입 (생성 폼)
+// ---------------------------------------------------------------------------
+
+/// 실측 응답 형태 (2026-07-31):
+/// `{ startAt, maxResults, total, isLast, values: [{ key, name, issueTypes: [...] }] }`
+#[test]
+fn parses_projects_with_issue_types() {
+    let raw = serde_json::json!({
+        "startAt": 0,
+        "maxResults": 50,
+        "total": 2,
+        "isLast": true,
+        "values": [
+            {
+                "key": "ABC",
+                "name": "Team",
+                "issueTypes": [
+                    { "id": "10082", "name": "기능", "subtask": false, "hierarchyLevel": 0 },
+                    { "id": "10083", "name": "하위 작업", "subtask": true, "hierarchyLevel": -1 }
+                ]
+            },
+            { "key": "XYZ", "name": "제품", "issueTypes": [] }
+        ]
+    });
+
+    let page: super::super::types::ProjectWithTypesSearchPage =
+        serde_json::from_value(raw).unwrap();
+
+    assert!(page.is_last);
+    assert_eq!(page.values.len(), 2);
+    assert_eq!(page.values[0].key, "ABC");
+    assert_eq!(page.values[0].issue_types.len(), 2);
+    assert_eq!(page.values[0].issue_types[0].id, "10082");
+    assert!(!page.values[0].issue_types[0].subtask);
+    // 하위작업은 parent가 필요해 생성 폼에서 제외된다. 그 판단의 근거가 이 플래그다.
+    assert!(page.values[0].issue_types[1].subtask);
+    assert_eq!(page.values[0].issue_types[1].hierarchy_level, -1);
+}
+
+/// Jira가 `issueTypes`를 생략해도 파싱이 실패하면 안 된다 —
+/// 프로젝트 목록 전체가 날아가고 설정창이 빈다.
+#[test]
+fn project_without_issue_types_still_parses() {
+    let raw = serde_json::json!({
+        "isLast": true,
+        "values": [{ "key": "ABC", "name": "Team" }]
+    });
+    let page: super::super::types::ProjectWithTypesSearchPage =
+        serde_json::from_value(raw).unwrap();
+    assert_eq!(page.values[0].key, "ABC");
+    assert!(page.values[0].issue_types.is_empty());
+}
+
+/// `hierarchyLevel`이 없는 응답(구 사이트)도 0으로 받아준다.
+#[test]
+fn missing_hierarchy_level_defaults_to_standard() {
+    let raw = serde_json::json!({
+        "isLast": true,
+        "values": [{
+            "key": "ABC", "name": "Team",
+            "issueTypes": [{ "id": "1", "name": "작업" }]
+        }]
+    });
+    let page: super::super::types::ProjectWithTypesSearchPage =
+        serde_json::from_value(raw).unwrap();
+    let t = &page.values[0].issue_types[0];
+    assert_eq!(t.hierarchy_level, 0);
+    assert!(!t.subtask);
+}
+
+/// 회귀 방지: `isLast`(camelCase)를 못 읽으면 페이지 순회가 끝을 알아채지 못한다.
+/// 기존 `ProjectSearchPage`에도 같은 버그가 있었다 (2026-07-31 발견).
+#[test]
+fn plain_project_page_reads_is_last() {
+    let raw = serde_json::json!({
+        "isLast": true,
+        "values": [{ "key": "ABC", "name": "Team" }]
+    });
+    let page: super::super::types::ProjectSearchPage = serde_json::from_value(raw).unwrap();
+    assert!(page.is_last, "isLast를 읽지 못하면 빈 페이지를 한 번 더 받는다");
 }

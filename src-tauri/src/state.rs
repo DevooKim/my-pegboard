@@ -8,11 +8,31 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-use crate::providers::jira::JiraCredentials;
+use crate::providers::jira::{CreateMeta, JiraCredentials, JiraIdentity};
 use crate::secrets::{SecretKey, SecretStore};
 use crate::storage::board::BoardStore;
 use crate::storage::cache::CacheStore;
+use crate::storage::jira_meta::JiraMetaStore;
 use crate::storage::todos::TodoStore;
+
+/// 재시작하면 버리는 Jira 캐시.
+///
+/// createmeta를 디스크에 두지 않는 이유(D10): 프로젝트 설정은 언제든 바뀐다.
+/// 재시작 뒤에도 옛 스키마를 믿으면 "필수 필드가 생겼는데 폼에 없는" 상태가 되고,
+/// 그건 400을 받고서야 알게 된다. 세션 동안만 믿는다.
+#[derive(Default)]
+pub struct JiraSessionCache {
+    /// key = `"{projectKey}:{issueTypeId}"`
+    pub createmeta: std::collections::HashMap<String, CreateMeta>,
+    /// `/myself` 결과. "나에게 할당"의 accountId.
+    pub identity: Option<JiraIdentity>,
+}
+
+impl JiraSessionCache {
+    pub fn meta_key(project_key: &str, issue_type_id: &str) -> String {
+        format!("{project_key}:{issue_type_id}")
+    }
+}
 
 /// 비밀이 아닌 연결 설정. `connections.json`에 저장된다.
 ///
@@ -32,6 +52,11 @@ pub struct AppState {
     pub board: Mutex<BoardStore>,
     pub todos: Mutex<TodoStore>,
     pub cache: Mutex<CacheStore>,
+    /// 프로젝트/이슈타입 디스크 캐시. 위젯 캐시와 분리돼 있다 —
+    /// `board_save`의 orphan 정리가 위젯 id 없는 파일을 지우기 때문.
+    pub jira_meta: Mutex<JiraMetaStore>,
+    /// 재시작하면 버리는 캐시(createmeta, `/myself`).
+    pub jira_session: Mutex<JiraSessionCache>,
     pub secrets: SecretStore,
     pub connections: Mutex<Connections>,
     pub connections_path: PathBuf,
@@ -54,6 +79,12 @@ impl AppState {
             tracing::warn!(?todos_outcome, "todo 파일 상태");
         }
 
+        let (jira_meta, jira_meta_outcome) = JiraMetaStore::load(&base_dir)
+            .map_err(|e| format!("Jira 메타 캐시를 읽을 수 없습니다: {e}"))?;
+        if jira_meta_outcome.is_noteworthy() {
+            tracing::warn!(?jira_meta_outcome, "Jira 메타 캐시 상태");
+        }
+
         let connections_path = base_dir.join("connections.json");
         let connections = std::fs::read_to_string(&connections_path)
             .ok()
@@ -64,6 +95,8 @@ impl AppState {
             board: Mutex::new(board),
             todos: Mutex::new(todos),
             cache: Mutex::new(CacheStore::new(&base_dir)),
+            jira_meta: Mutex::new(jira_meta),
+            jira_session: Mutex::new(JiraSessionCache::default()),
             secrets: SecretStore::new(),
             connections: Mutex::new(connections),
             connections_path,

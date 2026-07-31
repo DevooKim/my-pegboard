@@ -96,6 +96,77 @@ async jiraCached(widgetId: string) : Promise<Result<JiraWidgetData | null, strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 티켓 하나의 상세. **캐시하지 않는다** (D2) — 목록이 준 골격 위에 덧그리는 값이라
+ * 낡은 것을 보여줄 바에는 잠깐 비어 있는 편이 정직하다.
+ */
+async jiraIssue(key: string) : Promise<Result<JiraIssueDetail, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_issue", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 코멘트 최신 20건을 대화 순서로 (D3).
+ */
+async jiraComments(key: string) : Promise<Result<JiraCommentsView, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_comments", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 프로젝트 + 이슈타입. 디스크 캐시가 있으면 네트워크를 건드리지 않는다 (D9).
+ */
+async jiraCreateOptions(forceRefresh: boolean) : Promise<Result<JiraCreateOptions, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_create_options", { forceRefresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 생성 폼 스키마. 세션 캐시 히트면 네트워크를 건드리지 않는다 (D10).
+ */
+async jiraCreatemeta(projectKey: string, issueTypeId: string, forceRefresh: boolean) : Promise<Result<CreateMeta, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_createmeta", { projectKey, issueTypeId, forceRefresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 내 계정. "나에게 할당" 체크박스가 쓴다. 세션 캐시.
+ */
+async jiraMyself() : Promise<Result<JiraIdentity, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_myself") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 티켓 생성. 우리가 하는 유일한 쓰기 (DECISIONS 11.5).
+ * 
+ * 실패 처리는 5.6의 결정 트리를 그대로 따른다. 핵심은 **400 계열만 자동 재시도**한다는 것.
+ * 네트워크·타임아웃·5xx는 요청이 닿았는지 알 수 없으므로 재시도하면 티켓이 두 개가 되고,
+ * 우리에겐 지우는 기능이 없다.
+ */
+async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, JiraCreateFailure>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_create_issue", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async boardLoad() : Promise<Result<BoardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_load") };
@@ -124,6 +195,15 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
+/**
+ * `allowedValues` 항목. Jira는 필드 종류마다 다른 모양을 주므로
+ * 공통분모(id/value/name)만 뽑고 원본은 `raw`로 남긴다.
+ */
+export type AllowedValue = { id: string | null; 
+/**
+ * 화면에 보일 문자열. `name` → `value` → `id` 순으로 찾는다.
+ */
+label: string | null }
 export type AppInfo = { version: string; 
 /**
  * 유휴 메모리 목표 150MB 대비 실측치를 설정창에 노출하기 위한 자리.
@@ -133,11 +213,144 @@ memory_bytes: number | null }
 export type Board = { id: string; name: string; widgets?: Widget[] }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
 /**
+ * 티켓 생성 요청. 최소 폼 + createmeta로 알아낸 추가 필드 (DECISIONS 11.3).
+ * 
+ * `extra_fields`가 있는 이유: 프로젝트마다 필수 필드가 다르므로(XYZ의 `reporter`)
+ * 컴파일 타임에 필드 목록을 고정할 수 없다.
+ */
+export type CreateIssueInput = { 
+/**
+ * 프로젝트 키 (`ABC`, `XYZ`, …)
+ */
+projectKey: string; 
+/**
+ * 이슈타입 **id** (`10082`). 이름이 아니라 id다 — 같은 이름의 타입이 여럿일 수 있다.
+ */
+issueTypeId: string; summary: string; 
+/**
+ * ADF 문서. 프론트가 만들어 보낸다.
+ */
+description?: JsonValue | null; 
+/**
+ * createmeta가 요구한 나머지 필드. `{"reporter": {"id": "..."}}` 형태 그대로.
+ */
+extraFields?: Partial<{ [key in string]: JsonValue }> }
+/**
+ * 특정 프로젝트+이슈타입의 생성 폼 스키마.
+ */
+export type CreateMeta = { fields: CreateMetaField[] }
+/**
+ * createmeta가 알려주는 필드 하나 (DECISIONS 11.3).
+ */
+export type CreateMetaField = { 
+/**
+ * `summary`, `reporter`, `customfield_10011` …
+ */
+fieldId: string; name: string; required: boolean; 
+/**
+ * **`true`면 폼에 그리지 않는다.** 서버가 기본값을 채운다.
+ */
+hasDefaultValue: boolean; 
+/**
+ * `string` | `user` | `priority` | `array` | `option` …
+ */
+schemaType: string | null; 
+/**
+ * 드롭다운을 추가 API 호출 없이 채울 수 있다 (DECISIONS 11.3 "부수 발견").
+ */
+allowedValues: AllowedValue[] }
+/**
+ * 생성 성공 응답. Jira는 키/id/self만 돌려준다.
+ */
+export type CreatedIssue = { id: string; key: string; self?: string | null }
+/**
+ * 모달·폼에서 쓰는 단발 호출 실패.
+ * 
+ * [`JiraWidgetError`]와 나눠 둔 이유: 저쪽은 위젯 봉투라 `stale`(직전 성공 데이터)을
+ * 들고 다닌다. 모달은 캐시하지 않으므로(D2) 그 필드가 늘 `None`이 되고,
+ * 프론트가 "있을 수도 있는 값"을 매번 확인하게 만든다.
+ */
+export type JiraCallError = { 
+/**
+ * `transient` | `permanent` — 프론트가 [다시 시도]를 보일지 고르는 축.
+ */
+kind: string; 
+/**
+ * Jira 원문 그대로. 우리가 고쳐 쓰지 않는다.
+ */
+message: string; 
+/**
+ * 401. 전역 배너 1회 규칙의 트리거 (DECISIONS 16장).
+ */
+isAuthFailure: boolean; retryAfterSecs: number | null }
+export type JiraComment = { id: string; author: JiraUser | null; created: string | null; updated: string | null; 
+/**
+ * ADF 본문. 설명과 동일하게 그대로 통과.
+ */
+body: JsonValue | null }
+/**
+ * 상세 모달의 코멘트 영역.
+ */
+export type JiraCommentsView = { 
+/**
+ * **시간 오름차순(대화 순서)으로 정렬된 최신 20건.**
+ * 
+ * Jira에 `orderBy=-created`로 요청해 최신 20건을 받고 여기서 뒤집는다.
+ * 정렬 책임을 프론트에 넘기지 않는다 — 화면이 데이터를 재가공하기 시작하면
+ * "Rust가 데이터의 주인"이라는 경계가 흐려진다.
+ */
+comments: JiraComment[]; total: number; 
+/**
+ * `total`이 받아온 개수보다 많은가. "이전 N개는 Jira에서" 링크를 띄울지.
+ */
+hasOlder: boolean }
+/**
  * 연결 상태. 프론트가 알아야 할 것은 두 가지뿐이다 —
  * 설정이 됐는지, 그리고 티켓 링크를 만들 base URL이 무엇인지.
  * **토큰과 이메일은 넘기지 않는다.**
  */
 export type JiraConnectionInfo = { configured: boolean; baseUrl: string | null }
+/**
+ * 생성 실패. [`JiraCallError`]에 "티켓이 생겼을 수도 있다"는 축이 더 붙는다.
+ */
+export type JiraCreateFailure = { kind: string; message: string; isAuthFailure: boolean; 
+/**
+ * 요청이 Jira에 닿았는지 알 수 없다 → 티켓이 만들어졌을 수 있다.
+ * 
+ * 프론트는 이때 [생성] 버튼을 잠그고 "Jira에서 확인하세요"를 띄운다.
+ * 생성은 멱등이 아니고 우리에겐 삭제 기능이 없다.
+ */
+possiblyCreated: boolean; 
+/**
+ * 400 재조회 결과, 우리가 채울 수 없는 필수 필드.
+ */
+missingFields: CreateMetaField[]; 
+/**
+ * 자동 재시도를 실제로 했는가 (로그·표시용).
+ */
+retried: boolean }
+/**
+ * 생성 폼·설정창이 공유하는 프로젝트 목록.
+ */
+export type JiraCreateOptions = { projects: JiraProjectWithTypes[]; 
+/**
+ * ISO 8601. ↻ 버튼 옆의 "3일 전" 표시용.
+ */
+fetchedAt: string | null; 
+/**
+ * 디스크 캐시에서 온 것인가.
+ */
+fromCache: boolean }
+/**
+ * 설정창 "연결 테스트" 결과. `/myself` 응답에서 뽑는다.
+ * 
+ * `Deserialize`는 아래에 손으로 구현했다 (`avatarUrls` 맵 접기).
+ */
+export type JiraIdentity = { accountId: string; displayName?: string; 
+/**
+ * 사이트 개인정보 설정에 따라 숨겨질 수 있다. 없다고 실패가 아니다.
+ */
+emailAddress?: string | null; avatarUrl?: string | null }
 /**
  * 목록 위젯 행 하나. **여기 필드를 늘리기 전에 [`LIST_FIELDS`]와 페이로드 크기를 생각할 것.**
  * 
@@ -169,7 +382,43 @@ dueDate: string | null; parent: JiraParent | null;
  * 활성 스프린트 하나. 여러 개면 첫 번째.
  */
 sprint: JiraSprint | null }
+/**
+ * 상세 모달용. 목록 필드 + 보고자·라벨·생성일·ADF 설명 (DECISIONS 11.4).
+ */
+export type JiraIssueDetail = { key: string; summary: string; status: JiraStatus | null; assignee: JiraUser | null; reporter: JiraUser | null; priority: JiraPriority | null; issueType: JiraIssueType | null; updated: string | null; created: string | null; 
+/**
+ * 라벨 없음은 `null`이 아니라 `[]`로 정규화한다 — 프론트 분기 하나를 없앤다.
+ */
+labels: string[]; 
+/**
+ * ADF 문서 그대로. 설명이 비어 있으면 `None`.
+ */
+description: JsonValue | null; 
+/**
+ * `2026-07-27` (시각 없음).
+ */
+dueDate: string | null; 
+/**
+ * 상위 항목. 모달 안에서 이 티켓으로 전환할 수 있다.
+ */
+parent: JiraParent | null; 
+/**
+ * 활성 스프린트 하나.
+ */
+sprint: JiraSprint | null }
 export type JiraIssueType = { name: string; iconUrl?: string | null; subtask?: boolean }
+/**
+ * 생성 폼의 이슈타입 선택지. `/project/search?expand=issueTypes` 응답 항목.
+ */
+export type JiraIssueTypeOption = { id: string; name: string; description?: string | null; iconUrl?: string | null; 
+/**
+ * 하위작업 타입은 `parent`가 필수라 생성 폼에서 제외한다.
+ */
+subtask?: boolean; 
+/**
+ * -1 하위작업 / 0 표준 / 1 에픽. Jira가 주지 않으면 0으로 본다.
+ */
+hierarchyLevel?: number }
 /**
  * 상위 항목. 팀 관리형에서는 에픽이고, 하위 작업이면 부모 티켓이다.
  * 
@@ -186,6 +435,13 @@ export type JiraProject = {
  * `ABC`. JQL에 그대로 들어가는 값이다.
  */
 key: string; name: string }
+/**
+ * 프로젝트 + 그 프로젝트에서 만들 수 있는 이슈타입.
+ * 
+ * 실측(2026-07-31): `action=create`와 `action=view`가 같은 5개를 준다.
+ * 그래서 목록 하나로 설정창(조회 범위)과 생성 폼을 모두 채운다.
+ */
+export type JiraProjectWithTypes = { key: string; name: string; issueTypes?: JiraIssueTypeOption[] }
 /**
  * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 JQL이거나 둘 중 하나.
  * 

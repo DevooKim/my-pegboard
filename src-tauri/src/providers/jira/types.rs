@@ -303,6 +303,9 @@ impl<'de> Deserialize<'de> for JiraIssueDetail {
             created: f.created,
             labels: f.labels.unwrap_or_default(),
             description: f.description.filter(|v| !v.is_null()),
+            due_date: f.due_date,
+            parent: f.parent,
+            sprint: f.sprint,
         })
     }
 }
@@ -338,6 +341,12 @@ pub struct JiraIssueDetail {
     pub labels: Vec<String>,
     /// ADF 문서 그대로. 설명이 비어 있으면 `None`.
     pub description: Option<Adf>,
+    /// `2026-07-27` (시각 없음).
+    pub due_date: Option<String>,
+    /// 상위 항목. 모달 안에서 이 티켓으로 전환할 수 있다.
+    pub parent: Option<JiraParent>,
+    /// 활성 스프린트 하나.
+    pub sprint: Option<JiraSprint>,
 }
 
 // ---------------------------------------------------------------------------
@@ -785,10 +794,63 @@ pub struct JiraProject {
 }
 
 /// `/rest/api/3/project/search` 응답 중 우리가 쓰는 부분.
+///
+/// **`rename_all = "camelCase"`가 필수다.** Jira는 `isLast`를 보내는데
+/// 이게 없으면 `is_last`가 항상 `false`로 읽히고, 페이지 순회가 `isLast`를
+/// 보지 못해 매번 빈 페이지를 한 번 더 받고서야 끝난다(요청 1회 낭비).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectSearchPage {
     #[serde(default)]
     pub values: Vec<JiraProject>,
+    #[serde(default)]
+    pub is_last: bool,
+}
+
+// ---------------------------------------------------------------------------
+// 프로젝트 + 이슈타입 (생성 폼 / 설정창 공용)
+// ---------------------------------------------------------------------------
+
+/// 생성 폼의 이슈타입 선택지. `/project/search?expand=issueTypes` 응답 항목.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraIssueTypeOption {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    /// 하위작업 타입은 `parent`가 필수라 생성 폼에서 제외한다.
+    #[serde(default)]
+    pub subtask: bool,
+    /// -1 하위작업 / 0 표준 / 1 에픽. Jira가 주지 않으면 0으로 본다.
+    #[serde(default)]
+    pub hierarchy_level: i32,
+}
+
+/// 프로젝트 + 그 프로젝트에서 만들 수 있는 이슈타입.
+///
+/// 실측(2026-07-31): `action=create`와 `action=view`가 같은 5개를 준다.
+/// 그래서 목록 하나로 설정창(조회 범위)과 생성 폼을 모두 채운다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraProjectWithTypes {
+    pub key: String,
+    pub name: String,
+    #[serde(default)]
+    pub issue_types: Vec<JiraIssueTypeOption>,
+}
+
+/// `expand=issueTypes`를 붙인 `/project/search` 응답.
+///
+/// [`ProjectSearchPage`]와 나눠 둔 이유: 기존 `list_projects`의 파싱을
+/// 건드리지 않기 위해서다. 같은 타입에 필드를 더하면 그쪽 테스트가 흔들린다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectWithTypesSearchPage {
+    #[serde(default)]
+    pub values: Vec<JiraProjectWithTypes>,
     #[serde(default)]
     pub is_last: bool,
 }

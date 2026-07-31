@@ -59,7 +59,7 @@ pub use presets::{
 };
 pub use types::{
     Adf, AllowedValue, CommentPage, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue,
-    JiraComment, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType, JiraPriority, JiraStatus,
-    JiraParent, JiraProject, JiraSprint, JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS,
-    LIST_FIELDS,
+    JiraComment, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType, JiraIssueTypeOption,
+    JiraPriority, JiraStatus, JiraParent, JiraProject, JiraProjectWithTypes, JiraSprint,
+    JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
 };

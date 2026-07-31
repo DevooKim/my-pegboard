@@ -17,7 +17,8 @@ use std::time::Duration;
 use super::error::{parse_retry_after, JiraError};
 use super::types::{
     CommentPage, CreateIssueInput, CreateMeta, CreatedIssue, JiraIdentity, JiraIssueDetail,
-    JiraProject, ProjectSearchPage, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraProject, JiraProjectWithTypes, ProjectSearchPage, ProjectWithTypesSearchPage, SearchPage,
+    DETAIL_FIELDS, LIST_FIELDS,
 };
 
 /// 요청 타임아웃. 위젯 체감 목표가 1초(CLAUDE.md 성능표)이므로
@@ -355,6 +356,66 @@ impl JiraClient {
             all.extend(page.values);
 
             // is_last를 믿되, 빈 페이지가 오면 무한 루프를 끊는다.
+            if page.is_last || fetched == 0 {
+                break;
+            }
+            start_at += fetched;
+        }
+        Ok(all)
+    }
+
+    /// 최신 코멘트부터 `max_results`건. 상세 모달이 쓴다 (D3).
+    ///
+    /// [`get_comments`](Self::get_comments)와 나눠 둔 이유: 저쪽은 `orderBy=created`
+    /// (오래된 것부터) 고정이고 기존 테스트가 그것을 검증한다. 모달은 **최신 20건**이
+    /// 필요하므로 `-created`로 받아야 한다. 대화 순서로 뒤집는 것은 커맨드 층의 몫이다.
+    pub async fn get_comments_newest(
+        &self,
+        key: &str,
+        max_results: u32,
+    ) -> Result<CommentPage, JiraError> {
+        let response = self
+            .get(&format!("/rest/api/3/issue/{}/comment", encode_path(key)))
+            .query(&[
+                ("startAt", "0".to_string()),
+                ("maxResults", max_results.to_string()),
+                ("orderBy", "-created".to_string()),
+            ])
+            .send()
+            .await
+            .map_err(JiraError::from)?;
+        Self::handle(response, "comment").await
+    }
+
+    /// 프로젝트 + 이슈타입을 한 번에. 생성 폼과 설정창이 같이 쓴다.
+    ///
+    /// `action=create`를 붙이지 않는다 — 설정창의 "조회 범위"는 볼 수 있는 프로젝트
+    /// 전부여야 하고, 실측상 create 목록과 개수가 같다(5개). 생성 권한이 없는
+    /// 프로젝트를 고르면 Jira가 거절하고 그 메시지를 그대로 보여준다.
+    pub async fn list_projects_with_issue_types(
+        &self,
+    ) -> Result<Vec<JiraProjectWithTypes>, JiraError> {
+        let mut all = Vec::new();
+        let mut start_at = 0u32;
+
+        loop {
+            let response = self
+                .get("/rest/api/3/project/search")
+                .query(&[
+                    ("expand", "issueTypes"),
+                    ("maxResults", "50"),
+                    ("startAt", &start_at.to_string()),
+                    ("orderBy", "key"),
+                ])
+                .send()
+                .await
+                .map_err(JiraError::from)?;
+            let page: ProjectWithTypesSearchPage =
+                Self::handle(response, "project/search?expand=issueTypes").await?;
+
+            let fetched = page.values.len() as u32;
+            all.extend(page.values);
+
             if page.is_last || fetched == 0 {
                 break;
             }

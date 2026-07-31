@@ -16,6 +16,7 @@
 //! | [`board`]  | `board.json`       | layout + widget config, per-type caps   |
 //! | [`todos`]  | `todos.json`       | daily todos, carry-over, `.bak`         |
 //! | [`cache`]  | `cache/<id>.json`  | last good API response, per widget      |
+//! | [`jira_meta`] | `jira_meta.json` | Jira 프로젝트/이슈타입, 명시 갱신만    |
 //! | [`atomic`] | —                  | temp file → fsync → rename              |
 //! | [`migrate`]| —                  | version dispatch, corrupt-file recovery |
 //!
@@ -27,6 +28,7 @@ pub mod atomic;
 pub mod board;
 pub mod cache;
 pub mod error;
+pub mod jira_meta;
 pub mod migrate;
 pub mod todos;
 
@@ -35,6 +37,7 @@ mod tests;
 
 pub use board::{Board, BoardFile, BoardStore, Widget, WidgetLayout, WidgetType};
 pub use cache::{CacheEntry, CacheStore};
+pub use jira_meta::{JiraMetaFile, JiraMetaStore};
 pub use error::{StorageError, StorageResult};
 pub use migrate::{LoadOutcome, Loaded, Migration, MigrationSet};
 pub use todos::{CarriedItem, CarryOverReport, TodoFile, TodoItem, TodoStore};

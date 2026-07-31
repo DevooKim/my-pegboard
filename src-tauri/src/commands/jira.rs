@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::providers::jira::{
-    apply_sort, JiraClient, JiraError, JiraIssue, JiraProject, JiraQuery, Preset, SortDirection,
-    SortField, LIST_FIELDS,
+    apply_sort, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue, JiraClient, JiraComment,
+    JiraError, JiraIdentity, JiraIssue, JiraIssueDetail, JiraProject, JiraProjectWithTypes,
+    JiraQuery, Preset, SortDirection, SortField, LIST_FIELDS,
 };
 use crate::secrets::{Secret, SecretKey};
-use crate::state::AppState;
+use crate::state::{AppState, JiraSessionCache};
 
 /// 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
 ///
@@ -269,6 +270,447 @@ pub fn jira_cached(
 }
 
 // ---------------------------------------------------------------------------
+// 상세 모달 · 생성 폼 (2차)
+// ---------------------------------------------------------------------------
+
+/// 모달·폼에서 쓰는 단발 호출 실패.
+///
+/// [`JiraWidgetError`]와 나눠 둔 이유: 저쪽은 위젯 봉투라 `stale`(직전 성공 데이터)을
+/// 들고 다닌다. 모달은 캐시하지 않으므로(D2) 그 필드가 늘 `None`이 되고,
+/// 프론트가 "있을 수도 있는 값"을 매번 확인하게 만든다.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraCallError {
+    /// `transient` | `permanent` — 프론트가 [다시 시도]를 보일지 고르는 축.
+    pub kind: String,
+    /// Jira 원문 그대로. 우리가 고쳐 쓰지 않는다.
+    pub message: String,
+    /// 401. 전역 배너 1회 규칙의 트리거 (DECISIONS 16장).
+    pub is_auth_failure: bool,
+    pub retry_after_secs: Option<u64>,
+}
+
+impl JiraCallError {
+    fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            kind: "permanent".into(),
+            message: message.into(),
+            is_auth_failure: false,
+            retry_after_secs: None,
+        }
+    }
+
+    /// 연결이 아예 설정되지 않은 경우. 401과 같은 배너를 띄우게 한다 —
+    /// 사용자가 할 일("설정에서 연결하세요")이 같기 때문.
+    fn not_configured() -> Self {
+        Self {
+            kind: "permanent".into(),
+            message: "Jira 연결이 설정되지 않았습니다".into(),
+            is_auth_failure: true,
+            retry_after_secs: None,
+        }
+    }
+}
+
+impl From<JiraError> for JiraCallError {
+    fn from(e: JiraError) -> Self {
+        Self {
+            kind: match e.kind() {
+                crate::providers::jira::ErrorKind::Transient => "transient".into(),
+                crate::providers::jira::ErrorKind::Permanent => "permanent".into(),
+            },
+            message: e.to_string(),
+            is_auth_failure: e.is_auth_failure(),
+            retry_after_secs: e.retry_after_secs(),
+        }
+    }
+}
+
+/// 상세 모달의 코멘트 영역.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraCommentsView {
+    /// **시간 오름차순(대화 순서)으로 정렬된 최신 20건.**
+    ///
+    /// Jira에 `orderBy=-created`로 요청해 최신 20건을 받고 여기서 뒤집는다.
+    /// 정렬 책임을 프론트에 넘기지 않는다 — 화면이 데이터를 재가공하기 시작하면
+    /// "Rust가 데이터의 주인"이라는 경계가 흐려진다.
+    pub comments: Vec<JiraComment>,
+    pub total: u32,
+    /// `total`이 받아온 개수보다 많은가. "이전 N개는 Jira에서" 링크를 띄울지.
+    pub has_older: bool,
+}
+
+/// 상세 모달이 한 번에 받는 코멘트 수 (D3).
+const COMMENT_PAGE_SIZE: u32 = 20;
+
+/// 생성 폼·설정창이 공유하는 프로젝트 목록.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraCreateOptions {
+    pub projects: Vec<JiraProjectWithTypes>,
+    /// ISO 8601. ↻ 버튼 옆의 "3일 전" 표시용.
+    pub fetched_at: Option<String>,
+    /// 디스크 캐시에서 온 것인가.
+    pub from_cache: bool,
+}
+
+/// 생성 실패. [`JiraCallError`]에 "티켓이 생겼을 수도 있다"는 축이 더 붙는다.
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraCreateFailure {
+    pub kind: String,
+    pub message: String,
+    pub is_auth_failure: bool,
+    /// 요청이 Jira에 닿았는지 알 수 없다 → 티켓이 만들어졌을 수 있다.
+    ///
+    /// 프론트는 이때 [생성] 버튼을 잠그고 "Jira에서 확인하세요"를 띄운다.
+    /// 생성은 멱등이 아니고 우리에겐 삭제 기능이 없다.
+    pub possibly_created: bool,
+    /// 400 재조회 결과, 우리가 채울 수 없는 필수 필드.
+    pub missing_fields: Vec<CreateMetaField>,
+    /// 자동 재시도를 실제로 했는가 (로그·표시용).
+    pub retried: bool,
+}
+
+impl JiraCreateFailure {
+    fn from_error(e: &JiraError, possibly_created: bool, retried: bool) -> Self {
+        Self {
+            kind: match e.kind() {
+                crate::providers::jira::ErrorKind::Transient => "transient".into(),
+                crate::providers::jira::ErrorKind::Permanent => "permanent".into(),
+            },
+            message: e.to_string(),
+            is_auth_failure: e.is_auth_failure(),
+            possibly_created,
+            missing_fields: Vec::new(),
+            retried,
+        }
+    }
+
+    fn precondition(message: impl Into<String>) -> Self {
+        Self {
+            kind: "permanent".into(),
+            message: message.into(),
+            is_auth_failure: true,
+            possibly_created: false,
+            missing_fields: Vec::new(),
+            retried: false,
+        }
+    }
+}
+
+/// 자격증명 + 클라이언트를 한 번에. 커맨드 6개가 같은 앞부분을 갖는다.
+fn client_for(state: &AppState) -> Result<JiraClient, JiraCallError> {
+    let creds = state
+        .jira_credentials()
+        .map_err(JiraCallError::permanent)?
+        .ok_or_else(JiraCallError::not_configured)?;
+    Ok(JiraClient::with_http_client(state.http.clone(), creds))
+}
+
+/// 티켓 하나의 상세. **캐시하지 않는다** (D2) — 목록이 준 골격 위에 덧그리는 값이라
+/// 낡은 것을 보여줄 바에는 잠깐 비어 있는 편이 정직하다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_issue(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<JiraIssueDetail, JiraCallError> {
+    let client = client_for(&state)?;
+    client.get_issue(&key).await.map_err(|e| {
+        tracing::warn!(issue = %key, error = %e, "티켓 상세 조회 실패");
+        e.into()
+    })
+}
+
+/// 코멘트 최신 20건을 대화 순서로 (D3).
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_comments(
+    state: State<'_, AppState>,
+    key: String,
+) -> Result<JiraCommentsView, JiraCallError> {
+    let client = client_for(&state)?;
+    let page = client
+        .get_comments_newest(&key, COMMENT_PAGE_SIZE)
+        .await
+        .map_err(|e| {
+            tracing::warn!(issue = %key, error = %e, "코멘트 조회 실패");
+            JiraCallError::from(e)
+        })?;
+
+    // `-created`로 받았으므로 최신이 앞에 있다. 대화 순서로 뒤집는다.
+    let mut comments = page.comments;
+    comments.reverse();
+
+    let has_older = page.total as usize > comments.len();
+    Ok(JiraCommentsView {
+        comments,
+        total: page.total,
+        has_older,
+    })
+}
+
+/// 프로젝트 + 이슈타입. 디스크 캐시가 있으면 네트워크를 건드리지 않는다 (D9).
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_create_options(
+    state: State<'_, AppState>,
+    force_refresh: bool,
+) -> Result<JiraCreateOptions, JiraCallError> {
+    // 캐시 우선. 잠금은 짧게 잡고 값만 복사해서 나온다.
+    let cached = {
+        let meta = state.jira_meta.lock().map_err(|_| {
+            JiraCallError::permanent("상태 잠금 실패")
+        })?;
+        if meta.has_projects() {
+            Some((meta.projects().to_vec(), meta.fetched_at()))
+        } else {
+            None
+        }
+    };
+
+    if !force_refresh {
+        if let Some((projects, fetched_at)) = cached.clone() {
+            return Ok(JiraCreateOptions {
+                projects,
+                fetched_at: fetched_at.map(|t| t.to_rfc3339()),
+                from_cache: true,
+            });
+        }
+    }
+
+    let client = client_for(&state)?;
+    match client.list_projects_with_issue_types().await {
+        Ok(projects) => {
+            let fetched_at = chrono::Utc::now();
+            if let Ok(mut meta) = state.jira_meta.lock() {
+                meta.set_projects(projects.clone(), fetched_at);
+                if let Err(e) = meta.save() {
+                    // 캐시 저장 실패가 조회 성공을 되돌리지는 않는다.
+                    tracing::warn!(error = %e, "Jira 메타 캐시 저장 실패");
+                }
+            }
+            Ok(JiraCreateOptions {
+                projects,
+                fetched_at: Some(fetched_at.to_rfc3339()),
+                from_cache: false,
+            })
+        }
+        Err(e) => {
+            // 갱신에 실패해도 캐시가 있으면 그것을 준다. 드롭다운이 비는 것보다 낫다.
+            // 사용자에게는 옆의 "N일 전"이 낡았다는 신호가 된다.
+            if let Some((projects, fetched_at)) = cached {
+                tracing::warn!(error = %e, "프로젝트 목록 갱신 실패 — 캐시를 유지한다");
+                return Ok(JiraCreateOptions {
+                    projects,
+                    fetched_at: fetched_at.map(|t| t.to_rfc3339()),
+                    from_cache: true,
+                });
+            }
+            tracing::warn!(error = %e, "프로젝트 목록 조회 실패 (캐시 없음)");
+            Err(e.into())
+        }
+    }
+}
+
+/// 생성 폼 스키마. 세션 캐시 히트면 네트워크를 건드리지 않는다 (D10).
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_createmeta(
+    state: State<'_, AppState>,
+    project_key: String,
+    issue_type_id: String,
+    force_refresh: bool,
+) -> Result<CreateMeta, JiraCallError> {
+    let cache_key = JiraSessionCache::meta_key(&project_key, &issue_type_id);
+
+    if !force_refresh {
+        if let Ok(session) = state.jira_session.lock() {
+            if let Some(meta) = session.createmeta.get(&cache_key) {
+                return Ok(meta.clone());
+            }
+        }
+    }
+
+    let client = client_for(&state)?;
+    let meta = client
+        .get_createmeta(&project_key, &issue_type_id)
+        .await
+        .map_err(|e| {
+            tracing::warn!(project = %project_key, issue_type = %issue_type_id, error = %e, "createmeta 조회 실패");
+            JiraCallError::from(e)
+        })?;
+
+    if let Ok(mut session) = state.jira_session.lock() {
+        session.createmeta.insert(cache_key, meta.clone());
+    }
+    Ok(meta)
+}
+
+/// 내 계정. "나에게 할당" 체크박스가 쓴다. 세션 캐시.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_myself(state: State<'_, AppState>) -> Result<JiraIdentity, JiraCallError> {
+    if let Ok(session) = state.jira_session.lock() {
+        if let Some(identity) = &session.identity {
+            return Ok(identity.clone());
+        }
+    }
+
+    let client = client_for(&state)?;
+    let identity = client.verify_credentials().await.map_err(|e| {
+        tracing::warn!(error = %e, "/myself 조회 실패");
+        JiraCallError::from(e)
+    })?;
+
+    if let Ok(mut session) = state.jira_session.lock() {
+        session.identity = Some(identity.clone());
+    }
+    Ok(identity)
+}
+
+/// 티켓 생성. 우리가 하는 유일한 쓰기 (DECISIONS 11.5).
+///
+/// 실패 처리는 5.6의 결정 트리를 그대로 따른다. 핵심은 **400 계열만 자동 재시도**한다는 것.
+/// 네트워크·타임아웃·5xx는 요청이 닿았는지 알 수 없으므로 재시도하면 티켓이 두 개가 되고,
+/// 우리에겐 지우는 기능이 없다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_create_issue(
+    state: State<'_, AppState>,
+    input: CreateIssueInput,
+) -> Result<CreatedIssue, JiraCreateFailure> {
+    let creds = state
+        .jira_credentials()
+        .map_err(JiraCreateFailure::precondition)?
+        .ok_or_else(|| JiraCreateFailure::precondition("Jira 연결이 설정되지 않았습니다"))?;
+    let client = JiraClient::with_http_client(state.http.clone(), creds);
+
+    let first = match client.create_issue(&input).await {
+        Ok(created) => {
+            tracing::info!(key = %created.key, "티켓 생성됨");
+            return Ok(created);
+        }
+        Err(e) => e,
+    };
+
+    match &first {
+        // 400 — 스키마가 우리 생각과 다르다. 재조회해서 한 번만 다시 시도한다.
+        JiraError::BadRequest { .. } => {
+            tracing::warn!(error = %first, "티켓 생성 400 — createmeta 재조회");
+
+            let meta = match client
+                .get_createmeta(&input.project_key, &input.issue_type_id)
+                .await
+            {
+                Ok(meta) => {
+                    if let Ok(mut session) = state.jira_session.lock() {
+                        session.createmeta.insert(
+                            JiraSessionCache::meta_key(&input.project_key, &input.issue_type_id),
+                            meta.clone(),
+                        );
+                    }
+                    meta
+                }
+                // 재조회조차 실패하면 원래 400을 그대로 돌려준다.
+                Err(meta_err) => {
+                    tracing::warn!(error = %meta_err, "createmeta 재조회 실패");
+                    return Err(JiraCreateFailure::from_error(&first, false, false));
+                }
+            };
+
+            let (reconciled, missing) = reconcile_with_meta(&input, &meta);
+
+            // 재조립해도 똑같으면 다시 보내봐야 같은 400이다. 재시도하지 않는다.
+            if reconciled == input {
+                let mut failure = JiraCreateFailure::from_error(&first, false, false);
+                failure.missing_fields = missing;
+                return Err(failure);
+            }
+
+            match client.create_issue(&reconciled).await {
+                Ok(created) => {
+                    tracing::info!(key = %created.key, "티켓 생성됨 (재조립 후)");
+                    Ok(created)
+                }
+                Err(second) => {
+                    let mut failure = JiraCreateFailure::from_error(
+                        &second,
+                        // 두 번째 시도가 네트워크로 죽었다면 그건 닿았을 수 있다.
+                        is_possibly_created(&second),
+                        true,
+                    );
+                    failure.missing_fields = missing;
+                    Err(failure)
+                }
+            }
+        }
+
+        // 요청이 닿았는지 알 수 없다 — 절대 자동 재시도하지 않는다.
+        JiraError::RateLimited { .. }
+        | JiraError::ServerError { .. }
+        | JiraError::Network { .. } => {
+            tracing::error!(error = %first, "티켓 생성 실패 — 생성됐을 수 있음");
+            Err(JiraCreateFailure::from_error(&first, true, false))
+        }
+
+        // 401/403/404/Decode/기타 — 그대로 돌려준다.
+        _ => {
+            tracing::warn!(error = %first, "티켓 생성 실패");
+            Err(JiraCreateFailure::from_error(&first, false, false))
+        }
+    }
+}
+
+/// 응답을 못 받은 부류인가 = 서버에서 만들어졌을 수 있는가.
+fn is_possibly_created(e: &JiraError) -> bool {
+    matches!(
+        e,
+        JiraError::RateLimited { .. } | JiraError::ServerError { .. } | JiraError::Network { .. }
+    )
+}
+
+/// `extra_fields`를 새 createmeta 스키마로 다시 조립한다.
+///
+/// 반환: `(재조립된 input, 우리가 채울 수 없는 필수 필드)`
+///
+/// 400을 받았을 때 프로젝트 설정이 바뀐 경우를 흡수하는 것이 목적이다.
+/// 순수 함수로 뽑아 둔 이유는 네트워크 없이 테스트하기 위해서다 — 이 로직이
+/// 틀리면 중복 티켓이 생기거나 영영 생성이 안 된다.
+pub fn reconcile_with_meta(
+    input: &CreateIssueInput,
+    meta: &CreateMeta,
+) -> (CreateIssueInput, Vec<CreateMetaField>) {
+    let mut out = input.clone();
+
+    // 새 스키마에 없는 필드는 Jira가 거부한다. 빼고 다시 보낸다.
+    out.extra_fields
+        .retain(|field_id, _| meta.field(field_id).is_some());
+
+    // 우리가 채울 수 없는 필수 필드. `hasDefaultValue: true`는 서버가 채우므로 제외한다
+    // (실측: EDU의 reporter가 여기 해당한다 — 4.2).
+    let missing = meta
+        .required_user_input()
+        .into_iter()
+        .filter(|f| !is_covered_by_form(&f.field_id, &out))
+        .cloned()
+        .collect();
+
+    (out, missing)
+}
+
+/// 폼이 이미 보내는 필드인가.
+fn is_covered_by_form(field_id: &str, input: &CreateIssueInput) -> bool {
+    match field_id {
+        "project" | "issuetype" | "summary" => true,
+        "description" => input.description.is_some(),
+        other => input.extra_fields.contains_key(other),
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 fn cached_data(cache: &crate::storage::cache::CacheStore, widget_id: &str) -> Option<JiraWidgetData> {
     let entry = cache.get(widget_id).ok().flatten()?;
@@ -356,6 +798,132 @@ fn scope_to_projects(jql: &str, projects: &[String]) -> String {
                 format!("{scope} AND ({c})")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod reconcile_tests {
+    use super::reconcile_with_meta;
+    use crate::providers::jira::{CreateIssueInput, CreateMeta, CreateMetaField};
+
+    fn field(id: &str, required: bool, has_default: bool) -> CreateMetaField {
+        CreateMetaField {
+            field_id: id.into(),
+            name: id.into(),
+            required,
+            has_default_value: has_default,
+            schema_type: None,
+            allowed_values: Vec::new(),
+        }
+    }
+
+    /// 항상 있는 세 필드. 폼이 직접 보내므로 missing에 들어가면 안 된다.
+    fn base_fields() -> Vec<CreateMetaField> {
+        vec![
+            field("project", true, false),
+            field("issuetype", true, false),
+            field("summary", true, false),
+        ]
+    }
+
+    fn input() -> CreateIssueInput {
+        CreateIssueInput {
+            project_key: "ABC".into(),
+            issue_type_id: "10082".into(),
+            summary: "요약".into(),
+            description: None,
+            extra_fields: Default::default(),
+        }
+    }
+
+    #[test]
+    fn drops_extra_fields_the_new_schema_no_longer_has() {
+        let mut i = input();
+        i.extra_fields
+            .insert("customfield_9999".into(), serde_json::json!("사라진 필드"));
+        let meta = CreateMeta {
+            fields: base_fields(),
+        };
+
+        let (out, _) = reconcile_with_meta(&i, &meta);
+        assert!(
+            out.extra_fields.is_empty(),
+            "스키마에 없는 필드는 제거돼야 한다: {:?}",
+            out.extra_fields
+        );
+    }
+
+    #[test]
+    fn keeps_extra_fields_the_schema_still_has() {
+        let mut i = input();
+        i.extra_fields
+            .insert("assignee".into(), serde_json::json!({"id": "acc-1"}));
+        let mut fields = base_fields();
+        fields.push(field("assignee", false, false));
+        let meta = CreateMeta { fields };
+
+        let (out, _) = reconcile_with_meta(&i, &meta);
+        assert!(out.extra_fields.contains_key("assignee"));
+    }
+
+    #[test]
+    fn required_without_default_and_without_value_is_missing() {
+        let mut fields = base_fields();
+        fields.push(field("customfield_impact", true, false));
+        let meta = CreateMeta { fields };
+
+        let (_, missing) = reconcile_with_meta(&input(), &meta);
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].field_id, "customfield_impact");
+    }
+
+    /// 4.2의 reporter 케이스. required지만 서버가 채우므로 폼이 몰라도 된다.
+    #[test]
+    fn required_with_default_is_not_missing() {
+        let mut fields = base_fields();
+        fields.push(field("reporter", true, true));
+        let meta = CreateMeta { fields };
+
+        let (_, missing) = reconcile_with_meta(&input(), &meta);
+        assert!(
+            missing.is_empty(),
+            "hasDefaultValue: true는 서버가 채운다: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn required_field_we_do_send_is_not_missing() {
+        let mut i = input();
+        i.extra_fields
+            .insert("reporter".into(), serde_json::json!({"id": "acc-1"}));
+        let mut fields = base_fields();
+        fields.push(field("reporter", true, false));
+        let meta = CreateMeta { fields };
+
+        let (_, missing) = reconcile_with_meta(&i, &meta);
+        assert!(missing.is_empty(), "이미 보내는 필드다: {missing:?}");
+    }
+
+    /// **재시도 조건.** 바뀐 게 없으면 다시 보내봐야 같은 400이므로
+    /// 커맨드가 재시도하지 않는다. 이 동등성이 그 판단의 근거다.
+    #[test]
+    fn unchanged_input_comes_back_equal() {
+        let meta = CreateMeta {
+            fields: base_fields(),
+        };
+        let i = input();
+        let (out, _) = reconcile_with_meta(&i, &meta);
+        assert_eq!(out, i, "바뀐 게 없으면 원본과 같아야 한다");
+    }
+
+    /// 폼이 보내는 세 필드는 스키마가 required로 표시해도 missing이 아니다.
+    #[test]
+    fn form_owned_fields_are_never_missing() {
+        let meta = CreateMeta {
+            fields: base_fields(),
+        };
+        let (_, missing) = reconcile_with_meta(&input(), &meta);
+        assert!(missing.is_empty(), "{missing:?}");
     }
 }
 

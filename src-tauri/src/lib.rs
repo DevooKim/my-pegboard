@@ -38,6 +38,12 @@ pub fn run() {
         commands::jira::jira_save_credentials,
         commands::jira::jira_fetch,
         commands::jira::jira_cached,
+        commands::jira::jira_issue,
+        commands::jira::jira_comments,
+        commands::jira::jira_create_options,
+        commands::jira::jira_createmeta,
+        commands::jira::jira_myself,
+        commands::jira::jira_create_issue,
             commands::board::board_load,
             commands::board::board_save,
     ]);
