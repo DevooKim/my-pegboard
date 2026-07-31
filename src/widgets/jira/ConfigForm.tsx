@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import type { SortDirection, SortField } from '#/ipc/bindings'
 import { commands, type JiraProject, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
+import { relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetConfigFormProps } from '#/widgets/types'
 import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn, visibleColumns } from './columns'
 
@@ -16,13 +18,26 @@ const RAW = '__raw__'
 export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraWidgetConfig>) {
   const [presets, setPresets] = useState<Preset[]>([])
   const [projects, setProjects] = useState<JiraProject[]>([])
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const now = useNow()
+
+  // 생성 폼과 **같은 캐시**를 쓴다 (D9). jiraProjects를 따로 부르면 같은
+  // 데이터를 두 경로로 가져오게 되고 캐시가 둘이 된다.
+  const loadProjects = useCallback(async (force: boolean) => {
+    if (force) setRefreshing(true)
+    const r = await commands.jiraCreateOptions(force)
+    if (r.status === 'ok') {
+      setProjects(r.data.projects.map((p) => ({ key: p.key, name: p.name })))
+      setFetchedAt(r.data.fetchedAt)
+    }
+    setRefreshing(false)
+  }, [])
 
   useEffect(() => {
     void commands.jiraPresets().then(setPresets)
-    void commands.jiraProjects().then((r) => {
-      if (r.status === 'ok') setProjects(r.data)
-    })
-  }, [])
+    void loadProjects(false)
+  }, [loadProjects])
 
   // 정렬과 프로젝트 범위는 프리셋에만 적용된다. 생 JQL은 사용자가 ORDER BY와
   // project 조건을 직접 쓰므로, 우리가 UI로 덧붙이면 의도를 덮어쓴다.
@@ -120,7 +135,25 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         {/* 프로젝트 범위와 정렬은 프리셋 전용이다 (생 JQL에는 사용자가 직접 쓴다) */}
         {isPreset && (
           <div className="flex flex-col gap-1">
-            <span className="text-caption text-text-secondary">프로젝트</span>
+            <span className="flex items-center gap-2">
+              <span className="text-caption text-text-secondary">프로젝트</span>
+              {/* 자동 갱신하지 않는다 (D9). 언제 받은 것인지 보여주고 사용자가 정한다. */}
+              <button
+                type="button"
+                onClick={() => void loadProjects(true)}
+                title="프로젝트 목록 새로고침"
+                aria-label="프로젝트 목록 새로고침"
+                className="rounded p-0.5 text-text-tertiary hover:bg-surface-inset hover:text-text-primary
+                           focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+              {fetchedAt && (
+                <span className="text-caption text-text-quaternary">
+                  {relativeTime(fetchedAt, new Date(now))}
+                </span>
+              )}
+            </span>
             {projects.length === 0 ? (
               <span className="text-caption text-text-tertiary">불러오는 중…</span>
             ) : (
