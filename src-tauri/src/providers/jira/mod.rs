@@ -20,7 +20,7 @@
 //!
 //! ```no_run
 //! # async fn demo() -> Result<(), Box<dyn std::error::Error>> {
-//! use my_pegboard::providers::jira::{JiraClient, JiraCredentials, JiraQuery, LIST_FIELDS};
+//! use my_pegboard_lib::providers::jira::{JiraClient, JiraCredentials, JiraQuery, LIST_FIELDS};
 //!
 //! let client = JiraClient::new(JiraCredentials::new(
 //!     "https://your-team.atlassian.net",
