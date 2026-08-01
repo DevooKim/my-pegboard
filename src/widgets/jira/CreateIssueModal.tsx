@@ -120,27 +120,62 @@ export function CreateIssueModal({
     })
   }, [open, loadOptions])
 
-  // 목록이 오면 마지막에 쓴 값 또는 첫 번째를 고른다.
+  // 닫히면 **1회성 상태를 지운다.**
+  //
+  // 안 하면 성공 화면(`created`)이 남아서, 다음에 열었을 때 폼 대신 지난번
+  // "만들어졌습니다"가 다시 뜬다. 모달은 언마운트되지 않고 `open`으로만
+  // 숨겨지므로 state가 그대로 살아 있다.
+  //
+  // 프로젝트·유형도 비운다. 다음에 열 때 **저장값**(마지막으로 만든 곳)에서
+  // 다시 채운다 — 남겨두면 "만들지 않고 눌러보기만 한 선택"이 따라다닌다.
   useEffect(() => {
-    if (projects.length === 0 || projectKey) return
+    if (open) return
+    setCreated(null)
+    setFailure(null)
+    setSummary('')
+    setDescription('')
+    setDueDate('')
+    setSubmitting(false)
+    setProjectKey('')
+    setIssueTypeId('')
+  }, [open])
+
+  // 열 때마다 **마지막으로 만든** 프로젝트로 되돌린다 (D6).
+  //
+  // 저장값이 곧 기본값이다. 남아 있던 선택을 우선하면, 폼에서 프로젝트만
+  // 바꿔보고 만들지 않은 채 닫았을 때 그 선택이 계속 따라다닌다 —
+  // "마지막에 만든 곳"이 아니라 "마지막에 눌러본 곳"이 되어버린다.
+  //
+  // 저장된 프로젝트가 목록에서 사라졌으면(권한 변경 등) 첫 번째로 떨어진다.
+  useEffect(() => {
+    if (!open || projects.length === 0) return
     const last = readLastUsed()
     const found = projects.find((p) => p.key === last.projectKey)
     setProjectKey(found?.key ?? projects[0]?.key ?? '')
-  }, [projects, projectKey])
+  }, [open, projects])
 
   const project = projects.find((p) => p.key === projectKey) ?? null
   // 하위작업은 parent가 필수라 이 폼으로 만들 수 없다.
   const selectableTypes = (project?.issueTypes ?? []).filter((t) => !t.subtask)
   const hiddenSubtaskCount = (project?.issueTypes?.length ?? 0) - selectableTypes.length
 
+  // 유형도 같은 규칙 — 열 때는 저장값, 그 뒤 프로젝트를 바꾸면 그 프로젝트의 값.
+  //
+  // `open`을 의존성에 넣어야 같은 프로젝트로 다시 열었을 때도 저장값으로
+  // 돌아온다. 안 그러면 selectableTypes가 그대로라 effect가 안 돌고,
+  // 직전에 눌러본 유형이 남는다.
+  // setIssueTypeId의 함수형 갱신을 쓰므로 issueTypeId를 의존성에 넣지 않아도 된다 —
+  // 넣으면 사용자가 드롭다운에서 고른 값을 즉시 되돌려버린다.
   useEffect(() => {
-    if (selectableTypes.length === 0) return
-    // 현재 선택이 이 프로젝트에 없으면 다시 고른다.
-    if (selectableTypes.some((t) => t.id === issueTypeId)) return
+    if (!open || selectableTypes.length === 0) return
     const last = readLastUsed()
     const found = selectableTypes.find((t) => t.id === last.issueTypeId)
-    setIssueTypeId(found?.id ?? selectableTypes[0]?.id ?? '')
-  }, [selectableTypes, issueTypeId])
+    setIssueTypeId((cur) => {
+      // 현재 선택이 이 프로젝트에서 유효하면 존중한다 — 사용자가 방금 고른 값이다.
+      if (selectableTypes.some((t) => t.id === cur)) return cur
+      return found?.id ?? selectableTypes[0]?.id ?? ''
+    })
+  }, [open, selectableTypes])
 
   // --- createmeta (D10) -----------------------------------------------------
 
@@ -189,16 +224,19 @@ export function CreateIssueModal({
         ),
     ) ?? []
 
-  const reset = (keepTarget: boolean) => {
+  /**
+   * "하나 더 만들기" — 성공 화면에서 폼으로 돌아간다.
+   *
+   * 프로젝트·유형은 **그대로 둔다.** 연달아 만들 때 같은 곳에 만드는 경우가
+   * 대부분이고, 방금 만든 것이 곧 저장값이라 다시 고를 필요가 없다.
+   * (닫았다 여는 경로는 위의 `open` effect가 따로 처리한다.)
+   */
+  const startAnother = () => {
     setSummary('')
     setDescription('')
     setDueDate('')
     setCreated(null)
     setFailure(null)
-    if (!keepTarget) {
-      setProjectKey('')
-      setIssueTypeId('')
-    }
   }
 
   const submit = async () => {
@@ -251,7 +289,7 @@ export function CreateIssueModal({
           <div className="flex flex-wrap gap-2">
             {url && <Button onClick={() => void openUrl(url)}>Jira에서 열기</Button>}
             <Button onClick={() => onCreated(created)}>상세 보기</Button>
-            <Button onClick={() => reset(true)}>하나 더 만들기</Button>
+            <Button onClick={startAnother}>하나 더 만들기</Button>
             <Button onClick={onClose} className="ml-auto">
               닫기
             </Button>
