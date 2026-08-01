@@ -302,8 +302,10 @@ export function CreateIssueModal({
     if (result.status === 'ok') {
       localStorage.setItem(LAST_USED_KEY, JSON.stringify({ projectKey, issueTypeId }))
       setCreated(result.data.key)
-      // 만든 티켓이 위젯에 바로 보이게 한다.
-      window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))
+      // 만든 티켓이 위젯에 보이게 한다. `refresh-all`이 아니라 전용 이벤트를
+      // 쓰는 이유: Jira 검색 인덱스가 쓰기보다 늦어서 즉시 조회로는 방금 만든
+      // 티켓이 안 잡힌다. 듣는 쪽이 잠시 뒤 한 번 더 조회한다.
+      window.dispatchEvent(new CustomEvent('pegboard:jira-created'))
     } else {
       setFailure(result.error)
       if (result.error.isAuthFailure) setJiraAuthFailed(true)
