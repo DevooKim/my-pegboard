@@ -8,6 +8,11 @@ vi.mock('#/ipc/bindings', () => ({
     // 상세·코멘트가 안 와도 seed로 골격을 그린다 (D2). 이 테스트는 그 골격만 본다.
     jiraIssue: vi.fn(() => new Promise(() => {})),
     jiraComments: vi.fn(() => new Promise(() => {})),
+    // 하위 유형 판정용 프로젝트 목록. 여기서는 비워도 된다 —
+    // 목록이 없으면 "만들기" 버튼이 안 뜰 뿐, 메타 그리드 배치와는 무관하다.
+    jiraCreateOptions: vi.fn(async () => ({ status: 'ok', data: { projects: [] } })),
+    jiraMyself: vi.fn(() => new Promise(() => {})),
+    jiraCreatemeta: vi.fn(() => new Promise(() => {})),
   },
 }))
 

@@ -26,7 +26,10 @@ IDENTITY="${PEGBOARD_SIGN_IDENTITY:-my-pegboard Dev}"
 sign() {
   local target="$1"
 
-  if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  # `-v`(valid only)를 쓰지 않는다. 새로 만든 self-signed 인증서는
+  # `CSSMERR_TP_NOT_TRUSTED`로 나오는데 **서명에는 아무 문제가 없다.**
+  # -v로 거르면 방금 만든 인증서를 못 찾아 "없습니다"라고 거짓말한다.
+  if ! security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
     echo "서명 건너뜀 — '$IDENTITY' 인증서가 없습니다"
     echo "  만드는 법: scripts/make-signing-cert.md"
     echo "  (서명이 없으면 빌드할 때마다 키체인을 다시 물어봅니다)"
