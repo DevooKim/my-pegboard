@@ -1,8 +1,9 @@
-import { SquarePen } from 'lucide-react'
+import { ArrowDownToLine, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { JiraWidgetConfig } from '#/ipc/bindings'
+import type { JiraWidgetConfig, TodoItem } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
+import { dateKey, useTodoStore } from '#/store/todos'
 import { ConfirmDialog } from '#/ui/ConfirmDialog'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
@@ -62,6 +63,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         />
       ) : widget.type === 'web' ? (
         <WebHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
+      ) : widget.type === 'todo' ? (
+        <TodoHost
           widget={widget}
           width={width}
           onRemove={() => setConfirmingRemove(true)}
@@ -144,6 +152,88 @@ function WebHost({
       />
     </WidgetShell>
   )
+}
+
+/**
+ * Todo 위젯 호스트.
+ *
+ * 데이터 훅이 없다 — 상태는 `store/todos.ts`가 소유하고 View가 직접 구독한다.
+ * 위젯이 하나뿐이라 envelope으로 감쌀 이유가 없고, 자정 이월이 위젯 수명과
+ * 무관해야 해서 스토어에 두었다.
+ *
+ * `pollable: false`라 WidgetShell이 새로고침 버튼을 숨긴다. 우리가 호출할
+ * 외부 API가 없으므로 누를 것이 없다.
+ */
+function TodoHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('todo')
+  const items = useTodoStore((s) => s.items)
+  const carryOverNow = useTodoStore((s) => s.carryOverNow)
+
+  // 가져올 것이 몇 개인가 = 오늘보다 이전의 미완료 항목.
+  // hover 툴팁에 실제 내용을 보여주므로 개수만이 아니라 목록도 만든다.
+  const pending = pendingCarry(items)
+
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(widget.config)}
+      status="ready"
+      fetchedAt={null}
+      pollable={false}
+      onRefresh={() => {}}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+      actions={
+        // 가져올 게 없으면 버튼을 숨긴다 — 눌러도 아무 일이 없는 버튼은
+        // 사용자가 "고장났나" 하고 다시 누르게 만든다.
+        pending.length > 0 ? (
+          <IconButton label={carryTooltip(pending)} onClick={() => void carryOverNow()}>
+            <ArrowDownToLine size={13} />
+          </IconButton>
+        ) : undefined
+      }
+    >
+      <View
+        widgetId={widget.id}
+        config={widget.config}
+        envelope={{ status: 'ready', data: null, fetchedAt: null, error: null }}
+        width={width}
+      />
+    </WidgetShell>
+  )
+}
+
+/** 오늘보다 이전에 남아 있는 미완료 항목. 이월 대상과 같은 조건이다. */
+function pendingCarry(items: TodoItem[]): TodoItem[] {
+  const today = dateKey()
+  return items.filter((i) => !i.done && i.date < today)
+}
+
+/**
+ * 버튼 툴팁. **무엇을 가져오는지 내용을 보여준다.**
+ *
+ * 개수만 적으면("3개 가져오기") 누르기 전에 무엇이 튀어나올지 모른다.
+ * 항목이 많으면 앞의 몇 개만 보이고 나머지는 수로 줄인다 — 툴팁이
+ * 화면을 덮으면 그것대로 쓸모없다.
+ */
+function carryTooltip(pending: TodoItem[]): string {
+  const SHOWN = 5
+  const head = pending.slice(0, SHOWN).map((i) => `· ${i.text}`)
+  const rest = pending.length - SHOWN
+  const lines = rest > 0 ? [...head, `… 외 ${rest}개`] : head
+  return [`미완료 ${pending.length}개 가져오기`, ...lines].join('\n')
 }
 
 function JiraHost({

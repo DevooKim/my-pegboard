@@ -44,6 +44,13 @@ pub fn run() {
         commands::jira::jira_createmeta,
         commands::jira::jira_myself,
         commands::jira::jira_create_issue,
+        commands::todo::todo_list,
+        commands::todo::todo_add,
+        commands::todo::todo_set_done,
+        commands::todo::todo_set_text,
+        commands::todo::todo_remove,
+        commands::todo::todo_carry_over,
+            commands::todo::todo_reorder,
             commands::board::board_load,
             commands::board::board_save,
     ]);

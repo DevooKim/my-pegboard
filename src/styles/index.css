@@ -30,4 +30,18 @@
     -webkit-user-select: text;
     user-select: text;
   }
+
+  /*
+    HTML5 드래그를 되살린다.
+
+    WebKit(= Tauri의 WKWebView)에서 `-webkit-user-select: none`은 텍스트 선택만
+    막는 게 아니라 **그 요소의 드래그까지 막는다.** 위의 `*` 규칙 때문에
+    `draggable="true"`를 줘도 dragstart가 아예 발화하지 않는다 — 브라우저(Chromium)
+    에서는 되는데 앱에서만 안 되는 차이가 여기서 난다.
+
+    이 규칙은 스캐폴드 때부터 있었고, 그동안 끌 것이 없어서 드러나지 않았다.
+  */
+  [draggable='true'] {
+    -webkit-user-drag: element;
+  }
 }
