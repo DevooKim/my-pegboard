@@ -143,7 +143,7 @@ describe('TodoRow 드래그', () => {
   })
 
   function renderDraggable(drag: ReturnType<typeof dragProps>) {
-    render(
+    const view = render(
       <TodoRow
         item={item()}
         today="2026-08-01"
@@ -154,38 +154,69 @@ describe('TodoRow 드래그', () => {
       />,
     )
     // biome-ignore lint/style/noNonNullAssertion: 방금 렌더한 li가 없을 수 없다
-    return document.querySelector('li')!
+    return Object.assign(document.querySelector('li')!, { rerender: view.rerender })
   }
 
+  const handle = () => screen.getByTitle('끌어서 순서 변경')
+
   /**
-   * 행 전체가 draggable이면 텍스트를 집으려다 행이 딸려오고, 체크박스를
-   * 누르려다 드래그가 걸린다. 손잡이를 눌러야 켜진다.
+   * 끄는 주체는 **손잡이**다. 행이 아니다.
+   *
+   * 행을 draggable로 두고 손잡이를 누를 때만 켜는 방식은 두 번 실패했다 —
+   * state로 켜면 pointerdown보다 리렌더가 늦고, ref로 DOM을 직접 켜면 순서
+   * 변경 후 React가 `<li>`를 옮기면서 해제가 엉뚱한 행에 적용된다.
+   * 손잡이가 항상 draggable이면 켜고 끌 일 자체가 없다.
    */
-  it('손잡이를 누르기 전에는 끌 수 없다', () => {
-    const li = renderDraggable(dragProps())
-    expect(li.getAttribute('draggable')).toBe('false')
+  it('손잡이가 드래그 소스다', () => {
+    renderDraggable(dragProps())
+    expect(handle().getAttribute('draggable')).toBe('true')
   })
 
-  it('손잡이를 누르면 끌 수 있게 된다', () => {
+  /** 행이 끌리면 텍스트를 집으려다 행이 딸려오고, 체크박스도 못 누른다. */
+  it('행 자체는 끌 수 없다', () => {
     const li = renderDraggable(dragProps())
-    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
-    expect(li.getAttribute('draggable')).toBe('true')
+    expect(li.getAttribute('draggable')).not.toBe('true')
   })
 
-  /** 끌지 않고 손을 떼면 원래대로 — 안 그러면 다음에 텍스트를 집을 때 딸려온다. */
-  it('손을 떼면 다시 끌 수 없다', () => {
-    const li = renderDraggable(dragProps())
-    const handle = screen.getByTitle('끌어서 순서 변경')
-    fireEvent.pointerDown(handle)
-    fireEvent.pointerUp(handle)
-    expect(li.getAttribute('draggable')).toBe('false')
+  /**
+   * 회귀 방지 — 한 번 옮기고 나면 손잡이가 안 잡히던 문제.
+   *
+   * 순서를 바꾸면 스토어가 새 배열을 주고 React가 `<li>`들을 재조정한다.
+   * 그 과정을 거쳐도 손잡이는 **여전히** 끌 수 있어야 한다. 예전 구현은
+   * 여기서 draggable이 꺼진 채(혹은 켜진 채) 남아 다음 드래그를 삼켰다.
+   */
+  it('한 번 옮긴 뒤에도 곧바로 다시 끌 수 있다', () => {
+    const drag = dragProps()
+    const li = renderDraggable(drag)
+
+    fireEvent.dragStart(handle(), { dataTransfer: { setData: vi.fn(), effectAllowed: '' } })
+    fireEvent.drop(li, { dataTransfer: {} })
+    fireEvent.dragEnd(handle())
+
+    // 재조정을 거친 뒤에도 그대로여야 한다.
+    li.rerender(
+      <TodoRow
+        item={item()}
+        today="2026-08-01"
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        drag={drag}
+      />,
+    )
+
+    expect(handle().getAttribute('draggable')).toBe('true')
+
+    const second = { setData: vi.fn(), effectAllowed: '' }
+    fireEvent.dragStart(handle(), { dataTransfer: second })
+    expect(second.setData, '두 번째 드래그가 시작되지 않았다').toHaveBeenCalled()
   })
 
-  it('드래그가 끝나면 해제된다', () => {
-    const li = renderDraggable(dragProps())
-    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
-    fireEvent.dragEnd(li)
-    expect(li.getAttribute('draggable')).toBe('false')
+  it('드래그가 끝나면 onEnd를 부른다', () => {
+    const drag = dragProps()
+    renderDraggable(drag)
+    fireEvent.dragEnd(handle())
+    expect(drag.onEnd).toHaveBeenCalled()
   })
 
   it('drag prop이 없으면 손잡이도 없다', () => {
@@ -203,13 +234,29 @@ describe('TodoRow 드래그', () => {
 
   /** Firefox는 dataTransfer가 비면 드래그를 아예 시작하지 않는다. */
   it('dragStart에서 dataTransfer에 id를 넣는다', () => {
-    const drag = dragProps()
-    const li = renderDraggable(drag)
+    renderDraggable(dragProps())
     const dataTransfer = { setData: vi.fn(), effectAllowed: '' }
 
-    fireEvent.dragStart(li, { dataTransfer })
+    fireEvent.dragStart(handle(), { dataTransfer })
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'x')
+  })
+
+  /**
+   * 손잡이만 캡처되면 12px짜리 점 하나가 따라다닌다. 끌리는 것은 행 전체로
+   * 보여야 한다.
+   */
+  it('드래그 이미지로 행 전체를 쓴다', () => {
+    const li = renderDraggable(dragProps())
+    const dataTransfer = { setData: vi.fn(), effectAllowed: '', setDragImage: vi.fn() }
+
+    fireEvent.dragStart(handle(), { dataTransfer })
+
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(
+      li,
+      expect.any(Number),
+      expect.any(Number),
+    )
   })
 
   /**
@@ -221,9 +268,9 @@ describe('TodoRow 드래그', () => {
    */
   it('모양 변경을 한 프레임 미룬다', async () => {
     const drag = dragProps()
-    const li = renderDraggable(drag)
+    renderDraggable(drag)
 
-    fireEvent.dragStart(li, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } })
+    fireEvent.dragStart(handle(), { dataTransfer: { setData: vi.fn(), effectAllowed: '' } })
     expect(
       drag.onStart,
       'dragstart 그 자리에서 모양을 바꾸면 캡처가 어긋난다',
@@ -293,16 +340,11 @@ describe('TodoRow 드래그', () => {
   })
 
   /** 텍스트를 드래그로 선택하려는 동작과 행 이동이 충돌한다. */
-  /**
-   * 손잡이를 잡은 상태에서 편집으로 들어가도 끌 수 없어야 한다.
-   * (손잡이를 안 잡으면 애초에 false라, 잡은 상태에서 확인해야 의미가 있다.)
-   */
-  it('편집 중에는 손잡이를 잡아도 끌 수 없다', () => {
-    const li = renderDraggable(dragProps())
-    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
-    expect(li.getAttribute('draggable')).toBe('true')
+  it('편집 중에는 손잡이가 사라진다', () => {
+    renderDraggable(dragProps())
+    expect(handle()).toBeTruthy()
 
     fireEvent.click(screen.getByText('배포 스크립트 정리'))
-    expect(li.getAttribute('draggable')).toBe('false')
+    expect(screen.queryByTitle('끌어서 순서 변경')).toBeNull()
   })
 })

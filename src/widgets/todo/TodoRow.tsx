@@ -43,23 +43,6 @@ export function TodoRow({
     over: 'above' | 'below' | null
   }
 }) {
-  // 손잡이를 눌렀을 때만 끌 수 있다. 행 전체가 draggable이면 텍스트를 집으려다
-  // 행이 딸려오고, 체크박스를 누르려다 드래그가 시작된다.
-  //
-  // **state가 아니라 DOM 속성을 직접 건드린다.**
-  //
-  // `setGrabbed(true)` → 리렌더 → `draggable={true}` 순서로는 늦다. 브라우저는
-  // pointerdown 시점에 이미 "이 요소가 draggable인가"를 정해두기 때문에,
-  // 그 뒤에 속성이 바뀌어도 이번 제스처에는 반영되지 않는다. 그래서 손잡이를
-  // 누른 **다음** 드래그부터 걸리는 것처럼 보였다(= 한 번 클릭하고 다시 해야
-  // 잡히는 증상).
-  const rowRef = useRef<HTMLLIElement | null>(null)
-  const grab = () => {
-    if (rowRef.current) rowRef.current.draggable = true
-  }
-  const release = () => {
-    if (rowRef.current) rowRef.current.draggable = false
-  }
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -67,8 +50,6 @@ export function TodoRow({
   useEffect(() => {
     if (!editing) return
     inputRef.current?.select()
-    // 편집으로 들어가면 드래그를 끈다 — 텍스트 선택과 충돌한다.
-    if (rowRef.current) rowRef.current.draggable = false
   }, [editing])
 
   // 바깥에서 값이 바뀌면(되돌리기 등) 편집 중이 아닐 때만 따라간다.
@@ -84,30 +65,27 @@ export function TodoRow({
   }
 
   return (
-    // 드래그는 **손잡이를 눌렀을 때만** 시작된다(`grabbed`).
+    // 이 행은 **드롭 대상**이기만 하다. 끄는 주체는 아래의 손잡이다.
+    //
+    // # 왜 행이 아니라 손잡이가 draggable인가
     //
     // 행 전체를 draggable로 두면 텍스트를 집으려다 행이 딸려오고, 체크박스를
-    // 누르려다 드래그가 걸린다. 손잡이는 hover할 때만 나타나므로 평소 밀도도
-    // 해치지 않는다.
+    // 누르려다 드래그가 걸린다. 그렇다고 "손잡이를 누를 때만 행의 draggable을
+    // 켜는" 방식은 **React와 싸우는 길**이었다 —
     //
-    // 편집 중에는 끌 수 없다 — 텍스트 선택과 충돌한다.
+    //   1. state로 켜면 리렌더가 pointerdown보다 늦다. 브라우저는 pointerdown
+    //      시점에 draggable 여부를 이미 정한다.
+    //   2. ref로 DOM을 직접 켜도, 순서를 바꾸고 나면 React가 `<li>`들을 **옮겨서**
+    //      재조정한다. 그 뒤에 오는 dragend의 해제가 엉뚱한 행에 적용되어
+    //      draggable이 켜진 채 남는다(= 다음 번 손잡이가 안 잡히는 증상).
+    //
+    // 손잡이 자체를 항상 draggable로 두면 켜고 끌 일이 없다. 브라우저가 늘
+    // 같은 답을 알고 있으므로 타이밍도 재조정도 문제가 되지 않는다.
     //
     // `relative`는 드롭 표시선을 행 **경계에 띄우기** 위한 기준이다.
     // 선을 행의 border로 그리면 py-1 안쪽에 붙어 텍스트에 바짝 닿고,
     // 완료 구분선과 위치가 겹쳐 어느 것이 드롭 표시인지 알 수 없다.
     <li
-      ref={rowRef}
-      // 초기값은 false. 손잡이를 누르는 순간 DOM에서 직접 켠다(위 주석 참조).
-      draggable={false}
-      onDragStart={(e) => {
-        // Firefox는 dataTransfer가 비면 드래그를 시작하지 않는다.
-        e.dataTransfer.setData('text/plain', item.id)
-        e.dataTransfer.effectAllowed = 'move'
-
-        // 한 프레임 미룬다. 브라우저는 dragstart가 끝난 뒤 소스 요소를 캡처해
-        // 드래그 이미지를 만드는데, 그 전에 모양을 바꾸면 캡처가 어긋난다.
-        requestAnimationFrame(() => drag?.onStart())
-      }}
       onDragOver={(e) => {
         if (!drag) return
         // preventDefault를 해야 drop이 허용된다.
@@ -118,10 +96,6 @@ export function TodoRow({
       onDrop={(e) => {
         e.preventDefault()
         drag?.onDrop()
-      }}
-      onDragEnd={() => {
-        release()
-        drag?.onEnd()
       }}
       className={`group relative flex items-center gap-2 rounded px-1.5 py-1
                   transition-colors duration-fast
@@ -186,14 +160,35 @@ export function TodoRow({
         </button>
       )}
 
-      {/* 드래그 손잡이. hover할 때만 나타나며, 여기를 눌러야 끌 수 있다.
-          삭제(×) 왼쪽에 두어 오른쪽 끝의 파괴적 동작과 섞이지 않게 한다. */}
-      {drag && (
+      {/* 드래그 손잡이 — **끄는 주체가 여기다**(위 `<li>` 주석 참조).
+          hover할 때만 나타나고, 삭제(×) 왼쪽에 두어 오른쪽 끝의 파괴적 동작과
+          섞이지 않게 한다.
+
+          편집 중에는 끌 수 없다 — 텍스트 선택과 충돌한다. */}
+      {drag && !editing && (
         <span
-          onPointerDown={grab}
-          // 끌지 않고 손을 떼도 원래대로 — 안 그러면 draggable이 켜진 채
-          // 남아 텍스트를 집을 때 행이 딸려온다.
-          onPointerUp={release}
+          draggable
+          onDragStart={(e) => {
+            // Firefox는 dataTransfer가 비면 드래그를 시작하지 않는다.
+            e.dataTransfer.setData('text/plain', item.id)
+            e.dataTransfer.effectAllowed = 'move'
+
+            // 끌리는 것은 손잡이가 아니라 **행 전체**로 보여야 한다.
+            // 손잡이만 캡처되면 12px짜리 점 하나가 따라다닌다.
+            //
+            // 여기서 예외가 나면 dragstart가 중단되어 **드래그 자체가 죽는다.**
+            // 모양은 거들 뿐이므로 없으면 없는 대로 간다.
+            const row = e.currentTarget.closest('li')
+            if (row && typeof e.dataTransfer.setDragImage === 'function') {
+              const box = row.getBoundingClientRect()
+              e.dataTransfer.setDragImage(row, e.clientX - box.left, e.clientY - box.top)
+            }
+
+            // 한 프레임 미룬다. 브라우저는 dragstart가 끝난 뒤 소스를 캡처해
+            // 드래그 이미지를 만드는데, 그 전에 모양을 바꾸면 캡처가 어긋난다.
+            requestAnimationFrame(() => drag.onStart())
+          }}
+          onDragEnd={() => drag.onEnd()}
           title="끌어서 순서 변경"
           aria-hidden="true"
           className="shrink-0 cursor-grab rounded p-0.5 text-text-quaternary opacity-0
