@@ -91,8 +91,7 @@ export function WebConfigForm({ config, onChange }: WidgetConfigFormProps<WebWid
           label="로그인 세션 사용"
           hint={
             config.allowSession
-              ? // 앱을 끄면 실제로 풀린다. 조용히 겪게 두지 않는다 (index.ts 주석 참조).
-                '이미 로그인한 사이트는 로그인된 상태로 보입니다. 다만 앱을 종료하면 로그인이 풀립니다 — macOS 웹뷰가 iframe의 쿠키를 지웁니다'
+              ? '이미 로그인한 사이트는 로그인된 상태로 보입니다'
               : '샌드박스를 강하게 걸어 로그인 상태를 쓰지 않습니다 — 로그인이 필요한 페이지는 로그인 화면이 뜹니다'
           }
         />

@@ -11,30 +11,6 @@ import { WebView } from './View'
  * 많은 사이트가 X-Frame-Options / CSP frame-ancestors로 임베드를 거부하는데,
  * 그때 iframe은 **에러 없이 그냥 빈 화면**이 된다. View.tsx가 이걸 최대한
  * 드러내려고 시도하지만 완전하지 않다 — 자세한 사정은 View.tsx의 주석에.
- *
- * # 앱을 끄면 로그인이 풀린다 (실측, 2026-08-02)
- *
- * `allowSession`을 켜도 **앱 종료 시 iframe의 쿠키·localStorage가 사라진다.**
- * 실행 중에는 정상 동작하므로 눈치채기 어렵다.
- *
- * 원인은 WebKit의 **ITP**(Intelligent Tracking Prevention)다. iframe 안의
- * 출처는 서드파티로 분류되고, 사용자 상호작용 기록이 없으면 스토리지를
- * 비영구로 취급해 종료 시 버린다. 실측한 ITP 기록:
- *
- * | 도메인 | hadUserInteraction | 결과 |
- * |---|---|---|
- * | `localhost` (앱 본체 `tauri://`) | 1 | **유지됨** |
- * | iframe 안의 출처 | 0 | **사라짐** |
- *
- * ITP 기록에 `<iframe 출처> (안) ← localhost (밖)` 관계가 남는 것으로
- * 서드파티 판정을 확인했다.
- *
- * **우리가 고칠 수 없다.** Tauri는 incognito만 노출하고(이미 꺼져 있다),
- * wry도 WKWebView의 ITP 설정을 노출하지 않는다. 앱 본체가 쓰는
- * `defaultDataStore`는 영구 저장소가 맞다 — 앱 자신의 localStorage는 남는다.
- *
- * 그래서 **드러내는 쪽을 택했다**(CLAUDE.md 대전제 2). 설정 폼의 "세션 유지"
- * 설명에 이 사실을 적는다. 조용히 로그인이 풀리면 사용자는 앱을 의심한다.
  */
 
 export interface WebWidgetConfig {
