@@ -9,7 +9,7 @@ my-pegboard의 위젯은 **폴더 하나에 완결된다**. 새 위젯을 만들
 코드를 열게 된다면 그건 설계가 어긋난 것이다 (CLAUDE.md "철칙").
 
 이 스킬은 두 가지를 한다:
-1. **등록 6곳**을 빠뜨리지 않게 한다 — 하나라도 놓치면 조용히 깨진다
+1. **등록 7곳**을 빠뜨리지 않게 한다 — 하나라도 놓치면 조용히 깨진다
 2. 위젯의 **성격을 먼저 정하게** 한다 — 그게 나머지 결정을 전부 좌우한다
 
 ---
@@ -65,7 +65,7 @@ my-pegboard의 위젯은 **폴더 하나에 완결된다**. 새 위젯을 만들
 
 ---
 
-## 2. 등록 6곳 — 하나라도 빠지면 조용히 깨진다
+## 2. 등록 7곳 — 하나라도 빠지면 조용히 깨진다
 
 **이 목록이 이 스킬의 핵심이다.** `references/registration.md`에 각 위치의
 정확한 코드와 빠뜨렸을 때의 증상이 있다.
@@ -78,8 +78,12 @@ my-pegboard의 위젯은 **폴더 하나에 완결된다**. 새 위젯을 만들
 | 4 | `src/widgets/types.ts` `WidgetType` | 타입 에러 |
 | 5 | `src/widgets/<name>/index.ts` + `registerWidget()` | 추가 메뉴에 안 뜬다 |
 | 6 | `src/main.tsx`의 `import '#/widgets/<name>'` | **레지스트리에 등록되지 않는다.** import 자체가 부수효과다 |
+| 7 | `src/board/WidgetHost.tsx` 렌더링 분기 | **`View`가 렌더링되지 않고 미구현 안내만 뜬다** |
 
-추가로, 데이터 훅이 필요하면 `src/board/WidgetHost.tsx`에 분기를 하나 더한다.
+`WidgetHost` 분기는 데이터 훅 유무와 관계없이 **필수**다. 현재 기본 분기는
+`definition.View`를 렌더링하지 않고 "아직 구현되지 않았습니다"를 보여준다.
+데이터를 자체로 가지지 않는 위젯도 `ready` envelope으로 `View`를 그리는
+분기가 필요하다.
 
 **1번이 가장 위험하다.** 프론트만 고치면 개발 중에는 잘 도는 것처럼 보이고,
 앱을 껐다 켰을 때 위젯이 사라진다. Rust enum에 변형이 없으면 serde가 보드
@@ -103,6 +107,8 @@ src/widgets/<name>/
 
 외부 API를 쓰면 `src-tauri/src/providers/<name>/`도 만든다
 (`client.rs` `types.rs` `error.rs` `mod.rs` + `tests/`).
+Rust 파일을 만든 뒤에는 반드시 부모 모듈인 `providers/mod.rs`,
+`commands/mod.rs`, `storage/mod.rs`(해당할 때)에도 노출한다.
 
 ---
 
@@ -139,8 +145,22 @@ cd src-tauri && cargo test    # 바인딩이 여기서 재생성된다
 cd .. && bun run typecheck
 bun run test
 bun run lint
-./run.sh --build              # 실제 앱에서 확인
 ```
+
+### 실제 앱 검증 전 데이터 보호
+
+`./run.sh --build`는 실행 중인 my-pegboard를 종료하고, 배포판과 같은
+`io.mypegboard.app` 데이터 디렉터리를 쓴다. 새 위젯 타입이 든 `board.json`은
+구버전 앱에서 손상 파일로 판정될 수 있다.
+
+- **사용자 확인 없이 `./run.sh --build`를 실행하지 않는다.**
+- 실행 전 `~/Library/Application Support/io.mypegboard.app/board.json`을 작업
+  디렉터리 밖의 임시 디렉터리에 백업하고 백업 경로를 보고한다.
+- 검증 후 앱을 종료하고 원래 `board.json`을 복원한 뒤에만 구버전 앱을 실행한다.
+- 백업할 파일이 없었다면 검증으로 생성된 파일을 지우기 전에
+  사용자에게 확인한다.
+
+백업이 준비된 뒤에 `./run.sh --build`로 실제 앱을 연다.
 
 **손으로 반드시 확인할 것:**
 1. 위젯을 추가하고 **앱을 껐다 켠다** — 살아 있나? (등록 1번 검증)
@@ -165,6 +185,6 @@ bun run lint
 
 ## 참조
 
-- `references/registration.md` — 등록 6곳의 정확한 코드와 증상
+- `references/registration.md` — 등록 7곳의 정확한 코드와 증상
 - `references/patterns.md` — 기존 위젯 3종에서 뽑은 반복 패턴
 - `references/checklist.md` — 작업 순서 체크리스트

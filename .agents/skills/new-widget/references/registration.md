@@ -1,6 +1,6 @@
-# 등록 6곳
+# 등록 7곳
 
-새 위젯 타입을 `foo`라고 하자. 아래 6곳을 **전부** 고쳐야 한다.
+새 위젯 타입을 `foo`라고 하자. 아래 7곳을 **전부** 고쳐야 한다.
 각 항목에 **빠뜨렸을 때 실제로 무슨 일이 일어나는지**를 적었다 — 증상을 알아야
 디버깅에 시간을 안 뺏긴다.
 
@@ -42,7 +42,7 @@ pub const fn instance_limit(self) -> usize {
     match self {
         WidgetType::Jira => 4,
         WidgetType::Github => 4,
-        WidgetType::Todo => 8,
+        WidgetType::Todo => 1,
         WidgetType::Web => 4,
         WidgetType::Foo => 4,   // ← 추가
     }
@@ -152,11 +152,12 @@ import '#/widgets/web'
 
 ---
 
-## 7. (조건부) `WidgetHost` 분기
+## 7. `WidgetHost` 렌더링 분기 ⚠️ 필수
 
 `src/board/WidgetHost.tsx`
 
-데이터 수명주기가 기존과 다르면 분기를 추가한다.
+새 위젯의 `View`를 실제로 렌더링하는 분기를 추가한다. 현재 기본
+분기는 레지스트리의 `definition.View`를 그리지 않는다.
 
 ```tsx
 ) : widget.type === 'foo' ? (
@@ -164,10 +165,11 @@ import '#/widgets/web'
 ) : (
 ```
 
-**필요한 경우:**
+**분기의 형태:**
 - 외부 API → `useFooData` 훅을 만들어 envelope을 채운다 (Jira 참고)
 - 공유 스토어 → 훅 없이 View가 직접 구독 (Todo 참고)
 - 자체 로드 → envelope은 껍데기 (Web 참고)
+- 정적·로컬 데이터 → `ready` envelope을 넘겨 `View`를 그린다
 
 **빠뜨리면:** 기본 분기로 떨어져 `status="idle"` 껍데기만 그려진다.
 에러는 안 나고 그냥 비어 보인다 — 조용한 실패라 알아채기 어렵다.
@@ -180,10 +182,13 @@ import '#/widgets/web'
 cd src-tauri && cargo test      # 2·3번을 컴파일러가 잡는다 + 바인딩 재생성
 cd .. && bun run typecheck      # 4번
 bun run test
-./run.sh --build
 ```
+
+`./run.sh --build`는 실제 `io.mypegboard.app` 데이터를 사용하므로,
+`SKILL.md` 5장의 백업·복원 절차를 준비한 뒤 실행한다.
 
 앱에서:
 1. 추가 메뉴에 뜨나? → 5·6번
-2. 추가하고 **재시작** → 살아 있나? → **1번**
-3. 상한까지 추가 → 막히나? → 2번과 `maxInstances` 일치
+2. 추가한 위젯의 본문이 실제로 뜨나? → **7번**
+3. 추가하고 **재시작** → 살아 있나? → **1번**
+4. 상한까지 추가 → 막히나? → 2번과 `maxInstances` 일치

@@ -19,9 +19,11 @@
 ## 1. Rust (외부 API·로컬 파일인 경우)
 
 - [ ] `providers/<name>/` 또는 `storage/<name>.rs`
+- [ ] `providers/mod.rs` 또는 `storage/mod.rs`에 새 모듈 노출
 - [ ] 순수 함수는 `State`를 안 받게 뽑아서 테스트
 - [ ] 에러를 일시적/영구적으로 분류 (`kind()`)
 - [ ] `commands/<name>.rs` — IPC 커맨드
+- [ ] `commands/mod.rs`에 새 커맨드 모듈 노출
 - [ ] `state.rs`에 스토어 추가 (필요시)
 - [ ] `lib.rs`와 `bindings_export.rs` **양쪽**에 커맨드 등록 — 어긋나면 바인딩과
       핸들러가 달라진다
@@ -33,7 +35,7 @@
 
 ---
 
-## 2. 등록 6곳
+## 2. 등록 7곳
 
 `references/registration.md` 참조. 증상까지 거기 있다.
 
@@ -43,10 +45,10 @@
 - [ ] `types.ts` `WidgetType`
 - [ ] `widgets/<name>/index.ts` + `registerWidget()`
 - [ ] `main.tsx` import ⚠️ **잊기 쉽다**
-- [ ] (조건부) `WidgetHost.tsx` 분기
+- [ ] `WidgetHost.tsx` 렌더링 분기 ⚠️ **필수 — 기본 분기는 View를 그리지 않음**
 
-**여기서 한 번 실제 앱을 띄워 확인한다.** 추가 메뉴에 뜨고, 추가하고,
-**재시작해도 살아 있는지.**
+여기서 등록 코드와 자동 테스트를 완료한다. 실제 앱 확인은 4장의
+데이터 보호 절차를 준비한 뒤에만 한다.
 
 ---
 
@@ -68,8 +70,16 @@ cd src-tauri && cargo test
 cd .. && bun run typecheck
 bun run test
 bun run lint
-./run.sh --build
 ```
+
+### 실제 앱 검증 전
+
+- [ ] `./run.sh --build`가 배포판과 같은 `io.mypegboard.app` 데이터를
+      쓴다는 점을 사용자에게 알림
+- [ ] 사용자 확인을 받음
+- [ ] `board.json`을 작업 디렉터리 밖에 백업하고 경로를 기록
+- [ ] 백업 후 `./run.sh --build` 실행
+- [ ] 검증 후 앱 종료 → `board.json` 복원 → 구버전 앱 실행
 
 앱에서 손으로:
 - [ ] 추가 메뉴에 뜨나
