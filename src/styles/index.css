@@ -45,3 +45,38 @@
     -webkit-user-drag: element;
   }
 }
+
+/*
+  크기 조절 손잡이 — react-grid-layout 기본 스타일 덮어쓰기.
+
+  라이브러리는 우하단에 5×5px 갈매기를 `rgba(0, 0, 0, 0.4)`로 그린다.
+  **밝은 배경을 전제한 색이라** 이 앱의 어두운 위젯 몸통 위에서는 거의 안 보인다.
+  라이트 테마에서도 쓸 수 있어야 하므로 토큰으로 뺐다(theme.css).
+
+  `@layer` 없이 쓴다. 라이브러리 CSS는 Board.tsx에서 임포트되어 레이어 밖에
+  있고, 레이어에 든 규칙은 레이어 밖 규칙에 항상 진다 — base에 넣으면 안 먹는다.
+*/
+.react-grid-item > .react-resizable-handle {
+  /* 히트 영역도 넓힌다. 기본 20px은 모서리를 정확히 노려야 잡힌다. */
+  width: 24px;
+  height: 24px;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+  /* 5px → 8px. 선도 굵힌다. */
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: var(--border-width-thick) solid var(--color-handle-resize);
+  border-bottom: var(--border-width-thick) solid var(--color-handle-resize);
+  border-bottom-right-radius: 2px;
+  transition: border-color var(--transition-duration-fast) ease;
+}
+
+/* 잡을 수 있다는 것을 hover에서 확실히 알린다. */
+.react-grid-item > .react-resizable-handle:hover::after,
+.react-grid-item.resizing > .react-resizable-handle::after {
+  border-right-color: var(--color-handle-resize-hover);
+  border-bottom-color: var(--color-handle-resize-hover);
+}
