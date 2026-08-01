@@ -157,12 +157,31 @@ describe('TodoRow 드래그', () => {
     return document.querySelector('li')!
   }
 
-  it('drag prop이 있으면 끌 수 있다', () => {
+  /**
+   * 행 전체가 draggable이면 텍스트를 집으려다 행이 딸려오고, 체크박스를
+   * 누르려다 드래그가 걸린다. 손잡이를 눌러야 켜진다.
+   */
+  it('손잡이를 누르기 전에는 끌 수 없다', () => {
     const li = renderDraggable(dragProps())
+    expect(li.getAttribute('draggable')).toBe('false')
+  })
+
+  it('손잡이를 누르면 끌 수 있게 된다', () => {
+    const li = renderDraggable(dragProps())
+    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
     expect(li.getAttribute('draggable')).toBe('true')
   })
 
-  it('drag prop이 없으면 끌 수 없다', () => {
+  /** 끌지 않고 손을 떼면 원래대로 — 안 그러면 다음에 텍스트를 집을 때 딸려온다. */
+  it('손을 떼면 다시 끌 수 없다', () => {
+    const li = renderDraggable(dragProps())
+    const handle = screen.getByTitle('끌어서 순서 변경')
+    fireEvent.pointerDown(handle)
+    fireEvent.pointerUp(handle)
+    expect(li.getAttribute('draggable')).toBe('false')
+  })
+
+  it('drag prop이 없으면 손잡이도 없다', () => {
     render(
       <TodoRow
         item={item()}
@@ -172,7 +191,7 @@ describe('TodoRow 드래그', () => {
         onRemove={vi.fn()}
       />,
     )
-    expect(document.querySelector('li')?.getAttribute('draggable')).toBe('false')
+    expect(screen.queryByTitle('끌어서 순서 변경')).toBeNull()
   })
 
   /** Firefox는 dataTransfer가 비면 드래그를 아예 시작하지 않는다. */
@@ -266,17 +285,17 @@ describe('TodoRow 드래그', () => {
     expect(li.querySelector('[aria-hidden="true"].bg-accent')).toBeNull()
   })
 
-  /** 버튼은 WebKit에서 기본 draggable이라 행의 드래그를 가로챈다. */
-  it('안쪽 버튼은 드래그를 삼키지 않는다', () => {
-    renderDraggable(dragProps())
-    const textButton = screen.getByText('배포 스크립트 정리')
-    expect(textButton.getAttribute('draggable')).toBe('false')
-  })
-
   /** 텍스트를 드래그로 선택하려는 동작과 행 이동이 충돌한다. */
-  it('편집 중에는 끌 수 없다', () => {
-    renderDraggable(dragProps())
+  /**
+   * 손잡이를 잡은 상태에서 편집으로 들어가도 끌 수 없어야 한다.
+   * (손잡이를 안 잡으면 애초에 false라, 잡은 상태에서 확인해야 의미가 있다.)
+   */
+  it('편집 중에는 손잡이를 잡아도 끌 수 없다', () => {
+    const li = renderDraggable(dragProps())
+    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
+    expect(li.getAttribute('draggable')).toBe('true')
+
     fireEvent.click(screen.getByText('배포 스크립트 정리'))
-    expect(document.querySelector('li')?.getAttribute('draggable')).toBe('false')
+    expect(li.getAttribute('draggable')).toBe('false')
   })
 })

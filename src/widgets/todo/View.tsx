@@ -149,12 +149,19 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
                     dragging: dragId === item.id,
                     // 끌던 항목보다 아래에 있는 대상이면 선을 아래에 긋는다 —
                     // 놓았을 때 실제로 그 자리에 들어가기 때문이다.
+                    //
+                    // **원래 자리(자기 자신) 위에서도 선을 보여준다.** 안 그러면
+                    // 제자리로 되돌리는 중에 표시가 사라져서 "여기 놓으면 어떻게
+                    // 되는지" 알 수 없다. 그때는 위쪽에 긋는다 — 제자리 드롭은
+                    // 아무 변화가 없으므로 방향을 따질 필요가 없다.
                     over:
-                      overId === item.id && dragId !== null && dragId !== item.id
-                        ? undone.findIndex((i) => i.id === dragId) <
-                          undone.findIndex((i) => i.id === item.id)
-                          ? 'below'
-                          : 'above'
+                      overId === item.id && dragId !== null
+                        ? dragId === item.id
+                          ? 'above'
+                          : undone.findIndex((i) => i.id === dragId) <
+                              undone.findIndex((i) => i.id === item.id)
+                            ? 'below'
+                            : 'above'
                         : null,
                   }}
                 />

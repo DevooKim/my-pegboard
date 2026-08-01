@@ -1,4 +1,4 @@
-import { RotateCw, X } from 'lucide-react'
+import { GripVertical, RotateCw, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { TodoItem } from '#/ipc/bindings'
 import { type DateKey, daysSinceOrigin } from '#/store/todos'
@@ -43,6 +43,9 @@ export function TodoRow({
     over: 'above' | 'below' | null
   }
 }) {
+  // 핸들을 눌렀을 때만 끌 수 있다. 행 전체가 draggable이면 텍스트를 집으려다
+  // 행이 딸려오고, 체크박스를 누르려다 드래그가 시작된다.
+  const [grabbed, setGrabbed] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -64,17 +67,19 @@ export function TodoRow({
   }
 
   return (
-    // 행 전체를 draggable로 둔다. 전용 손잡이(⠿)를 두지 않는 이유: 폭이
-    // 2열까지 좁아질 수 있어(minLayout) 손잡이가 텍스트를 밀어낸다.
+    // 드래그는 **손잡이를 눌렀을 때만** 시작된다(`grabbed`).
     //
-    // 편집 중에는 끌 수 없게 한다 — 텍스트를 드래그로 선택하려는 동작과
-    // 행 이동이 충돌한다.
+    // 행 전체를 draggable로 두면 텍스트를 집으려다 행이 딸려오고, 체크박스를
+    // 누르려다 드래그가 걸린다. 손잡이는 hover할 때만 나타나므로 평소 밀도도
+    // 해치지 않는다.
+    //
+    // 편집 중에는 끌 수 없다 — 텍스트 선택과 충돌한다.
     //
     // `relative`는 드롭 표시선을 행 **경계에 띄우기** 위한 기준이다.
     // 선을 행의 border로 그리면 py-1 안쪽에 붙어 텍스트에 바짝 닿고,
     // 완료 구분선과 위치가 겹쳐 어느 것이 드롭 표시인지 알 수 없다.
     <li
-      draggable={!!drag && !editing}
+      draggable={!!drag && grabbed && !editing}
       onDragStart={(e) => {
         // Firefox는 dataTransfer가 비면 드래그를 시작하지 않는다.
         e.dataTransfer.setData('text/plain', item.id)
@@ -95,10 +100,12 @@ export function TodoRow({
         e.preventDefault()
         drag?.onDrop()
       }}
-      onDragEnd={() => drag?.onEnd()}
+      onDragEnd={() => {
+        setGrabbed(false)
+        drag?.onEnd()
+      }}
       className={`group relative flex items-center gap-2 rounded px-1.5 py-1
                   transition-colors duration-fast
-                  ${drag ? 'cursor-grab active:cursor-grabbing' : ''}
                   ${
                     drag?.dragging
                       ? // 끌리는 동안 **자리는 그대로 두고** 빈 홈처럼 보이게 한다.
@@ -150,10 +157,6 @@ export function TodoRow({
         // 완료 항목은 취소선 + 흐리게 (DECISIONS 13).
         <button
           type="button"
-          // 버튼은 WebKit에서 기본적으로 draggable이라 행의 드래그를 가로챈다.
-          // 이 버튼이 flex-1로 행의 대부분을 덮고 있어서, 끄지 않으면 사실상
-          // 드래그가 아예 시작되지 않는다.
-          draggable={false}
           onClick={() => setEditing(true)}
           title="클릭해서 수정"
           className={`min-w-0 flex-1 truncate rounded text-left text-body
@@ -164,9 +167,26 @@ export function TodoRow({
         </button>
       )}
 
+      {/* 드래그 손잡이. hover할 때만 나타나며, 여기를 눌러야 끌 수 있다.
+          삭제(×) 왼쪽에 두어 오른쪽 끝의 파괴적 동작과 섞이지 않게 한다. */}
+      {drag && (
+        <span
+          onPointerDown={() => setGrabbed(true)}
+          // 끌지 않고 손을 떼면 원래대로. 안 그러면 draggable이 계속 켜져
+          // 다음에 텍스트를 집을 때 행이 딸려온다.
+          onPointerUp={() => setGrabbed(false)}
+          title="끌어서 순서 변경"
+          aria-hidden="true"
+          className="shrink-0 cursor-grab rounded p-0.5 text-text-quaternary opacity-0
+                     transition-opacity duration-fast hover:text-text-secondary
+                     active:cursor-grabbing group-hover:opacity-100"
+        >
+          <GripVertical size={12} />
+        </span>
+      )}
+
       <button
         type="button"
-        draggable={false}
         onClick={onRemove}
         title="삭제"
         aria-label={`${item.text} 삭제`}
