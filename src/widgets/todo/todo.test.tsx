@@ -193,12 +193,15 @@ describe('TodoRow 드래그', () => {
    * 그 자리에서 h-0으로 접으면 캡처할 것이 사라져 드래그가 취소된다 —
    * 포인터만 잠깐 뜨고 끝난다(실측).
    */
-  it('접기를 한 프레임 미룬다', async () => {
+  it('모양 변경을 한 프레임 미룬다', async () => {
     const drag = dragProps()
     const li = renderDraggable(drag)
 
     fireEvent.dragStart(li, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } })
-    expect(drag.onStart, 'dragstart 그 자리에서 접으면 안 된다').not.toHaveBeenCalled()
+    expect(
+      drag.onStart,
+      'dragstart 그 자리에서 모양을 바꾸면 캡처가 어긋난다',
+    ).not.toHaveBeenCalled()
 
     await waitFor(() => expect(drag.onStart).toHaveBeenCalled())
   })
@@ -218,19 +221,25 @@ describe('TodoRow 드래그', () => {
   })
 
   /**
-   * 끌리는 동안 **자리를 비운다.** 흐리게만 하면 원본이 그대로 남아,
-   * 커서를 따라다니는 OS 드래그 이미지와 겹쳐 같은 항목이 둘로 보인다.
+   * 끌리는 동안 **자리는 지킨다.** 접어서 없애면(h-0) 돌아올 자리가 사라져
+   * 제자리로 되돌릴 수가 없다 — 실제로 그렇게 만들었다가 되돌렸다.
    */
-  it('끌리는 중에는 자리를 비운다', () => {
+  it('끌리는 중에도 자리를 지킨다', () => {
     const li = renderDraggable(dragProps({ dragging: true }))
-    expect(li.className).toContain('h-0')
-    expect(li.className).toContain('opacity-0')
-  })
-
-  it('끌지 않을 때는 정상 높이다', () => {
-    const li = renderDraggable(dragProps())
     expect(li.className).not.toContain('h-0')
     expect(li.className).toContain('py-1')
+  })
+
+  it('끌리는 중에는 빈 홈처럼 보인다', () => {
+    const li = renderDraggable(dragProps({ dragging: true }))
+    expect(li.className).toContain('opacity-25')
+    expect(li.className).toContain('bg-surface-inset')
+  })
+
+  /** 자리를 지켜야 제자리 드롭이 가능하다 — pointer-events를 죽이면 안 된다. */
+  it('끌리는 중에도 드롭을 받을 수 있다', () => {
+    const li = renderDraggable(dragProps({ dragging: true }))
+    expect(li.className).not.toContain('pointer-events-none')
   })
 
   /**

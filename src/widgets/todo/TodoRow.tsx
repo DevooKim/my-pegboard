@@ -80,13 +80,8 @@ export function TodoRow({
         e.dataTransfer.setData('text/plain', item.id)
         e.dataTransfer.effectAllowed = 'move'
 
-        // **다음 프레임에** 접는다.
-        //
-        // 브라우저는 dragstart가 끝난 뒤 소스 요소를 캡처해 드래그 이미지를
-        // 만든다. 여기서 곧바로 상태를 바꿔 행을 h-0으로 접으면 캡처할 것이
-        // 사라져 드래그가 그대로 취소된다 — 포인터만 잠깐 뜨고 끝난다.
-        //
-        // requestAnimationFrame으로 한 프레임 미루면 캡처가 끝난 뒤에 접힌다.
+        // 한 프레임 미룬다. 브라우저는 dragstart가 끝난 뒤 소스 요소를 캡처해
+        // 드래그 이미지를 만드는데, 그 전에 모양을 바꾸면 캡처가 어긋난다.
         requestAnimationFrame(() => drag?.onStart())
       }}
       onDragOver={(e) => {
@@ -101,16 +96,18 @@ export function TodoRow({
         drag?.onDrop()
       }}
       onDragEnd={() => drag?.onEnd()}
-      className={`group relative flex items-center gap-2 rounded px-1.5
-                  transition-[opacity,height,padding] duration-fast
+      className={`group relative flex items-center gap-2 rounded px-1.5 py-1
+                  transition-colors duration-fast
                   ${drag ? 'cursor-grab active:cursor-grabbing' : ''}
                   ${
                     drag?.dragging
-                      ? // 끌리는 동안 **자리를 비운다.** 흐리게만 하면 원본이 그대로
-                        // 남아 있어, 커서를 따라다니는 OS 드래그 이미지와 겹쳐
-                        // 같은 항목이 둘로 보인다.
-                        'pointer-events-none h-0 overflow-hidden py-0 opacity-0'
-                      : 'py-1 hover:bg-surface-inset'
+                      ? // 끌리는 동안 **자리는 그대로 두고** 빈 홈처럼 보이게 한다.
+                        //
+                        // 접어서 없애봤더니(h-0) 돌아올 자리가 사라져서 제자리로
+                        // 되돌릴 수가 없었다. 자리를 지키되 내용을 죽여서
+                        // "여기서 빠져나갔다"를 보여주는 쪽이 맞다.
+                        'bg-surface-inset opacity-25'
+                      : 'hover:bg-surface-inset'
                   }`}
     >
       {/* 드롭 표시선. 행 경계에 걸쳐 띄운다 — 좌우를 조금 들여 목록의
