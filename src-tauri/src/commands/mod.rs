@@ -4,6 +4,7 @@
 //! 토큰은 이 경계를 넘어가지 않는다.
 
 pub mod board;
+pub mod github;
 pub mod jira;
 pub mod todo;
 
