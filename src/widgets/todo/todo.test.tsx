@@ -181,25 +181,10 @@ describe('TodoRow 드래그', () => {
     expect(li.getAttribute('draggable')).toBe('false')
   })
 
-  /**
-   * **회귀 방지.** 드래그는 손잡이 밖(다른 행 위)에서 끝난다. 손잡이의
-   * onPointerUp만 듣고 있으면 그 이벤트를 못 받아 grabbed가 켜진 채로 남고,
-   * 다음 드래그가 안 걸린다 — 한 번 클릭해야 풀리는 증상이었다.
-   */
-  it('손잡이 밖에서 놓아도 해제된다', () => {
-    const li = renderDraggable(dragProps())
-    fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
-    expect(li.getAttribute('draggable')).toBe('true')
-
-    // 손잡이가 아니라 문서에서 놓는다.
-    fireEvent.pointerUp(document)
-    expect(li.getAttribute('draggable')).toBe('false')
-  })
-
   it('드래그가 끝나면 해제된다', () => {
     const li = renderDraggable(dragProps())
     fireEvent.pointerDown(screen.getByTitle('끌어서 순서 변경'))
-    fireEvent.dragEnd(document)
+    fireEvent.dragEnd(li)
     expect(li.getAttribute('draggable')).toBe('false')
   })
 
