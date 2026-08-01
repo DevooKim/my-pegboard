@@ -63,6 +63,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
           onRemove={() => setConfirmingRemove(true)}
           onConfigure={openConfig}
         />
+      ) : widget.type === 'todo' ? (
+        <TodoHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
       ) : (
         <WidgetShell
           title={definition.deriveTitle(widget.config)}
@@ -133,6 +140,51 @@ function WebHost({
     >
       <View
         key={reloadKey}
+        widgetId={widget.id}
+        config={widget.config}
+        envelope={{ status: 'ready', data: null, fetchedAt: null, error: null }}
+        width={width}
+      />
+    </WidgetShell>
+  )
+}
+
+/**
+ * Todo 위젯 호스트.
+ *
+ * 데이터 훅이 없다 — 상태는 `store/todos.ts`가 소유하고 View가 직접 구독한다.
+ * 위젯이 하나뿐이라 envelope으로 감쌀 이유가 없고, 자정 이월이 위젯 수명과
+ * 무관해야 해서 스토어에 두었다.
+ *
+ * `pollable: false`라 WidgetShell이 새로고침 버튼을 숨긴다. 우리가 호출할
+ * 외부 API가 없으므로 누를 것이 없다.
+ */
+function TodoHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('todo')
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(widget.config)}
+      status="ready"
+      fetchedAt={null}
+      pollable={false}
+      onRefresh={() => {}}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View
         widgetId={widget.id}
         config={widget.config}
         envelope={{ status: 'ready', data: null, fetchedAt: null, error: null }}

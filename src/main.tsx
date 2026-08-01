@@ -4,6 +4,7 @@ import { App } from '#/App'
 import '#/styles/index.css'
 // 위젯 레지스트리 등록 — import 자체가 부수효과다
 import '#/widgets/jira'
+import '#/widgets/todo'
 import '#/widgets/web'
 
 const root = document.getElementById('root')
