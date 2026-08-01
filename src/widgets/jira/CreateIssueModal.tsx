@@ -79,6 +79,8 @@ export function CreateIssueModal({
   const [priorityId, setPriorityId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [assignToMe, setAssignToMe] = useState(true)
+  /** 하위 작업의 상위 티켓 키. 하위작업 유형일 때만 쓴다. */
+  const [parentKey, setParentKey] = useState('')
 
   const [meta, setMeta] = useState<CreateMeta | null>(null)
   const [myName, setMyName] = useState<string | null>(null)
@@ -136,6 +138,7 @@ export function CreateIssueModal({
     setDescription('')
     setDueDate('')
     setSubmitting(false)
+    setParentKey('')
     setProjectKey('')
     setIssueTypeId('')
   }, [open])
@@ -155,9 +158,21 @@ export function CreateIssueModal({
   }, [open, projects])
 
   const project = projects.find((p) => p.key === projectKey) ?? null
-  // 하위작업은 parent가 필수라 이 폼으로 만들 수 없다.
-  const selectableTypes = (project?.issueTypes ?? []).filter((t) => !t.subtask)
-  const hiddenSubtaskCount = (project?.issueTypes?.length ?? 0) - selectableTypes.length
+  // 하위작업도 만들 수 있다. parent가 필수라 그때만 상위 칸이 나타난다.
+  const selectableTypes = project?.issueTypes ?? []
+  const selectedType = selectableTypes.find((t) => t.id === issueTypeId) ?? null
+
+  // 이 조합이 parent를 요구하는가.
+  //
+  // 판단 근거를 두 개 둔다: createmeta의 `parent` required(정확하지만 조회가
+  // 끝나야 안다)와 이슈타입의 `subtask` 플래그(즉시 알 수 있다). createmeta가
+  // 아직/실패했을 때도 칸이 나와야 하므로 둘 중 하나라도 참이면 요구로 본다.
+  //
+  // 실측(EDU 하위 작업 10006): parent는 required=true, hasDefaultValue=false,
+  // **allowedValues도 autoCompleteUrl도 없다** — 드롭다운을 만들 수 없어
+  // 사용자가 키를 직접 적어야 한다.
+  const metaWantsParent = meta?.fields.some((f) => f.fieldId === 'parent' && f.required) ?? false
+  const needsParent = selectedType?.subtask === true || metaWantsParent
 
   // 유형도 같은 규칙 — 열 때는 저장값, 그 뒤 프로젝트를 바꾸면 그 프로젝트의 값.
   //
@@ -213,15 +228,23 @@ export function CreateIssueModal({
       .find((f) => f.fieldId === 'priority')
       ?.allowedValues.map((v) => ({ id: v.id ?? '', label: v.label ?? v.id ?? '' })) ?? null
 
+  /** 폼이 직접 보내는 필드. 이것들은 "못 그리는 필수 필드"가 아니다. */
+  const FORM_FIELDS = [
+    'project',
+    'issuetype',
+    'summary',
+    'description',
+    'priority',
+    'duedate',
+    'assignee',
+    // 하위 작업일 때 상위 칸이 나타난다.
+    'parent',
+  ]
+
   // 폼이 못 그리는 필수 필드. 실측상 지금은 0개지만 설정이 바뀌면 나타난다 (4.2).
   const unhandledRequired: CreateMetaField[] =
     meta?.fields.filter(
-      (f) =>
-        f.required &&
-        !f.hasDefaultValue &&
-        !['project', 'issuetype', 'summary', 'description', 'priority', 'duedate'].includes(
-          f.fieldId,
-        ),
+      (f) => f.required && !f.hasDefaultValue && !FORM_FIELDS.includes(f.fieldId),
     ) ?? []
 
   /**
@@ -237,6 +260,9 @@ export function CreateIssueModal({
     setDueDate('')
     setCreated(null)
     setFailure(null)
+    // 상위도 비운다. 남겨두면 다음 티켓이 엉뚱한 상위에 조용히 붙는다 —
+    // 같은 상위에 연달아 만드는 편의보다 그 사고가 더 나쁘다.
+    setParentKey('')
   }
 
   const submit = async () => {
@@ -248,6 +274,8 @@ export function CreateIssueModal({
     if (priorityId) extra.priority = { id: priorityId }
     if (dueDate) extra.duedate = dueDate
     if (assignToMe && myAccountId) extra.assignee = { id: myAccountId }
+    // 하위 작업은 parent가 필수다. 키를 그대로 보낸다 — Jira가 검증한다.
+    if (needsParent && parentKey.trim()) extra.parent = { key: parentKey.trim().toUpperCase() }
 
     const result = await commands.jiraCreateIssue({
       projectKey,
@@ -301,7 +329,11 @@ export function CreateIssueModal({
 
   // --- 입력 폼 --------------------------------------------------------------
 
-  const canSubmit = summary.trim().length > 0 && !submitting && !failure?.possiblyCreated
+  // 하위 작업인데 상위가 비면 Jira가 400을 준다. 보내기 전에 막는다 —
+  // 왕복 한 번과 실패 메시지를 아끼는 편이 낫다.
+  const parentSatisfied = !needsParent || parentKey.trim().length > 0
+  const canSubmit =
+    summary.trim().length > 0 && parentSatisfied && !submitting && !failure?.possiblyCreated
 
   return (
     <Modal open onClose={onClose} labelledBy="create-issue-title" className="max-w-xl">
@@ -360,9 +392,32 @@ export function CreateIssueModal({
             {selectableTypes.map((t: JiraIssueTypeOption) => (
               <option key={t.id} value={t.id}>
                 {t.name}
+                {t.subtask ? ' (하위 작업)' : ''}
               </option>
             ))}
           </select>
+
+          {/* 하위 작업일 때만 나타난다. Jira가 parent에 allowedValues도
+              autoCompleteUrl도 주지 않아 드롭다운을 만들 수 없다(실측) —
+              키를 직접 적는다. */}
+          {needsParent && (
+            <>
+              <Label htmlFor="ci-parent">상위</Label>
+              <div className="space-y-1">
+                <input
+                  id="ci-parent"
+                  value={parentKey}
+                  onChange={(e) => setParentKey(e.target.value)}
+                  placeholder={`${projectKey || 'ABC'}-123`}
+                  // 키는 대문자다. 소문자로 쳐도 보내기 전에 올린다.
+                  className={`${inputClass} uppercase placeholder:normal-case`}
+                />
+                <p className="text-caption text-text-quaternary">
+                  하위 작업은 상위 티켓이 필요합니다
+                </p>
+              </div>
+            </>
+          )}
 
           <Label htmlFor="ci-summary">요약</Label>
           <input
@@ -424,12 +479,6 @@ export function CreateIssueModal({
             나에게 할당{myName ? ` (${myName})` : ''}
           </label>
         </div>
-
-        {hiddenSubtaskCount > 0 && (
-          <p className="text-caption text-text-quaternary">
-            하위 작업 유형 {hiddenSubtaskCount}개는 상위 티켓이 필요해 제외했습니다
-          </p>
-        )}
 
         {unhandledRequired.length > 0 && (
           <p className="rounded bg-warning-muted px-2 py-1.5 text-caption text-warning">
