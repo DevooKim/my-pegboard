@@ -43,10 +43,13 @@ export function GithubView({
       {groups ? (
         groups.map((group) => (
           <section key={group.repo}>
-            {/* 그룹 헤더. sticky로 두어 스크롤 중에도 어느 저장소인지 보인다. */}
+            {/* 그룹 헤더. sticky로 두어 스크롤 중에도 어느 저장소인지 보인다.
+                14px(text-base)은 위젯 제목과 같은 크기다 — 이것도 제목이므로 맞다.
+                항목(13px)보다 크지만 색을 한 단 낮춰(secondary) 본문을 이기지
+                않게 한다. 12px일 때는 저장소를 읽기 위해 눈을 모아야 했다. */}
             <h3
-              className="sticky top-0 z-10 truncate bg-surface-raised px-1.5 py-0.5
-                         text-caption text-text-tertiary"
+              className="sticky top-0 z-10 truncate bg-surface-raised px-1.5 pt-2 pb-1
+                         text-base text-text-secondary"
               title={group.repo}
             >
               {group.repo}

@@ -58,8 +58,11 @@ export function ItemRow({
 
         {/* 2행 — 메타데이터. 흐리게. */}
         <span className="flex min-w-0 items-center gap-1 pl-[18px] text-caption text-text-quaternary">
+          {/* 그룹핑을 껐을 때는 여기가 저장소를 읽는 **유일한** 자리다.
+              주변 메타데이터와 같은 색이면 묻히므로 한 단 밝게 한다.
+              번호는 흐린 채로 둬서 이름이 먼저 읽히게 한다. */}
           {showRepo && (
-            <span className="truncate">
+            <span className="truncate text-text-secondary">
               {shortRepo(item.repository, compact)}
               <span className="text-text-quaternary">#{item.number}</span>
             </span>
