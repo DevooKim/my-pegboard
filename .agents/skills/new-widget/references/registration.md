@@ -176,6 +176,45 @@ import '#/widgets/web'
 
 ---
 
+## 8. IPC 커맨드를 만들었다면 — 등록처가 **두 곳**이다
+
+> GitHub 위젯(2026-08-02)에서 실제로 걸린 함정이다. 위 7곳에는 없었다.
+
+`#[tauri::command]`를 새로 만들면 **같은 목록을 두 파일에 적어야 한다.**
+
+| 파일 | 역할 | 빠뜨리면 |
+|---|---|---|
+| `src-tauri/src/lib.rs` | 런타임 등록 | 프론트에서 부르면 "command not found" |
+| `src-tauri/src/bindings_export.rs` | **TS 바인딩 생성** | `commands.foo()`가 생성물에 없다 |
+
+후자는 `cargo test` 안에서 도는 테스트다. 컴파일도 통과하고 테스트도 초록인데
+**`bindings.ts`에 함수가 안 생긴다** — 프론트를 쓸 때가 되어서야 안다.
+커맨드를 추가한 뒤에는 생성물을 직접 확인하는 편이 빠르다:
+
+```bash
+cd src-tauri && cargo test && cd ..
+grep -c "async fooCommand" src/ipc/bindings.ts   # 0이면 빠뜨린 것
+```
+
+## 9. Rust 타입 이름이 곧 TS 타입 이름이다
+
+> 같은 작업에서 걸린 두 번째 함정.
+
+specta는 모듈 경로를 버리고 **struct 이름만** 가져간다. 그래서 다른 provider가
+같은 이름을 export하면 생성물에 `export type Preset`이 **두 번** 나오고,
+그건 유효하지 않은 TypeScript다.
+
+실제로 `providers/jira/presets.rs`와 `providers/github/presets.rs`가 둘 다
+`Preset`을 내보내 충돌했다. GitHub 쪽을 `GithubPreset`으로 바꿔 해결했다.
+
+**IPC 경계로 나가는 타입에는 provider 이름을 접두사로 붙인다** —
+`GithubPreset`, `JiraIssue`처럼. 내부 전용 타입(`SearchNode` 등)은
+`pub(crate)`로 두면 생성물에 안 나가므로 이름이 자유롭다.
+
+생성물은 손으로 못 고친다. 이름 충돌은 **Rust에서** 풀어야 한다.
+
+---
+
 ## 검증 순서
 
 ```bash

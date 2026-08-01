@@ -248,6 +248,8 @@
   --palette-slate-dark: #8b98a8;
   --palette-skyblue-dark: #5aa9f0;
   --palette-lightblue-dark: #7fb3e8;
+  /* 보라 — GitHub의 머지됨/닫힌 이슈. GitHub 자체가 쓰는 색이라 학습 비용이 없다. */
+  --palette-purple-dark: #b781f0;
 
   /* 시맨틱 원색 — 라이트 */
   --palette-green-light: #1a7f4d;
@@ -259,6 +261,7 @@
   --palette-slate-light: #5c6773;
   --palette-skyblue-light: #1f5fbf;
   --palette-lightblue-light: #2c6aa8;
+  --palette-purple-light: #7a3fb8;
 }
 
 /* ==========================================================================
@@ -323,6 +326,9 @@
   --color-warning-muted: rgb(224 179 65 / 0.15);
   --color-danger: var(--palette-red-dark);
   --color-danger-muted: rgb(242 114 106 / 0.15);
+  /* 머지된 PR·닫힌 이슈. 성공(초록)과 구분해야 한다 — "잘 끝났다"와 "합쳐졌다"는
+     다른 사실이고, GitHub 사용자는 보라를 머지로 읽는다. */
+  --color-merged: var(--palette-purple-dark);
   --color-info: var(--palette-blue-dark);
   --color-info-muted: rgb(110 168 250 / 0.15);
 
@@ -460,6 +466,7 @@
     --color-warning-muted: rgb(138 100 16 / 0.12);
     --color-danger: var(--palette-red-light);
     --color-danger-muted: rgb(194 57 52 / 0.11);
+    --color-merged: var(--palette-purple-light);
     --color-info: var(--palette-blue-light);
     --color-info-muted: rgb(31 95 191 / 0.11);
 
@@ -536,6 +543,7 @@
   --color-warning-muted: rgb(138 100 16 / 0.12);
   --color-danger: var(--palette-red-light);
   --color-danger-muted: rgb(194 57 52 / 0.11);
+  --color-merged: var(--palette-purple-light);
   --color-info: var(--palette-blue-light);
   --color-info-muted: rgb(31 95 191 / 0.11);
 

@@ -180,7 +180,23 @@ src-tauri/src/
 - **GraphQL API만.** github.com 전용 (Enterprise 미지원).
 - REST 검색은 **분당 30회** 제한 → PR별 리뷰 상태를 개별 조회하면 즉시 초과.
 - GraphQL 한 요청으로 목록 + `reviewDecision` + `statusCheckRollup` + 변경 규모를 받는다.
+  검색 1회 = **1점** / 시간당 5000점 (실측). rate limit은 제약이 아니다.
 - 위젯 타입은 **하나**. PR/Issue는 쿼리로 구분 (`is:pr` / `is:issue`).
+- **읽기 전용.** 상세 모달 없음 — 누르면 브라우저로 나간다.
+  (Jira에 상세를 만든 건 회사 Jira 웹이 느려서다. GitHub 웹은 그 전제가 없다)
+
+**실측으로 알아낸 함정 (2026-08-02):**
+- `statusCheckRollup`은 **최상위 필드가 아니다** — `commits(last:1).nodes[0].commit` 아래.
+  경로가 틀리면 조용히 `None`이 된다
+- `reviewDecision`은 리뷰어 미지정 시 `null`
+- **GraphQL은 실패해도 200을 준다.** 본문 `errors`를 봐야 한다
+- **403이 rate limit일 수 있다.** `x-ratelimit-remaining: 0`이 유일한 단서 —
+  안 보면 SSO 미인증을 재시도하며 시간을 버린다
+- 검색이 **총 건수를 준다**(`issueCount`). Jira 신규 검색과 다르다
+
+**인증:** 토큰을 키체인에 저장한다. 설정창의 "gh CLI에서 가져오기"가
+`gh auth token`을 한 번 실행해 **복사**한다 — gh에 런타임 의존하지 않는다.
+조직 저장소가 안 보이면 대개 **SSO 미인증**이다 (DECISIONS 12.4).
 
 ---
 
@@ -229,7 +245,7 @@ Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 
 
 - 구현 순서: 1차 Jira 목록 → 2차 상세·생성 → 3차 GitHub·Todo → 4차 트레이·알림
   (상세는 DECISIONS.md 20장)
-  **진행:** 1차·2차 완료. 3차는 Todo 완료 / **GitHub 남음**.
+  **진행:** 1차·2차·3차 완료. 다음은 **4차(트레이·백그라운드 폴링·알림)**.
 - 1차의 목표는 **뼈대 검증** — IPC·키체인·폴링·캐시·그리드·에러 처리가 실제로 도는지.
 - **사실은 추측하지 말고 조회한다.** Jira API 응답 구조는 문서와 다를 때가 있다.
   실제 응답을 받아 확인한 뒤 코드를 쓴다.

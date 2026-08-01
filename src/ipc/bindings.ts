@@ -167,6 +167,111 @@ async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, Ji
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 프리셋 목록. 설정 폼이 드롭다운을 채운다.
+ */
+async githubPresets() : Promise<GithubPreset[]> {
+    return await TAURI_INVOKE("github_presets");
+},
+/**
+ * 토큰이 저장돼 있는가. 설정 안내를 띄울지 고르는 데 쓴다.
+ */
+async githubIsConfigured() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_is_configured") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 토큰 저장. **평문 파일에 쓰지 않는다** (CLAUDE.md).
+ */
+async githubSaveToken(token: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_save_token", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async githubDeleteToken() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_delete_token") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * `gh` CLI에 로그인된 토큰을 가져와 키체인에 복사한다.
+ * 
+ * # 왜 복사인가 (런타임 의존이 아니라)
+ * 
+ * gh를 매번 부르면 gh 로그아웃·재설치·PATH 변경이 전부 조용한 실패가 된다.
+ * 앱 밖에서 일어나는 일이라 원인을 알 수 없다. 한 번 복사해두면 그 뒤로는
+ * gh가 사라져도 앱이 돈다.
+ * 
+ * 대가: gh가 토큰을 갱신해도 우리 사본은 낡는다. 그때는 401이 나고,
+ * 사용자가 버튼을 다시 누르면 된다 — **드러나는 실패**다.
+ */
+async githubImportGhToken() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_import_gh_token") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 토큰이 실제로 동작하는지 확인. 설정창의 [확인] 버튼.
+ */
+async githubVerify() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_verify") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 위젯 데이터를 네트워크에서 가져온다.
+ */
+async githubFetch(widgetId: string, config: GithubWidgetConfig) : Promise<Result<GithubWidgetData, GithubWidgetError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_fetch", { widgetId, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
+ * 
+ * **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
+ * 이 앱의 존재 이유다 (DECISIONS 17장).
+ */
+async githubCached(widgetId: string) : Promise<Result<GithubWidgetData | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_cached", { widgetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 저장소 목록. 설정창의 필터·순서 UI를 채운다.
+ * 
+ * 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
+ */
+async githubRepos(refresh: boolean) : Promise<Result<GithubRepoList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_repos", { refresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async todoList() : Promise<Result<TodoItem[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("todo_list") };
@@ -333,6 +438,14 @@ sourceDates: string[]; targetDate: string }
  */
 export type CarryOverResult = { items: TodoItem[]; report: CarryOverReport }
 /**
+ * CI 종합 상태. GraphQL `statusCheckRollup.state`.
+ */
+export type CheckState = "success" | "failure" | "pending" | 
+/**
+ * `ERROR` / `EXPECTED` — 성공도 실패도 아닌 것들.
+ */
+"other"
+/**
  * 티켓 생성 요청. 최소 폼 + createmeta로 알아낸 추가 필드 (DECISIONS 11.3).
  * 
  * `extra_fields`가 있는 이유: 프로젝트마다 필수 필드가 다르므로(XYZ의 `reporter`)
@@ -383,6 +496,146 @@ allowedValues: AllowedValue[] }
  * 생성 성공 응답. Jira는 키/id/self만 돌려준다.
  */
 export type CreatedIssue = { id: string; key: string; self?: string | null }
+/**
+ * 목록 한 줄. **화면이 그리는 모양 그대로**다.
+ */
+export type GithubItem = { 
+/**
+ * `owner/name#123` — 목록에서 유일하다. React key로 쓴다.
+ */
+id: string; number: number; title: string; 
+/**
+ * `owner/name`. 화면이 좁으면 `owner/`를 버리므로 나누지 않고 통째로 준다.
+ */
+repository: string; 
+/**
+ * 클릭하면 열 주소.
+ */
+url: string; author: string | null; 
+/**
+ * PR인가. false면 Issue다.
+ */
+isPullRequest: boolean; state: ItemState; 
+/**
+ * PR만. 리뷰가 요청되지 않았으면 `None`(실측: `reviewDecision`이 null).
+ */
+review: ReviewState | null; 
+/**
+ * PR만. CI를 안 돌리는 저장소면 `None`.
+ */
+ci: CheckState | null; 
+/**
+ * PR만. 변경 규모.
+ */
+additions: number | null; deletions: number | null; 
+/**
+ * ISO 8601. "2일 전" 표시와 정렬에 쓴다.
+ */
+updatedAt: string; 
+/**
+ * 코멘트 수. 0이면 화면에 그리지 않는다.
+ */
+comments: number }
+/**
+ * 프리셋 정의. 정적 테이블이므로 `&'static str`.
+ */
+export type GithubPreset = { 
+/**
+ * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
+ */
+id: string; name: string; description: string; query: string }
+/**
+ * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 검색 문자열이거나.
+ * 
+ * 프리셋을 문자열로 굳혀 저장하지 않는 이유는 Jira와 같다 — id로 저장하면
+ * 나중에 프리셋 정의를 고쳤을 때 이미 배치된 위젯도 같이 고쳐진다.
+ */
+export type GithubQuery = 
+/**
+ * 프리셋 id. 알 수 없는 id면 [`GithubQuery::to_search`]가 `None`을 준다.
+ */
+{ kind: "preset"; id: string } | 
+/**
+ * 탈출구. 사용자가 직접 쓴 검색 문자열을 **그대로** 보낸다.
+ * 
+ * 검증하지 않는다. 틀리면 GitHub이 우리보다 나은 메시지를 준다.
+ */
+{ kind: "raw"; query: string }
+/**
+ * 설정창 저장소 목록의 한 줄.
+ */
+export type GithubRepo = { 
+/**
+ * `owner/name`. 설정에 저장되는 식별자다.
+ */
+nameWithOwner: string; 
+/**
+ * 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 68개를 알파벳순으로 늘어놓으면
+ * 지금 일하는 저장소를 찾아야 한다.
+ */
+pushedAt: string | null; isPrivate: boolean; isArchived: boolean }
+export type GithubRepoList = { repos: GithubRepo[]; fetchedAt: string | null }
+export type GithubWidgetConfig = { 
+/**
+ * 사용자가 붙인 위젯 이름. 비어 있으면 쿼리 이름을 쓴다.
+ */
+title?: string | null; query: GithubQuery; maxResults: number; 
+/**
+ * 저장소 범위. 빈 목록이면 전체.
+ * 
+ * 쿼리와 분리하는 이유는 Jira의 `projects`와 같다 — 프리셋이든 생 쿼리든
+ * 똑같이 적용돼야 하고, 프리셋마다 저장소별 변종을 만드는 것은 조합 폭발이다.
+ */
+repos?: string[]; 
+/**
+ * 저장소별로 묶어서 보여줄까. 기본 켬.
+ */
+groupByRepo?: boolean; 
+/**
+ * 그룹 순서를 사용자가 지정한 것. 여기 없는 저장소는 **숨지 않고**
+ * 아래쪽에 최신순으로 붙는다 — 숨기면 리뷰 요청이 조용히 사라진다.
+ */
+repoOrder?: string[]; refreshSecs?: number }
+/**
+ * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
+ */
+export type GithubWidgetData = { items: GithubItem[]; 
+/**
+ * 전체 건수. GitHub은 Jira와 달리 총계를 준다 — "217건 중 30건"이 가능하다.
+ */
+total: number; fetchedAt: string; 
+/**
+ * 디스크 캐시에서 왔는가. true면 갱신이 실패했거나 아직 안 끝났다.
+ */
+fromCache: boolean }
+export type GithubWidgetError = { 
+/**
+ * `transient` | `permanent` — 프론트가 재시도 UI를 고르는 축.
+ */
+kind: string; message: string; 
+/**
+ * 401 여부. 전역 배너를 한 번만 띄우기 위한 신호 (DECISIONS 16장).
+ */
+isAuthFailure: boolean; retryAfterSecs: number | null; 
+/**
+ * 실패했지만 직전 성공 데이터가 있으면 함께 준다. 목록을 비우지 않기 위해.
+ */
+stale: GithubWidgetData | null }
+/**
+ * 항목의 상태. PR과 Issue를 한 축에 모았다.
+ * 
+ * `Draft`를 따로 두는 이유: GraphQL은 `isDraft`를 `state`와 **별도 필드**로
+ * 준다(실측). 화면에서는 초안이 열림과 다른 아이콘이라 여기서 합쳐둔다.
+ */
+export type ItemState = "open" | 
+/**
+ * PR만.
+ */
+"draft" | 
+/**
+ * PR만.
+ */
+"merged" | "closed"
 /**
  * 모달·폼에서 쓰는 단발 호출 실패.
  * 
@@ -696,6 +949,10 @@ name: string;
  * 이 프리셋이 무엇을 보여주는지 한 줄 설명.
  */
 description: string; jql: string }
+/**
+ * PR 리뷰 결정. GraphQL `reviewDecision`.
+ */
+export type ReviewState = "approved" | "changesRequested" | "reviewRequired"
 export type SortDirection = "asc" | "desc"
 /**
  * 프리셋에 적용할 정렬 기준.

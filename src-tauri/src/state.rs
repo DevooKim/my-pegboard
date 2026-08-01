@@ -12,6 +12,7 @@ use crate::providers::jira::{CreateMeta, JiraCredentials, JiraIdentity};
 use crate::secrets::{SecretKey, SecretStore};
 use crate::storage::board::BoardStore;
 use crate::storage::cache::CacheStore;
+use crate::storage::github_meta::GithubMetaStore;
 use crate::storage::jira_meta::JiraMetaStore;
 use crate::storage::todos::TodoStore;
 
@@ -55,6 +56,8 @@ pub struct AppState {
     /// 프로젝트/이슈타입 디스크 캐시. 위젯 캐시와 분리돼 있다 —
     /// `board_save`의 orphan 정리가 위젯 id 없는 파일을 지우기 때문.
     pub jira_meta: Mutex<JiraMetaStore>,
+    /// 저장소 목록 디스크 캐시. `jira_meta`와 같은 이유로 위젯 캐시와 분리돼 있다.
+    pub github_meta: Mutex<GithubMetaStore>,
     /// 재시작하면 버리는 캐시(createmeta, `/myself`).
     pub jira_session: Mutex<JiraSessionCache>,
     pub secrets: SecretStore,
@@ -85,6 +88,12 @@ impl AppState {
             tracing::warn!(?jira_meta_outcome, "Jira 메타 캐시 상태");
         }
 
+        let (github_meta, github_meta_outcome) = GithubMetaStore::load(&base_dir)
+            .map_err(|e| format!("GitHub 메타 캐시를 읽을 수 없습니다: {e}"))?;
+        if github_meta_outcome.is_noteworthy() {
+            tracing::warn!(?github_meta_outcome, "GitHub 메타 캐시 상태");
+        }
+
         let connections_path = base_dir.join("connections.json");
         let connections = std::fs::read_to_string(&connections_path)
             .ok()
@@ -96,6 +105,7 @@ impl AppState {
             todos: Mutex::new(todos),
             cache: Mutex::new(CacheStore::new(&base_dir)),
             jira_meta: Mutex::new(jira_meta),
+            github_meta: Mutex::new(github_meta),
             jira_session: Mutex::new(JiraSessionCache::default()),
             secrets: SecretStore::new(),
             connections: Mutex::new(connections),

@@ -28,6 +28,7 @@ pub mod atomic;
 pub mod board;
 pub mod cache;
 pub mod error;
+pub mod github_meta;
 pub mod jira_meta;
 pub mod migrate;
 pub mod todos;
