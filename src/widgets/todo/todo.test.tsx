@@ -201,20 +201,44 @@ describe('TodoRow 드래그', () => {
     expect(drag.onDrop).toHaveBeenCalled()
   })
 
-  it('끌리는 중에는 흐리게 그린다', () => {
+  /**
+   * 끌리는 동안 **자리를 비운다.** 흐리게만 하면 원본이 그대로 남아,
+   * 커서를 따라다니는 OS 드래그 이미지와 겹쳐 같은 항목이 둘로 보인다.
+   */
+  it('끌리는 중에는 자리를 비운다', () => {
     const li = renderDraggable(dragProps({ dragging: true }))
-    expect(li.className).toContain('opacity-40')
+    expect(li.className).toContain('h-0')
+    expect(li.className).toContain('opacity-0')
   })
 
-  it('위로 끌면 대상 위에 선을 긋는다', () => {
+  it('끌지 않을 때는 정상 높이다', () => {
+    const li = renderDraggable(dragProps())
+    expect(li.className).not.toContain('h-0')
+    expect(li.className).toContain('py-1')
+  })
+
+  /**
+   * 표시선은 행의 border가 아니라 **경계에 띄운 별도 요소**다.
+   * border로 그리면 py-1 안쪽에 붙어 텍스트에 닿고, 완료 구분선과
+   * 위치가 겹쳐 어느 것이 드롭 표시인지 알 수 없다.
+   */
+  it('위로 끌면 대상 위 경계에 선을 띄운다', () => {
     const li = renderDraggable(dragProps({ over: 'above' }))
-    expect(li.className).toContain('!border-t-accent')
+    const line = li.querySelector('[aria-hidden="true"].bg-accent')
+    expect(line).not.toBeNull()
+    expect(line?.className).toContain('-top-px')
   })
 
   /** 아래로 끌 때 선이 위에만 뜨면 한 칸 어긋나 보인다. */
-  it('아래로 끌면 대상 아래에 선을 긋는다', () => {
+  it('아래로 끌면 대상 아래 경계에 선을 띄운다', () => {
     const li = renderDraggable(dragProps({ over: 'below' }))
-    expect(li.className).toContain('!border-b-accent')
+    const line = li.querySelector('[aria-hidden="true"].bg-accent')
+    expect(line?.className).toContain('-bottom-px')
+  })
+
+  it('드롭 대상이 아니면 선이 없다', () => {
+    const li = renderDraggable(dragProps())
+    expect(li.querySelector('[aria-hidden="true"].bg-accent')).toBeNull()
   })
 
   /** 버튼은 WebKit에서 기본 draggable이라 행의 드래그를 가로챈다. */

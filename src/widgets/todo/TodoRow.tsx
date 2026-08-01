@@ -69,6 +69,10 @@ export function TodoRow({
     //
     // 편집 중에는 끌 수 없게 한다 — 텍스트를 드래그로 선택하려는 동작과
     // 행 이동이 충돌한다.
+    //
+    // `relative`는 드롭 표시선을 행 **경계에 띄우기** 위한 기준이다.
+    // 선을 행의 border로 그리면 py-1 안쪽에 붙어 텍스트에 바짝 닿고,
+    // 완료 구분선과 위치가 겹쳐 어느 것이 드롭 표시인지 알 수 없다.
     <li
       draggable={!!drag && !editing}
       onDragStart={(e) => {
@@ -89,13 +93,28 @@ export function TodoRow({
         drag?.onDrop()
       }}
       onDragEnd={() => drag?.onEnd()}
-      className={`group flex items-center gap-2 rounded px-1.5 py-1 hover:bg-surface-inset
+      className={`group relative flex items-center gap-2 rounded px-1.5
+                  transition-[opacity,height,padding] duration-fast
                   ${drag ? 'cursor-grab active:cursor-grabbing' : ''}
-                  ${drag?.dragging ? 'opacity-40' : ''}
-                  border-transparent border-t-2 border-b-2
-                  ${drag?.over === 'above' ? '!border-t-accent' : ''}
-                  ${drag?.over === 'below' ? '!border-b-accent' : ''}`}
+                  ${
+                    drag?.dragging
+                      ? // 끌리는 동안 **자리를 비운다.** 흐리게만 하면 원본이 그대로
+                        // 남아 있어, 커서를 따라다니는 OS 드래그 이미지와 겹쳐
+                        // 같은 항목이 둘로 보인다.
+                        'pointer-events-none h-0 overflow-hidden py-0 opacity-0'
+                      : 'py-1 hover:bg-surface-inset'
+                  }`}
     >
+      {/* 드롭 표시선. 행 경계에 걸쳐 띄운다 — 좌우를 조금 들여 목록의
+          구분선(완료 항목 위)과 성격이 다르다는 것이 보이게 한다. */}
+      {drag?.over && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-x-1 h-0.5 rounded-full bg-accent
+                      ${drag.over === 'above' ? '-top-px' : '-bottom-px'}`}
+        />
+      )}
+
       <input
         type="checkbox"
         checked={item.done}

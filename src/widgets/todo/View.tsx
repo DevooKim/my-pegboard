@@ -39,6 +39,25 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
 
+  // 안전망: 드래그가 어떻게 끝나든 상태를 되돌린다.
+  //
+  // 끌리는 행은 h-0으로 접혀 화면에서 사라진다. onDragEnd가 오지 않는
+  // 경우(창 밖에 놓기, 웹뷰가 이벤트를 삼키는 경우)에 dragId가 남으면
+  // **그 항목이 영영 안 보인다.** 문서 수준에서 한 번 더 받아둔다.
+  useEffect(() => {
+    if (!dragId) return
+    const reset = () => {
+      setDragId(null)
+      setOverId(null)
+    }
+    document.addEventListener('dragend', reset)
+    document.addEventListener('drop', reset)
+    return () => {
+      document.removeEventListener('dragend', reset)
+      document.removeEventListener('drop', reset)
+    }
+  }, [dragId])
+
   const isToday = viewing === today
 
   useEffect(() => {
