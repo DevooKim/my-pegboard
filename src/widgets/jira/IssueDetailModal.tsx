@@ -361,13 +361,18 @@ function Row({
   children,
 }: {
   label: string
-  /** 4칸을 다 쓴다(상위·라벨처럼 긴 값). */
+  /** 한 줄을 통째로 쓴다(상위·라벨처럼 긴 값). */
   wide?: boolean
   children: React.ReactNode
 }) {
+  // `wide`는 반드시 **새 줄에서 시작**해야 한다(`col-start-1`).
+  //
+  // 앞의 반쪽 행이 홀수 개면(마감 없이 스프린트만 있는 티켓 등) 오른쪽 두 칸이
+  // 비어 있는데, 거기에 3칸짜리 dd가 안 들어가서 값만 다음 줄로 밀린다.
+  // 그러면 라벨과 값이 서로 다른 줄에 놓여 배치가 깨져 보인다 (EDU-60에서 실측).
   return (
     <>
-      <dt className="text-text-quaternary">{label}</dt>
+      <dt className={`text-text-quaternary ${wide ? 'col-start-1' : ''}`}>{label}</dt>
       <dd className={`min-w-0 ${wide ? 'col-span-3' : ''}`}>{children}</dd>
     </>
   )
