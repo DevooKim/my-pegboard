@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDays, dateKey, itemsOn, parseDateKey, useTodoStore } from '#/store/todos'
 import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
@@ -35,12 +35,29 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
 
   const [viewing, setViewing] = useState(() => dateKey())
   const [draft, setDraft] = useState('')
+  /** 끌고 있는 항목 id와 지금 올라가 있는 대상 id. */
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
 
   const isToday = viewing === today
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // 자정을 넘기면 보고 있던 날짜도 따라 넘긴다.
+  //
+  // **직전까지 오늘을 보고 있었을 때만** 옮긴다. 과거·미래를 들여다보는
+  // 중이라면 사용자가 일부러 거기 있는 것이므로 화면을 빼앗지 않는다.
+  //
+  // 안 하면 어제 화면에 머문 채로 "(오늘)" 표시만 사라진다. 그 상태에서
+  // 항목을 추가하면 **어제에 쌓이고**, isToday가 false라 이월도 계속 미뤄진다.
+  const prevToday = useRef(today)
+  useEffect(() => {
+    const wasViewingToday = viewing === prevToday.current
+    prevToday.current = today
+    if (wasViewingToday && viewing !== today) setViewing(today)
+  }, [today, viewing])
 
   // 이 설정이 생기기 전에 만든 위젯은 값이 없다(undefined). 그대로 두면
   // falsy라 이월이 조용히 꺼진다 — 기존 사용자가 "왜 안 넘어오지" 하게 된다.
@@ -85,9 +102,35 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
           </Centered>
         ) : (
           <>
+            {/* 미완료만 끌 수 있다. 완료 항목은 구분선 아래에 있어서
+                섞이면 "완료를 미완료 사이로" 같은 무의미한 이동이 된다. */}
             <ul>
               {undone.map((item) => (
-                <TodoRowBound key={item.id} id={item.id} today={today} />
+                <TodoRowBound
+                  key={item.id}
+                  id={item.id}
+                  today={today}
+                  drag={{
+                    onStart: () => setDragId(item.id),
+                    onOver: () => setOverId(item.id),
+                    onDrop: () => {
+                      if (dragId && dragId !== item.id) {
+                        // 대상 항목이 **그 날짜 목록 전체에서** 몇 번째인지.
+                        // Rust가 기대하는 것은 날짜 안의 위치다.
+                        const to = dayItems.findIndex((i) => i.id === item.id)
+                        if (to >= 0) void useTodoStore.getState().reorder(dragId, to)
+                      }
+                      setDragId(null)
+                      setOverId(null)
+                    },
+                    onEnd: () => {
+                      setDragId(null)
+                      setOverId(null)
+                    },
+                    dragging: dragId === item.id,
+                    over: overId === item.id && dragId !== item.id,
+                  }}
+                />
               ))}
             </ul>
 
@@ -129,7 +172,15 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
  * 부모가 item 객체를 내려주지 않는 이유: 목록 배열이 매번 새로 만들어져서
  * 항목 하나가 바뀌어도 전부 리렌더된다. id로 구독하면 바뀐 행만 다시 그린다.
  */
-function TodoRowBound({ id, today }: { id: string; today: string }) {
+function TodoRowBound({
+  id,
+  today,
+  drag,
+}: {
+  id: string
+  today: string
+  drag?: React.ComponentProps<typeof TodoRow>['drag']
+}) {
   const item = useTodoStore((s) => s.items.find((i) => i.id === id))
   if (!item) return null
 
@@ -137,6 +188,8 @@ function TodoRowBound({ id, today }: { id: string; today: string }) {
     <TodoRow
       item={item}
       today={today}
+      // exactOptionalPropertyTypes가 켜져 있어 undefined를 명시로 넘기면 안 된다.
+      {...(drag ? { drag } : {})}
       onToggle={(done) => void useTodoStore.getState().setDone(id, done)}
       onEdit={(text) => void useTodoStore.getState().setText(id, text)}
       onRemove={() => void useTodoStore.getState().remove(id)}

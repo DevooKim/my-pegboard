@@ -83,6 +83,12 @@ interface TodoState {
    * 부르지만 날짜 판정을 건너뛴다 — 사용자가 명시적으로 요청했기 때문이다.
    */
   carryOverNow: () => Promise<void>
+  /**
+   * 같은 날짜 안에서 순서를 바꾼다 (드래그).
+   *
+   * `toIndex`는 **그 날짜 목록 안의 위치**다. 전체 배열 인덱스가 아니다.
+   */
+  reorder: (id: string, toIndex: number) => Promise<void>
   clearError: () => void
 }
 
@@ -172,6 +178,12 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     } else {
       set({ error: r.error })
     }
+  },
+
+  reorder: async (id, toIndex) => {
+    const r = await commands.todoReorder(id, toIndex)
+    if (r.status === 'ok') set({ items: r.data, error: null })
+    else set({ error: r.error })
   },
 
   clearError: () => set({ error: null }),

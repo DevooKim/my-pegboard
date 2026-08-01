@@ -130,3 +130,91 @@ describe('TodoRow', () => {
     expect(onRemove).toHaveBeenCalled()
   })
 })
+
+describe('TodoRow 드래그', () => {
+  const dragProps = (over: Partial<Record<string, unknown>> = {}) => ({
+    onStart: vi.fn(),
+    onOver: vi.fn(),
+    onDrop: vi.fn(),
+    onEnd: vi.fn(),
+    dragging: false,
+    over: false,
+    ...over,
+  })
+
+  function renderDraggable(drag: ReturnType<typeof dragProps>) {
+    render(
+      <TodoRow
+        item={item()}
+        today="2026-08-01"
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        drag={drag}
+      />,
+    )
+    // biome-ignore lint/style/noNonNullAssertion: 방금 렌더한 li가 없을 수 없다
+    return document.querySelector('li')!
+  }
+
+  it('drag prop이 있으면 끌 수 있다', () => {
+    const li = renderDraggable(dragProps())
+    expect(li.getAttribute('draggable')).toBe('true')
+  })
+
+  it('drag prop이 없으면 끌 수 없다', () => {
+    render(
+      <TodoRow
+        item={item()}
+        today="2026-08-01"
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    )
+    expect(document.querySelector('li')?.getAttribute('draggable')).toBe('false')
+  })
+
+  /** Firefox는 dataTransfer가 비면 드래그를 아예 시작하지 않는다. */
+  it('dragStart에서 dataTransfer에 id를 넣는다', () => {
+    const drag = dragProps()
+    const li = renderDraggable(drag)
+    const dataTransfer = { setData: vi.fn(), effectAllowed: '' }
+
+    fireEvent.dragStart(li, { dataTransfer })
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'x')
+    expect(drag.onStart).toHaveBeenCalled()
+  })
+
+  it('dragOver에서 onOver를 부른다', () => {
+    const drag = dragProps()
+    const li = renderDraggable(drag)
+    fireEvent.dragOver(li, { dataTransfer: { dropEffect: '' } })
+    expect(drag.onOver).toHaveBeenCalled()
+  })
+
+  it('drop에서 onDrop을 부른다', () => {
+    const drag = dragProps()
+    const li = renderDraggable(drag)
+    fireEvent.drop(li, { dataTransfer: {} })
+    expect(drag.onDrop).toHaveBeenCalled()
+  })
+
+  it('끌리는 중에는 흐리게 그린다', () => {
+    const li = renderDraggable(dragProps({ dragging: true }))
+    expect(li.className).toContain('opacity-40')
+  })
+
+  it('놓을 자리에는 선을 긋는다', () => {
+    const li = renderDraggable(dragProps({ over: true }))
+    expect(li.className).toContain('border-accent')
+  })
+
+  /** 텍스트를 드래그로 선택하려는 동작과 행 이동이 충돌한다. */
+  it('편집 중에는 끌 수 없다', () => {
+    renderDraggable(dragProps())
+    fireEvent.click(screen.getByText('배포 스크립트 정리'))
+    expect(document.querySelector('li')?.getAttribute('draggable')).toBe('false')
+  })
+})

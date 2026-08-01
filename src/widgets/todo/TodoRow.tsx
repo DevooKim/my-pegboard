@@ -18,6 +18,7 @@ export function TodoRow({
   onToggle,
   onEdit,
   onRemove,
+  drag,
 }: {
   item: TodoItem
   /** 경과일 계산 기준. 위젯이 보고 있는 날짜가 아니라 **오늘**이다. */
@@ -25,6 +26,17 @@ export function TodoRow({
   onToggle: (done: boolean) => void
   onEdit: (text: string) => void
   onRemove: () => void
+  /** 순서 변경. 없으면 이 행은 끌 수 없다. */
+  drag?: {
+    onStart: () => void
+    onOver: () => void
+    onDrop: () => void
+    onEnd: () => void
+    /** 지금 끌려가는 중인가 — 흐리게 그린다. */
+    dragging: boolean
+    /** 여기에 놓이면 이 자리로 온다 — 위쪽에 선을 긋는다. */
+    over: boolean
+  }
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
@@ -47,7 +59,36 @@ export function TodoRow({
   }
 
   return (
-    <li className="group flex items-center gap-2 rounded px-1.5 py-1 hover:bg-surface-inset">
+    // 행 전체를 draggable로 둔다. 전용 손잡이(⠿)를 두지 않는 이유: 폭이
+    // 2열까지 좁아질 수 있어(minLayout) 손잡이가 텍스트를 밀어낸다.
+    //
+    // 편집 중에는 끌 수 없게 한다 — 텍스트를 드래그로 선택하려는 동작과
+    // 행 이동이 충돌한다.
+    <li
+      draggable={!!drag && !editing}
+      onDragStart={(e) => {
+        // Firefox는 dataTransfer가 비면 드래그를 시작하지 않는다.
+        e.dataTransfer.setData('text/plain', item.id)
+        e.dataTransfer.effectAllowed = 'move'
+        drag?.onStart()
+      }}
+      onDragOver={(e) => {
+        if (!drag) return
+        // preventDefault를 해야 drop이 허용된다.
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        drag.onOver()
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        drag?.onDrop()
+      }}
+      onDragEnd={() => drag?.onEnd()}
+      className={`group flex items-center gap-2 rounded px-1.5 py-1 hover:bg-surface-inset
+                  ${drag ? 'cursor-grab active:cursor-grabbing' : ''}
+                  ${drag?.dragging ? 'opacity-40' : ''}
+                  ${drag?.over ? 'border-accent border-t-2' : 'border-transparent border-t-2'}`}
+    >
       <input
         type="checkbox"
         checked={item.done}

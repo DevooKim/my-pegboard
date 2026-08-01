@@ -564,3 +564,111 @@ fn carry_over_crosses_a_year_boundary() {
     assert_eq!(s.items()[0].date, date("2027-01-01"));
     assert_eq!(s.items()[0].carried_count, 1);
 }
+
+// ---------------------------------------------------------------------------
+// 순서 변경 (드래그)
+// ---------------------------------------------------------------------------
+//
+// 순서가 곧 배열 순서다(별도 정렬 키가 없다). 그래서 인덱스 산술이 틀리면
+// 항목이 사라지거나 다른 날짜 사이에 끼어든다 — 유일본 데이터에서 가장
+// 위험한 종류의 버그라 경계를 촘촘히 고정한다.
+
+fn ids_on(s: &TodoStore, d: &str) -> Vec<String> {
+    s.items_on(date(d)).iter().map(|i| i.id.clone()).collect()
+}
+
+fn seeded(dir: &TempDir) -> TodoStore {
+    let mut s = store(dir);
+    for id in ["a", "b", "c"] {
+        s.add(TodoItem::new(id, id, date("2026-08-02")));
+    }
+    s
+}
+
+#[test]
+fn moves_an_item_down_within_its_date() {
+    let dir = TempDir::new().unwrap();
+    let mut s = seeded(&dir);
+
+    assert!(s.reorder_within_date("a", 2));
+    assert_eq!(ids_on(&s, "2026-08-02"), ["b", "c", "a"]);
+}
+
+#[test]
+fn moves_an_item_up_within_its_date() {
+    let dir = TempDir::new().unwrap();
+    let mut s = seeded(&dir);
+
+    assert!(s.reorder_within_date("c", 0));
+    assert_eq!(ids_on(&s, "2026-08-02"), ["c", "a", "b"]);
+}
+
+#[test]
+fn moving_to_its_own_position_is_a_no_op() {
+    let dir = TempDir::new().unwrap();
+    let mut s = seeded(&dir);
+
+    assert!(!s.reorder_within_date("b", 1), "안 움직였으면 false여야 저장을 건너뛴다");
+    assert_eq!(ids_on(&s, "2026-08-02"), ["a", "b", "c"]);
+}
+
+#[test]
+fn unknown_id_changes_nothing() {
+    let dir = TempDir::new().unwrap();
+    let mut s = seeded(&dir);
+
+    assert!(!s.reorder_within_date("없는-id", 0));
+    assert_eq!(ids_on(&s, "2026-08-02"), ["a", "b", "c"]);
+}
+
+/// 뷰와 스토어가 길이를 다르게 알고 있을 때. 거부하지 않고 끝으로 보낸다.
+#[test]
+fn out_of_range_index_lands_at_the_end() {
+    let dir = TempDir::new().unwrap();
+    let mut s = seeded(&dir);
+
+    assert!(s.reorder_within_date("a", 99));
+    assert_eq!(ids_on(&s, "2026-08-02"), ["b", "c", "a"]);
+}
+
+/// **가장 중요한 경계.** 다른 날짜 항목이 사이에 끼어 있어도 그 순서가
+/// 흐트러지면 안 된다 — 8/1 항목이 8/2 사이로 밀려들면 날짜 화면이 뒤섞인다.
+#[test]
+fn reordering_one_date_leaves_other_dates_alone() {
+    let dir = TempDir::new().unwrap();
+    let mut s = store(&dir);
+    // 두 날짜를 번갈아 넣어 배열에서 서로 끼어 있게 만든다.
+    s.add(TodoItem::new("x1", "x1", date("2026-08-01")));
+    s.add(TodoItem::new("y1", "y1", date("2026-08-02")));
+    s.add(TodoItem::new("x2", "x2", date("2026-08-01")));
+    s.add(TodoItem::new("y2", "y2", date("2026-08-02")));
+    s.add(TodoItem::new("y3", "y3", date("2026-08-02")));
+
+    assert!(s.reorder_within_date("y3", 0));
+
+    assert_eq!(ids_on(&s, "2026-08-02"), ["y3", "y1", "y2"]);
+    assert_eq!(ids_on(&s, "2026-08-01"), ["x1", "x2"], "다른 날짜는 그대로");
+    assert_eq!(s.items().len(), 5, "항목이 사라지거나 늘면 안 된다");
+}
+
+#[test]
+fn reordering_survives_a_save_and_reload() {
+    let dir = TempDir::new().unwrap();
+    {
+        let mut s = seeded(&dir);
+        s.reorder_within_date("c", 0);
+        s.save().unwrap();
+    }
+    let (reloaded, _) = TodoStore::load(dir.path()).unwrap();
+    assert_eq!(ids_on(&reloaded, "2026-08-02"), ["c", "a", "b"]);
+}
+
+#[test]
+fn single_item_cannot_be_reordered() {
+    let dir = TempDir::new().unwrap();
+    let mut s = store(&dir);
+    s.add(TodoItem::new("only", "only", date("2026-08-02")));
+
+    assert!(!s.reorder_within_date("only", 0));
+    assert_eq!(s.items().len(), 1);
+}

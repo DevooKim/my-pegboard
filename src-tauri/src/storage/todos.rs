@@ -214,6 +214,69 @@ impl TodoStore {
         Ok(item.done)
     }
 
+    /// Move `id` to position `to_index` **among the items sharing its date**,
+    /// leaving every other item's relative order untouched.
+    ///
+    /// The UI shows one date at a time, so a drag expresses intent within that
+    /// day. Translating a within-day index into a whole-array position is this
+    /// function's entire job — callers never deal with global indices.
+    ///
+    /// Returns whether anything moved. `false` means the id was unknown or it
+    /// was already in place, so the caller can skip the disk write.
+    ///
+    /// Order *is* the array order (see [`items_on`](TodoStore::items_on)), so
+    /// there is no separate sort key to keep in sync — which is why reordering
+    /// has to happen here rather than in the view.
+    pub fn reorder_within_date(&mut self, id: &str, to_index: usize) -> bool {
+        let Some(from) = self.data.items.iter().position(|i| i.id == id) else {
+            return false;
+        };
+        let date = self.data.items[from].date;
+
+        // Where that day's items sit in the whole array, in order.
+        let slots: Vec<usize> = self
+            .data
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.date == date)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        // Clamp rather than reject. An out-of-range index means the view and
+        // the store disagree about the list; landing at the end is closer to
+        // the user's intent than silently doing nothing.
+        let clamped = to_index.min(slots.len().saturating_sub(1));
+        if slots.get(clamped) == Some(&from) {
+            return false;
+        }
+
+        // Pull the item out first, then read the destination from the slot
+        // list *as it is after removal*. Adjusting the pre-removal index by
+        // hand is where this goes wrong: for a downward move the slots after
+        // the source all shift left, so the naive `target - 1` lands one short.
+        let item = self.data.items.remove(from);
+
+        let remaining: Vec<usize> = self
+            .data
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.date == date)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        // `clamped` counts positions in the day's list including the dragged
+        // item, so it can be one past the end of what remains — that means
+        // "after the last one".
+        let insert_at = match remaining.get(clamped) {
+            Some(&slot) => slot,
+            None => remaining.last().map_or(self.data.items.len(), |&l| l + 1),
+        };
+        self.data.items.insert(insert_at, item);
+        true
+    }
+
     /// Remove an item. Only ever called by explicit user action —
     /// DECISIONS 13: 자동 삭제 절대 안 함.
     pub fn remove(&mut self, id: &str) -> StorageResult<TodoItem> {

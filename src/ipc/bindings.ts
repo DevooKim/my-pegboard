@@ -233,6 +233,21 @@ async todoCarryOver(today: string) : Promise<Result<CarryOverResult, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 같은 날짜 안에서 항목 순서를 바꾼다 (드래그).
+ * 
+ * `to_index`는 **그 날짜 목록 안의 위치**다. 전체 배열 인덱스가 아니다 —
+ * 화면은 하루치만 보여주므로 프론트가 아는 것도 그 안의 순서뿐이다.
+ * 전체 배열에서의 자리 계산은 `TodoStore`가 한다.
+ */
+async todoReorder(id: string, toIndex: number) : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_reorder", { id, toIndex }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async boardLoad() : Promise<Result<BoardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_load") };

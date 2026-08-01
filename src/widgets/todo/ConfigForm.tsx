@@ -37,10 +37,6 @@ export function TodoConfigForm({ config, onChange }: WidgetConfigFormProps<TodoW
           </span>
         </span>
       </label>
-
-      <p className="text-caption text-text-tertiary">
-        날짜는 위젯 헤더의 ◀ ▶로 옮깁니다. 앱을 다시 켜면 오늘로 돌아옵니다.
-      </p>
     </div>
   )
 }

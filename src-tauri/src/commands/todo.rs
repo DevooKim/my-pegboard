@@ -165,6 +165,30 @@ pub fn todo_carry_over(
     })
 }
 
+/// 같은 날짜 안에서 항목 순서를 바꾼다 (드래그).
+///
+/// `to_index`는 **그 날짜 목록 안의 위치**다. 전체 배열 인덱스가 아니다 —
+/// 화면은 하루치만 보여주므로 프론트가 아는 것도 그 안의 순서뿐이다.
+/// 전체 배열에서의 자리 계산은 `TodoStore`가 한다.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_reorder(
+    state: State<'_, AppState>,
+    id: String,
+    to_index: u32,
+) -> Result<Vec<TodoItem>, String> {
+    let mut store = state.todos.lock().map_err(|_| "상태 잠금 실패")?;
+
+    // 안 움직였으면 디스크를 건드리지 않는다. 드래그를 놓기만 해도 저장이
+    // 나가면 .bak 세대가 의미 없이 돈다.
+    if store.reorder_within_date(&id, to_index as usize) {
+        store
+            .save()
+            .map_err(|e| format!("할 일을 저장할 수 없습니다: {e}"))?;
+    }
+    Ok(store.items().to_vec())
+}
+
 /// 저장 전 텍스트 정규화. 커맨드 두 개(`todo_add`, `todo_set_text`)가 공유한다.
 ///
 /// 순수 함수로 뽑은 이유: 커맨드 본체는 `State<AppState>`를 받아 실제 Tauri 앱

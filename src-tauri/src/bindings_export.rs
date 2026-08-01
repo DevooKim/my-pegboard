@@ -34,6 +34,7 @@ mod tests {
             commands::todo::todo_set_text,
             commands::todo::todo_remove,
             commands::todo::todo_carry_over,
+            commands::todo::todo_reorder,
             commands::board::board_load,
             commands::board::board_save,
         ]);
