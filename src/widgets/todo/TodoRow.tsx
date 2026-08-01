@@ -34,8 +34,13 @@ export function TodoRow({
     onEnd: () => void
     /** 지금 끌려가는 중인가 — 흐리게 그린다. */
     dragging: boolean
-    /** 여기에 놓이면 이 자리로 온다 — 위쪽에 선을 긋는다. */
-    over: boolean
+    /**
+     * 이 행이 지금 드롭 대상인가. `'above'`면 위에, `'below'`면 아래에 선을 긋는다.
+     *
+     * 방향을 나누는 이유: 위로 끌 때와 아래로 끌 때 놓이는 자리가 다른데
+     * 선이 늘 위에만 뜨면 아래로 끌 때 한 칸 어긋나 보인다.
+     */
+    over: 'above' | 'below' | null
   }
 }) {
   const [editing, setEditing] = useState(false)
@@ -87,7 +92,9 @@ export function TodoRow({
       className={`group flex items-center gap-2 rounded px-1.5 py-1 hover:bg-surface-inset
                   ${drag ? 'cursor-grab active:cursor-grabbing' : ''}
                   ${drag?.dragging ? 'opacity-40' : ''}
-                  ${drag?.over ? 'border-accent border-t-2' : 'border-transparent border-t-2'}`}
+                  border-transparent border-t-2 border-b-2
+                  ${drag?.over === 'above' ? '!border-t-accent' : ''}
+                  ${drag?.over === 'below' ? '!border-b-accent' : ''}`}
     >
       <input
         type="checkbox"
@@ -119,6 +126,10 @@ export function TodoRow({
         // 완료 항목은 취소선 + 흐리게 (DECISIONS 13).
         <button
           type="button"
+          // 버튼은 WebKit에서 기본적으로 draggable이라 행의 드래그를 가로챈다.
+          // 이 버튼이 flex-1로 행의 대부분을 덮고 있어서, 끄지 않으면 사실상
+          // 드래그가 아예 시작되지 않는다.
+          draggable={false}
           onClick={() => setEditing(true)}
           title="클릭해서 수정"
           className={`min-w-0 flex-1 truncate rounded text-left text-body
@@ -131,6 +142,7 @@ export function TodoRow({
 
       <button
         type="button"
+        draggable={false}
         onClick={onRemove}
         title="삭제"
         aria-label={`${item.text} 삭제`}

@@ -138,7 +138,7 @@ describe('TodoRow 드래그', () => {
     onDrop: vi.fn(),
     onEnd: vi.fn(),
     dragging: false,
-    over: false,
+    over: null as 'above' | 'below' | null,
     ...over,
   })
 
@@ -206,9 +206,22 @@ describe('TodoRow 드래그', () => {
     expect(li.className).toContain('opacity-40')
   })
 
-  it('놓을 자리에는 선을 긋는다', () => {
-    const li = renderDraggable(dragProps({ over: true }))
-    expect(li.className).toContain('border-accent')
+  it('위로 끌면 대상 위에 선을 긋는다', () => {
+    const li = renderDraggable(dragProps({ over: 'above' }))
+    expect(li.className).toContain('!border-t-accent')
+  })
+
+  /** 아래로 끌 때 선이 위에만 뜨면 한 칸 어긋나 보인다. */
+  it('아래로 끌면 대상 아래에 선을 긋는다', () => {
+    const li = renderDraggable(dragProps({ over: 'below' }))
+    expect(li.className).toContain('!border-b-accent')
+  })
+
+  /** 버튼은 WebKit에서 기본 draggable이라 행의 드래그를 가로챈다. */
+  it('안쪽 버튼은 드래그를 삼키지 않는다', () => {
+    renderDraggable(dragProps())
+    const textButton = screen.getByText('배포 스크립트 정리')
+    expect(textButton.getAttribute('draggable')).toBe('false')
   })
 
   /** 텍스트를 드래그로 선택하려는 동작과 행 이동이 충돌한다. */

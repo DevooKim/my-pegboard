@@ -128,7 +128,15 @@ export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
                       setOverId(null)
                     },
                     dragging: dragId === item.id,
-                    over: overId === item.id && dragId !== item.id,
+                    // 끌던 항목보다 아래에 있는 대상이면 선을 아래에 긋는다 —
+                    // 놓았을 때 실제로 그 자리에 들어가기 때문이다.
+                    over:
+                      overId === item.id && dragId !== null && dragId !== item.id
+                        ? undone.findIndex((i) => i.id === dragId) <
+                          undone.findIndex((i) => i.id === item.id)
+                          ? 'below'
+                          : 'above'
+                        : null,
                   }}
                 />
               ))}
