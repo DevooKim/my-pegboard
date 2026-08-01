@@ -23,6 +23,15 @@ import { TodoView } from './View'
 export interface TodoWidgetConfig {
   /** 사용자가 붙인 이름. 비우면 '할 일'. */
   title: string | null
+  /**
+   * 날짜가 바뀔 때 지난 미완료 항목을 오늘로 옮길 것인가 (DECISIONS 13).
+   *
+   * 끄면 과거 날짜에 그대로 남는다. 그때는 헤더의 ↓ 버튼으로 필요할 때만
+   * 가져온다 — 미루는 것을 자동으로 눈앞에 끌어오는 게 부담스러운 경우가 있다.
+   *
+   * 기본은 켬. 이월이 이 위젯의 존재 이유다.
+   */
+  autoCarryOver: boolean
 }
 
 export const todoWidget: WidgetDefinition<TodoWidgetConfig, null> = {
@@ -32,7 +41,7 @@ export const todoWidget: WidgetDefinition<TodoWidgetConfig, null> = {
   icon: SquareCheck,
   maxInstances: 1,
 
-  defaultConfig: { title: null },
+  defaultConfig: { title: null, autoCarryOver: true },
   // 목록이라 세로가 길어야 쓸모 있다. 가로는 Jira보다 좁아도 된다.
   defaultLayout: { w: 3, h: 10 },
   minLayout: { w: 2, h: 5 },

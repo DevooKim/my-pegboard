@@ -30,21 +30,16 @@ use crate::storage::todos::{CarryOverReport, TodoItem};
 /// 이월 결과 + 갱신된 전체 목록.
 ///
 /// 둘을 함께 주는 이유: 프론트가 목록을 다시 요청하는 왕복을 없애고,
-/// 배너("3개를 가져왔습니다")와 목록이 **같은 시점의 상태**임을 보장한다.
+/// 옮긴 개수와 목록이 **같은 시점의 상태**임을 보장한다.
+///
+/// `TodoStore::undo_carry_over`는 남아 있지만 노출하지 않는다 — 되돌리기 UI를
+/// 걷어냈기 때문이다(2026-08-03). 이월이 이동이라 되돌릴 필요가 적고,
+/// 자동 이월 자체를 끌 수 있게 되면서 "원치 않는 이월"이라는 상황이 사라졌다.
 #[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CarryOverResult {
     pub items: Vec<TodoItem>,
     pub report: CarryOverReport,
-}
-
-/// 되돌리기 결과. `restored`가 report의 개수보다 적을 수 있다 —
-/// 이월 뒤에 사용자가 지우거나 옮긴 항목은 건드리지 않는다.
-#[derive(Debug, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct UndoCarryResult {
-    pub items: Vec<TodoItem>,
-    pub restored: usize,
 }
 
 /// 잠금 → 저장 → 전체 목록. 모든 변경 커맨드가 같은 꼬리를 갖는다.
@@ -167,28 +162,6 @@ pub fn todo_carry_over(
     Ok(CarryOverResult {
         items: store.items().to_vec(),
         report,
-    })
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn todo_undo_carry_over(
-    state: State<'_, AppState>,
-    report: CarryOverReport,
-) -> Result<UndoCarryResult, String> {
-    let mut store = state.todos.lock().map_err(|_| "상태 잠금 실패")?;
-    let restored = store.undo_carry_over(&report);
-
-    if restored > 0 {
-        store
-            .save()
-            .map_err(|e| format!("할 일을 저장할 수 없습니다: {e}"))?;
-        tracing::info!(restored, "이월 되돌림");
-    }
-
-    Ok(UndoCarryResult {
-        items: store.items().to_vec(),
-        restored,
     })
 }
 

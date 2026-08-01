@@ -1,15 +1,8 @@
-import {
-  ChevronRight as ChevronCollapsed,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-} from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { addDays, dateKey, itemsOn, parseDateKey, useTodoStore } from '#/store/todos'
 import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
-import { CarryBanner } from './CarryBanner'
 import type { TodoWidgetConfig } from './index'
 import { TodoRow } from './TodoRow'
 
@@ -28,11 +21,10 @@ import { TodoRow } from './TodoRow'
  * 보면 대개 **그날 완료한 것만** 남아 있다 — 과거는 "그날의 계획"이 아니라
  * "그날 해낸 것"의 기록이다(DECISIONS 13이 받아들인 대가).
  */
-export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
+export function TodoView({ config }: WidgetViewProps<TodoWidgetConfig, null>) {
   const items = useTodoStore((s) => s.items)
   const loaded = useTodoStore((s) => s.loaded)
   const error = useTodoStore((s) => s.error)
-  const lastCarry = useTodoStore((s) => s.lastCarry)
   const load = useTodoStore((s) => s.load)
   const checkCarryOver = useTodoStore((s) => s.checkCarryOver)
 
@@ -43,7 +35,6 @@ export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
 
   const [viewing, setViewing] = useState(() => dateKey())
   const [draft, setDraft] = useState('')
-  const [doneOpen, setDoneOpen] = useState(false)
 
   const isToday = viewing === today
 
@@ -51,10 +42,16 @@ export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
     void load()
   }, [load])
 
-  // 날짜가 바뀌면 이월. 과거를 보는 중이면 스토어가 알아서 미룬다.
+  // 이 설정이 생기기 전에 만든 위젯은 값이 없다(undefined). 그대로 두면
+  // falsy라 이월이 조용히 꺼진다 — 기존 사용자가 "왜 안 넘어오지" 하게 된다.
+  // 없으면 켬으로 본다.
+  const autoCarry = config.autoCarryOver ?? true
+
+  // 날짜가 바뀌면 이월. 과거를 보는 중이거나 자동 이월이 꺼져 있으면
+  // 스토어가 알아서 건너뛴다.
   useEffect(() => {
-    void checkCarryOver(isToday)
-  }, [checkCarryOver, isToday])
+    void checkCarryOver(isToday, autoCarry)
+  }, [checkCarryOver, isToday, autoCarry])
 
   const dayItems = itemsOn(items, viewing)
   const undone = dayItems.filter((i) => !i.done)
@@ -68,8 +65,6 @@ export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
         onMove={(delta) => setViewing((d) => addDays(d, delta))}
         onToday={() => setViewing(today)}
       />
-
-      {lastCarry && isToday && <CarryBanner report={lastCarry} onUndo={undo} onDismiss={dismiss} />}
 
       {error && (
         <p className="shrink-0 border-border-subtle border-b bg-danger-muted px-2 py-1 text-caption text-danger">
@@ -96,30 +91,17 @@ export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
               ))}
             </ul>
 
-            {/* 완료 항목은 지우지 않고 접는다 — 목적은 시야 확보이지 삭제가 아니다. */}
+            {/* 완료 항목은 구분선 아래로 내린다 (DECISIONS 13 "목록 아래로").
+                지우지 않는다 — 그날 해낸 것의 기록이다.
+                개수 문구를 두지 않는 이유: 항목이 이미 보이므로 세어 말할 필요가 없다. */}
             {done.length > 0 && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setDoneOpen((v) => !v)}
-                  className="mt-1 flex w-full items-center gap-1 rounded px-1.5 py-1 text-caption
-                             text-text-tertiary hover:bg-surface-inset
-                             focus-visible:outline-2 focus-visible:outline-accent"
-                >
-                  {doneOpen ? (
-                    <ChevronDown size={11} aria-hidden="true" />
-                  ) : (
-                    <ChevronCollapsed size={11} aria-hidden="true" />
-                  )}
-                  완료 {done.length}개
-                </button>
-                {doneOpen && (
-                  <ul>
-                    {done.map((item) => (
-                      <TodoRowBound key={item.id} id={item.id} today={today} />
-                    ))}
-                  </ul>
-                )}
+                {undone.length > 0 && <hr className="my-1.5 border-border-subtle" />}
+                <ul>
+                  {done.map((item) => (
+                    <TodoRowBound key={item.id} id={item.id} today={today} />
+                  ))}
+                </ul>
               </>
             )}
           </>
@@ -139,13 +121,6 @@ export function TodoView(_props: WidgetViewProps<TodoWidgetConfig, null>) {
       />
     </div>
   )
-
-  function undo() {
-    void useTodoStore.getState().undoCarry()
-  }
-  function dismiss() {
-    useTodoStore.getState().dismissCarry()
-  }
 }
 
 /**

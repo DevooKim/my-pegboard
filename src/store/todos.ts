@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { type CarryOverReport, commands, type TodoItem } from '#/ipc/bindings'
+import { commands, type TodoItem } from '#/ipc/bindings'
 
 /**
  * Todo 상태.
@@ -59,10 +59,10 @@ interface TodoState {
   loaded: boolean
   /** 마지막 작업이 실패했으면 그 메시지. 화면에 드러낸다 — 조용한 실패 금지. */
   error: string | null
-  /** 되돌릴 수 있는 직전 이월. 배너가 이걸 보고 뜬다. */
-  lastCarry: CarryOverReport | null
   /** 이월 판정에 쓴 마지막 날짜. 이 값이 바뀌면 자정을 넘긴 것이다. */
   lastCheckedDate: DateKey | null
+  /** 지난 이월이 옮긴 개수. 방금 무슨 일이 있었는지 한 줄로 알리는 데만 쓴다. */
+  lastCarriedCount: number
 
   load: () => Promise<void>
   add: (text: string, date: DateKey) => Promise<void>
@@ -70,15 +70,19 @@ interface TodoState {
   setText: (id: string, text: string) => Promise<void>
   remove: (id: string) => Promise<void>
   /**
-   * 날짜가 바뀌었으면 이월한다.
+   * 날짜가 바뀌었으면 이월한다. **자동 이월이 꺼져 있으면 아무것도 하지 않는다.**
    *
-   * `viewingToday`가 false면 **아무것도 하지 않는다** — 과거를 편집하는 중에
-   * 눈앞에서 항목이 튀어나가면 혼란스럽다(DECISIONS 13). 오늘로 돌아오면
-   * 그때 실행된다.
+   * `viewingToday`가 false면 미룬다 — 과거를 편집하는 중에 눈앞에서 항목이
+   * 튀어나가면 혼란스럽다(DECISIONS 13). 오늘로 돌아오면 그때 실행된다.
    */
-  checkCarryOver: (viewingToday: boolean) => Promise<void>
-  undoCarry: () => Promise<void>
-  dismissCarry: () => void
+  checkCarryOver: (viewingToday: boolean, enabled: boolean) => Promise<void>
+  /**
+   * 지금 당장 미완료 항목을 오늘로 가져온다.
+   *
+   * 자동 이월을 꺼둔 사용자가 필요할 때만 쓰는 경로다. 자동과 같은 커맨드를
+   * 부르지만 날짜 판정을 건너뛴다 — 사용자가 명시적으로 요청했기 때문이다.
+   */
+  carryOverNow: () => Promise<void>
   clearError: () => void
 }
 
@@ -86,8 +90,8 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   items: [],
   loaded: false,
   error: null,
-  lastCarry: null,
   lastCheckedDate: null,
+  lastCarriedCount: 0,
 
   load: async () => {
     const r = await commands.todoList()
@@ -127,7 +131,7 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     else set({ error: r.error })
   },
 
-  checkCarryOver: async (viewingToday) => {
+  checkCarryOver: async (viewingToday, enabled) => {
     const today = dateKey()
     const { lastCheckedDate } = get()
 
@@ -137,13 +141,19 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     // 않으므로 오늘로 돌아오는 순간 다시 시도한다.
     if (!viewingToday) return
 
+    // 자동 이월이 꺼져 있으면 옮기지 않는다. 다만 **날짜는 찍어둔다** —
+    // 안 그러면 1분마다 이 검사가 다시 돌아 매번 스토어를 건드린다.
+    if (!enabled) {
+      set({ lastCheckedDate: today })
+      return
+    }
+
     const r = await commands.todoCarryOver(today)
     if (r.status === 'ok') {
       set({
         items: r.data.items,
         lastCheckedDate: today,
-        // 옮긴 게 없으면 배너를 띄우지 않는다.
-        lastCarry: r.data.report.carried.length > 0 ? r.data.report : null,
+        lastCarriedCount: r.data.report.carried.length,
         error: null,
       })
     } else {
@@ -151,18 +161,19 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     }
   },
 
-  undoCarry: async () => {
-    const report = get().lastCarry
-    if (!report) return
-    const r = await commands.todoUndoCarryOver(report)
+  carryOverNow: async () => {
+    const r = await commands.todoCarryOver(dateKey())
     if (r.status === 'ok') {
-      set({ items: r.data.items, lastCarry: null, error: null })
+      set({
+        items: r.data.items,
+        lastCarriedCount: r.data.report.carried.length,
+        error: null,
+      })
     } else {
       set({ error: r.error })
     }
   },
 
-  dismissCarry: () => set({ lastCarry: null }),
   clearError: () => set({ error: null }),
 }))
 

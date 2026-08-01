@@ -22,6 +22,22 @@ export function TodoConfigForm({ config, onChange }: WidgetConfigFormProps<TodoW
                      focus-visible:outline-2 focus-visible:outline-accent"
         />
       </label>
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={config.autoCarryOver ?? true}
+          onChange={(e) => onChange({ ...config, autoCarryOver: e.target.checked })}
+          className="mt-0.5 accent-accent"
+        />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-body text-text-primary">미완료 항목 자동 이월</span>
+          <span className="text-caption text-text-tertiary">
+            날짜가 바뀌면 지난 미완료 항목을 오늘로 옮깁니다. 끄면 과거에 그대로 남고, 위젯 헤더의 ↓
+            버튼으로 필요할 때만 가져옵니다.
+          </span>
+        </span>
+      </label>
+
       <p className="text-caption text-text-tertiary">
         날짜는 위젯 헤더의 ◀ ▶로 옮깁니다. 앱을 다시 켜면 오늘로 돌아옵니다.
       </p>

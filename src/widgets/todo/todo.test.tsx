@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { TodoItem } from '#/ipc/bindings'
-import { CarryBanner } from '#/widgets/todo/CarryBanner'
 import { TodoRow } from '#/widgets/todo/TodoRow'
 
 function item(over: Partial<TodoItem> = {}): TodoItem {
@@ -129,54 +128,5 @@ describe('TodoRow', () => {
     const { onRemove } = renderRow()
     fireEvent.click(screen.getByRole('button', { name: /삭제/ }))
     expect(onRemove).toHaveBeenCalled()
-  })
-})
-
-describe('CarryBanner', () => {
-  const report = (days: string[], count: number) => ({
-    carried: Array.from({ length: count }, (_, i) => ({
-      id: `i${i}`,
-      fromDate: days[0] ?? '2026-07-31',
-      toDate: '2026-08-01',
-      previousCarriedCount: 0,
-    })),
-    sourceDates: days,
-    targetDate: '2026-08-01',
-  })
-
-  it('하루치면 "어제에서"라고 말한다', () => {
-    render(<CarryBanner report={report(['2026-07-31'], 3)} onUndo={vi.fn()} onDismiss={vi.fn()} />)
-    expect(screen.getByText('어제에서 3개를 가져왔습니다')).toBeInTheDocument()
-  })
-
-  /** 주말을 건너뛰면 여러 날에서 온다 — "어제에서"라고 하면 거짓말이다. */
-  it('여러 날에서 왔으면 며칠치인지 말한다', () => {
-    render(
-      <CarryBanner
-        report={report(['2026-07-29', '2026-07-30', '2026-07-31'], 7)}
-        onUndo={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    )
-    expect(screen.getByText('3일치에서 7개를 가져왔습니다')).toBeInTheDocument()
-  })
-
-  it('되돌리기와 닫기가 각각 동작한다', () => {
-    const onUndo = vi.fn()
-    const onDismiss = vi.fn()
-    render(<CarryBanner report={report(['2026-07-31'], 1)} onUndo={onUndo} onDismiss={onDismiss} />)
-
-    fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
-    expect(onUndo).toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: '이월 알림 닫기' }))
-    expect(onDismiss).toHaveBeenCalled()
-  })
-
-  it('가져온 게 없으면 배너를 그리지 않는다', () => {
-    const { container } = render(
-      <CarryBanner report={report([], 0)} onUndo={vi.fn()} onDismiss={vi.fn()} />,
-    )
-    expect(container).toBeEmptyDOMElement()
   })
 })

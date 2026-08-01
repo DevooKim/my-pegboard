@@ -127,3 +127,30 @@ describe('itemsOn', () => {
     expect(itemsOn([item()], '2026-09-09')).toEqual([])
   })
 })
+
+describe('가져올 미완료 항목 판정', () => {
+  // WidgetHost의 pendingCarry와 같은 조건 — 오늘보다 이전의 미완료.
+  const pending = (items: TodoItem[], today: string) =>
+    items.filter((i) => !i.done && i.date < today)
+
+  it('과거의 미완료만 고른다', () => {
+    const items = [
+      item({ id: 'past-undone', date: '2026-07-31', done: false }),
+      item({ id: 'past-done', date: '2026-07-31', done: true }),
+      item({ id: 'today', date: '2026-08-01', done: false }),
+      item({ id: 'future', date: '2026-08-05', done: false }),
+    ]
+    expect(pending(items, '2026-08-01').map((i) => i.id)).toEqual(['past-undone'])
+  })
+
+  /** 완료 항목은 그날의 기록이라 옮기지 않는다 (carry_over와 같은 규칙). */
+  it('과거의 완료 항목은 두고 온다', () => {
+    const items = [item({ date: '2026-07-30', done: true })]
+    expect(pending(items, '2026-08-01')).toEqual([])
+  })
+
+  it('가져올 게 없으면 빈 배열 — 버튼이 숨는 조건이다', () => {
+    const items = [item({ date: '2026-08-01', done: false })]
+    expect(pending(items, '2026-08-01')).toEqual([])
+  })
+})
