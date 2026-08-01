@@ -46,6 +46,25 @@ export function TodoRow({
   // 핸들을 눌렀을 때만 끌 수 있다. 행 전체가 draggable이면 텍스트를 집으려다
   // 행이 딸려오고, 체크박스를 누르려다 드래그가 시작된다.
   const [grabbed, setGrabbed] = useState(false)
+
+  // 손잡이를 놓으면 **어디서 놓든** 해제한다.
+  //
+  // 손잡이의 onPointerUp만으로는 부족하다: 드래그가 끝나는 지점은 손잡이
+  // 밖이고(다른 행 위), 성공적으로 옮겨진 뒤에는 목록이 다시 그려지면서
+  // 그 <li>가 교체돼 dragend·pointerup을 못 받는다. 그러면 grabbed가 켜진
+  // 채로 남아 **다음 드래그가 안 걸린다** — 한 번 클릭해야 풀렸다.
+  //
+  // document에서 받으면 위치·리렌더와 무관하게 항상 풀린다.
+  useEffect(() => {
+    if (!grabbed) return
+    const release = () => setGrabbed(false)
+    document.addEventListener('pointerup', release)
+    document.addEventListener('dragend', release)
+    return () => {
+      document.removeEventListener('pointerup', release)
+      document.removeEventListener('dragend', release)
+    }
+  }, [grabbed])
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.text)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -172,9 +191,6 @@ export function TodoRow({
       {drag && (
         <span
           onPointerDown={() => setGrabbed(true)}
-          // 끌지 않고 손을 떼면 원래대로. 안 그러면 draggable이 계속 켜져
-          // 다음에 텍스트를 집을 때 행이 딸려온다.
-          onPointerUp={() => setGrabbed(false)}
           title="끌어서 순서 변경"
           aria-hidden="true"
           className="shrink-0 cursor-grab rounded p-0.5 text-text-quaternary opacity-0
