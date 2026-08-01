@@ -12,6 +12,7 @@ import {
 import { useConnectionStore } from '#/store/connection'
 import { Modal } from '#/ui/Modal'
 import { relativeTime, useNow } from '#/ui/relativeTime'
+import { projectKeyOf } from '#/widgets/jira/childTypes'
 import { plainTextToAdf } from '#/widgets/jira/plainTextToAdf'
 
 /**
@@ -57,11 +58,23 @@ export function CreateIssueModal({
   open,
   onClose,
   onCreated,
+  parent,
 }: {
   open: boolean
   onClose: () => void
   /** 만들어진 티켓의 상세를 열어달라는 요청. */
   onCreated: (key: string) => void
+  /**
+   * 하위 티켓을 만드는 경우의 **고정된 상위**.
+   *
+   * 상세 모달에서 "하위 만들기"로 열면 채워진다. 이때 프로젝트는 상위를
+   * 따라가고(바꿀 수 없다), 유형 목록도 상위보다 한 단계 아래로 좁혀진다.
+   *
+   * 위젯 헤더에서 열면 `undefined`다 — 그때는 평범한 생성 폼이고
+   * 하위 작업 유형은 목록에서 빠진다. 상위를 고를 방법이 없기 때문이다
+   * (Jira가 parent에 allowedValues도 autoCompleteUrl도 주지 않는다 — 실측).
+   */
+  parent?: { key: string; summary: string | null; childTypes: JiraIssueTypeOption[] }
 }) {
   const baseUrl = useConnectionStore((s) => s.jiraBaseUrl)
   const setJiraAuthFailed = useConnectionStore((s) => s.setJiraAuthFailed)
@@ -120,27 +133,80 @@ export function CreateIssueModal({
     })
   }, [open, loadOptions])
 
-  // 목록이 오면 마지막에 쓴 값 또는 첫 번째를 고른다.
+  // 닫히면 **1회성 상태를 지운다.**
+  //
+  // 안 하면 성공 화면(`created`)이 남아서, 다음에 열었을 때 폼 대신 지난번
+  // "만들어졌습니다"가 다시 뜬다. 모달은 언마운트되지 않고 `open`으로만
+  // 숨겨지므로 state가 그대로 살아 있다.
+  //
+  // 프로젝트·유형도 비운다. 다음에 열 때 **저장값**(마지막으로 만든 곳)에서
+  // 다시 채운다 — 남겨두면 "만들지 않고 눌러보기만 한 선택"이 따라다닌다.
   useEffect(() => {
-    if (projects.length === 0 || projectKey) return
+    if (open) return
+    setCreated(null)
+    setFailure(null)
+    setSummary('')
+    setDescription('')
+    setDueDate('')
+    setSubmitting(false)
+    setProjectKey('')
+    setIssueTypeId('')
+  }, [open])
+
+  // 열 때마다 **마지막으로 만든** 프로젝트로 되돌린다 (D6).
+  //
+  // 저장값이 곧 기본값이다. 남아 있던 선택을 우선하면, 폼에서 프로젝트만
+  // 바꿔보고 만들지 않은 채 닫았을 때 그 선택이 계속 따라다닌다 —
+  // "마지막에 만든 곳"이 아니라 "마지막에 눌러본 곳"이 되어버린다.
+  //
+  // 저장된 프로젝트가 목록에서 사라졌으면(권한 변경 등) 첫 번째로 떨어진다.
+  useEffect(() => {
+    if (!open) return
+
+    // 상위가 있으면 프로젝트는 상위를 따라간다 — 저장값보다 우선한다.
+    // 하위 티켓은 상위와 같은 프로젝트에만 만들 수 있다.
+    if (parent) {
+      setProjectKey(projectKeyOf(parent.key) ?? '')
+      return
+    }
+
+    if (projects.length === 0) return
     const last = readLastUsed()
     const found = projects.find((p) => p.key === last.projectKey)
     setProjectKey(found?.key ?? projects[0]?.key ?? '')
-  }, [projects, projectKey])
+  }, [open, projects, parent])
 
   const project = projects.find((p) => p.key === projectKey) ?? null
-  // 하위작업은 parent가 필수라 이 폼으로 만들 수 없다.
-  const selectableTypes = (project?.issueTypes ?? []).filter((t) => !t.subtask)
-  const hiddenSubtaskCount = (project?.issueTypes?.length ?? 0) - selectableTypes.length
 
+  // 유형 목록은 상위가 있느냐로 갈린다.
+  //
+  //   상위 있음 → 상위보다 한 단계 아래 유형만 (호출부가 계산해서 넘긴다)
+  //   상위 없음 → 하위 작업을 **뺀** 전부
+  //
+  // 하위 작업을 빼는 이유: 상위를 고를 방법이 없다. Jira가 parent에
+  // allowedValues도 autoCompleteUrl도 주지 않아(실측) 드롭다운도 자동완성도
+  // 만들 수 없다. 하위 작업은 상세 화면의 "하위 만들기"로만 만든다.
+  const selectableTypes = parent
+    ? parent.childTypes
+    : (project?.issueTypes ?? []).filter((t) => !t.subtask)
+
+  // 유형도 같은 규칙 — 열 때는 저장값, 그 뒤 프로젝트를 바꾸면 그 프로젝트의 값.
+  //
+  // `open`을 의존성에 넣어야 같은 프로젝트로 다시 열었을 때도 저장값으로
+  // 돌아온다. 안 그러면 selectableTypes가 그대로라 effect가 안 돌고,
+  // 직전에 눌러본 유형이 남는다.
+  // setIssueTypeId의 함수형 갱신을 쓰므로 issueTypeId를 의존성에 넣지 않아도 된다 —
+  // 넣으면 사용자가 드롭다운에서 고른 값을 즉시 되돌려버린다.
   useEffect(() => {
-    if (selectableTypes.length === 0) return
-    // 현재 선택이 이 프로젝트에 없으면 다시 고른다.
-    if (selectableTypes.some((t) => t.id === issueTypeId)) return
+    if (!open || selectableTypes.length === 0) return
     const last = readLastUsed()
     const found = selectableTypes.find((t) => t.id === last.issueTypeId)
-    setIssueTypeId(found?.id ?? selectableTypes[0]?.id ?? '')
-  }, [selectableTypes, issueTypeId])
+    setIssueTypeId((cur) => {
+      // 현재 선택이 이 프로젝트에서 유효하면 존중한다 — 사용자가 방금 고른 값이다.
+      if (selectableTypes.some((t) => t.id === cur)) return cur
+      return found?.id ?? selectableTypes[0]?.id ?? ''
+    })
+  }, [open, selectableTypes])
 
   // --- createmeta (D10) -----------------------------------------------------
 
@@ -178,27 +244,38 @@ export function CreateIssueModal({
       .find((f) => f.fieldId === 'priority')
       ?.allowedValues.map((v) => ({ id: v.id ?? '', label: v.label ?? v.id ?? '' })) ?? null
 
+  /** 폼이 직접 보내는 필드. 이것들은 "못 그리는 필수 필드"가 아니다. */
+  const FORM_FIELDS = [
+    'project',
+    'issuetype',
+    'summary',
+    'description',
+    'priority',
+    'duedate',
+    'assignee',
+    // 하위 작업일 때 상위 칸이 나타난다.
+    'parent',
+  ]
+
   // 폼이 못 그리는 필수 필드. 실측상 지금은 0개지만 설정이 바뀌면 나타난다 (4.2).
   const unhandledRequired: CreateMetaField[] =
     meta?.fields.filter(
-      (f) =>
-        f.required &&
-        !f.hasDefaultValue &&
-        !['project', 'issuetype', 'summary', 'description', 'priority', 'duedate'].includes(
-          f.fieldId,
-        ),
+      (f) => f.required && !f.hasDefaultValue && !FORM_FIELDS.includes(f.fieldId),
     ) ?? []
 
-  const reset = (keepTarget: boolean) => {
+  /**
+   * "하나 더 만들기" — 성공 화면에서 폼으로 돌아간다.
+   *
+   * 프로젝트·유형은 **그대로 둔다.** 연달아 만들 때 같은 곳에 만드는 경우가
+   * 대부분이고, 방금 만든 것이 곧 저장값이라 다시 고를 필요가 없다.
+   * (닫았다 여는 경로는 위의 `open` effect가 따로 처리한다.)
+   */
+  const startAnother = () => {
     setSummary('')
     setDescription('')
     setDueDate('')
     setCreated(null)
     setFailure(null)
-    if (!keepTarget) {
-      setProjectKey('')
-      setIssueTypeId('')
-    }
   }
 
   const submit = async () => {
@@ -210,6 +287,9 @@ export function CreateIssueModal({
     if (priorityId) extra.priority = { id: priorityId }
     if (dueDate) extra.duedate = dueDate
     if (assignToMe && myAccountId) extra.assignee = { id: myAccountId }
+    // 하위 작업은 parent가 필수다. 키를 그대로 보낸다 — Jira가 검증한다.
+    // 상위는 화면에서 고정돼 있다. 사용자가 칠 일이 없으므로 검증도 필요 없다.
+    if (parent) extra.parent = { key: parent.key }
 
     const result = await commands.jiraCreateIssue({
       projectKey,
@@ -222,8 +302,10 @@ export function CreateIssueModal({
     if (result.status === 'ok') {
       localStorage.setItem(LAST_USED_KEY, JSON.stringify({ projectKey, issueTypeId }))
       setCreated(result.data.key)
-      // 만든 티켓이 위젯에 바로 보이게 한다.
-      window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))
+      // 만든 티켓이 위젯에 보이게 한다. `refresh-all`이 아니라 전용 이벤트를
+      // 쓰는 이유: Jira 검색 인덱스가 쓰기보다 늦어서 즉시 조회로는 방금 만든
+      // 티켓이 안 잡힌다. 듣는 쪽이 잠시 뒤 한 번 더 조회한다.
+      window.dispatchEvent(new CustomEvent('pegboard:jira-created'))
     } else {
       setFailure(result.error)
       if (result.error.isAuthFailure) setJiraAuthFailed(true)
@@ -251,7 +333,7 @@ export function CreateIssueModal({
           <div className="flex flex-wrap gap-2">
             {url && <Button onClick={() => void openUrl(url)}>Jira에서 열기</Button>}
             <Button onClick={() => onCreated(created)}>상세 보기</Button>
-            <Button onClick={() => reset(true)}>하나 더 만들기</Button>
+            <Button onClick={startAnother}>하나 더 만들기</Button>
             <Button onClick={onClose} className="ml-auto">
               닫기
             </Button>
@@ -263,13 +345,15 @@ export function CreateIssueModal({
 
   // --- 입력 폼 --------------------------------------------------------------
 
-  const canSubmit = summary.trim().length > 0 && !submitting && !failure?.possiblyCreated
+  // 만들 수 있는 유형이 없으면(하위 작업 아래) 애초에 열리지 않지만, 방어한다.
+  const canSubmit =
+    summary.trim().length > 0 && issueTypeId.length > 0 && !submitting && !failure?.possiblyCreated
 
   return (
     <Modal open onClose={onClose} labelledBy="create-issue-title" className="max-w-xl">
       <header className="border-border-subtle border-b px-4 py-3">
         <h2 id="create-issue-title" className="text-base text-text-primary">
-          티켓 생성
+          {parent ? '하위 티켓 생성' : '티켓 생성'}
         </h2>
       </header>
 
@@ -281,36 +365,53 @@ export function CreateIssueModal({
         )}
 
         <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-3">
-          <Label htmlFor="ci-project">프로젝트</Label>
-          <div className="flex items-center gap-2">
-            <select
-              id="ci-project"
-              value={projectKey}
-              onChange={(e) => setProjectKey(e.target.value)}
-              className={selectClass}
-            >
-              {projects.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.key} — {p.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void loadOptions(true)}
-              title="프로젝트 목록 새로고침"
-              aria-label="프로젝트 목록 새로고침"
-              className="rounded p-1 text-text-tertiary hover:bg-surface-inset hover:text-text-primary
-                         focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-            </button>
-            {fetchedAt && (
-              <span className="shrink-0 text-caption text-text-quaternary">
-                {relativeTime(fetchedAt, new Date(now))}
-              </span>
-            )}
-          </div>
+          {/* 상위가 정해져 있으면 프로젝트는 따라간다 — 고를 것이 없다.
+              대신 무엇 아래에 만드는지를 보여준다. */}
+          {parent ? (
+            <>
+              <Label htmlFor="ci-parent-fixed">상위</Label>
+              <div id="ci-parent-fixed" className="flex min-w-0 items-center gap-1.5">
+                <span className="ticket-key shrink-0 text-accent">{parent.key}</span>
+                {parent.summary && (
+                  <span className="truncate text-body text-text-secondary">{parent.summary}</span>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <Label htmlFor="ci-project">프로젝트</Label>
+              <div className="flex items-center gap-2">
+                <select
+                  id="ci-project"
+                  value={projectKey}
+                  onChange={(e) => setProjectKey(e.target.value)}
+                  className={selectClass}
+                >
+                  {projects.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.key} — {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void loadOptions(true)}
+                  title="프로젝트 목록 새로고침"
+                  aria-label="프로젝트 목록 새로고침"
+                  className="rounded p-1 text-text-tertiary hover:bg-surface-inset
+                             hover:text-text-primary focus-visible:outline-2
+                             focus-visible:outline-accent"
+                >
+                  <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+                </button>
+                {fetchedAt && (
+                  <span className="shrink-0 text-caption text-text-quaternary">
+                    {relativeTime(fetchedAt, new Date(now))}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
 
           <Label htmlFor="ci-type">유형</Label>
           <select
@@ -322,6 +423,7 @@ export function CreateIssueModal({
             {selectableTypes.map((t: JiraIssueTypeOption) => (
               <option key={t.id} value={t.id}>
                 {t.name}
+                {t.subtask ? ' (하위 작업)' : ''}
               </option>
             ))}
           </select>
@@ -386,12 +488,6 @@ export function CreateIssueModal({
             나에게 할당{myName ? ` (${myName})` : ''}
           </label>
         </div>
-
-        {hiddenSubtaskCount > 0 && (
-          <p className="text-caption text-text-quaternary">
-            하위 작업 유형 {hiddenSubtaskCount}개는 상위 티켓이 필요해 제외했습니다
-          </p>
-        )}
 
         {unhandledRequired.length > 0 && (
           <p className="rounded bg-warning-muted px-2 py-1.5 text-caption text-warning">

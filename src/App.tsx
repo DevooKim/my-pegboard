@@ -1,21 +1,15 @@
-import { Settings, SquarePen } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { AddWidgetMenu } from '#/board/AddWidgetMenu'
 import { Board } from '#/board/Board'
 import { SettingsModal } from '#/settings/SettingsModal'
 import { useConnectionStore } from '#/store/connection'
 import { bootstrap } from '#/store/persist'
-import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
-import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
 
 export function App() {
   const [ready, setReady] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [createOpen, setCreateOpen] = useState(false)
-  /** 생성 직후 "상세 보기"로 연 티켓. 목록을 거치지 않으므로 seed가 없다. */
-  const [createdDetail, setCreatedDetail] = useState<string | null>(null)
   const openSettings = useCallback(() => setSettingsOpen(true), [])
-  const jiraConfigured = useConnectionStore((s) => s.jiraConfigured)
 
   useEffect(() => {
     void bootstrap().finally(() => setReady(true))
@@ -33,9 +27,12 @@ export function App() {
         window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))
       }
       // ⇧를 먼저 본다 — ⌘N(위젯 추가)과 갈라져야 한다.
+      //
+      // 생성 폼은 Jira 위젯이 소유하므로(위젯 하나 = 폴더 하나) 여기서 직접 열지
+      // 않고 알린다. 보드 위의 첫 Jira 위젯이 받아서 연다.
       if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault()
-        setCreateOpen(true)
+        window.dispatchEvent(new CustomEvent('pegboard:jira-create'))
       }
     }
     document.addEventListener('keydown', onKey)
@@ -50,19 +47,6 @@ export function App() {
         data-tauri-drag-region
         className="flex h-9 shrink-0 items-center justify-end gap-1 pr-2 pl-20"
       >
-        {/* Jira 연결이 없으면 만들 곳이 없다 — 버튼을 숨긴다. */}
-        {jiraConfigured && (
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            title="티켓 생성 (⌘⇧N)"
-            aria-label="티켓 생성"
-            className="grid size-7 place-items-center rounded text-text-tertiary
-                       transition-colors duration-fast hover:bg-surface-inset hover:text-text-primary"
-          >
-            <SquarePen size={14} />
-          </button>
-        )}
         <AddWidgetMenu />
         <button
           type="button"
@@ -81,20 +65,6 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         // 저장 직후 모든 위젯을 즉시 갱신한다. 저장의 결과가 화면 변화로 보여야 한다.
         onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
-      />
-      <CreateIssueModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={(key) => {
-          setCreateOpen(false)
-          setCreatedDetail(key)
-        }}
-      />
-      {/* 생성 → "상세 보기". 목록을 거치지 않아 골격(seed)이 없다. */}
-      <IssueDetailModal
-        issueKey={createdDetail}
-        seed={null}
-        onClose={() => setCreatedDetail(null)}
       />
     </div>
   )

@@ -1,11 +1,15 @@
+import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { JiraWidgetConfig } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
+import { useConnectionStore } from '#/store/connection'
 import { ConfirmDialog } from '#/ui/ConfirmDialog'
+import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
+import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
 import { useJiraData } from '#/widgets/jira/useJiraData'
 import { tryGetWidget } from '#/widgets/registry'
 import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
-import { WidgetShell } from '#/widgets/shell/WidgetShell'
+import { IconButton, WidgetShell } from '#/widgets/shell/WidgetShell'
 import type { WidgetInstance } from '#/widgets/types'
 
 const DEFAULT_REFRESH_SECS = 300
@@ -211,21 +215,59 @@ function JiraHost({
   const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
   const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
   const { envelope, refresh } = useJiraData(widget.id, config, refreshMs)
+  const jiraConfigured = useConnectionStore((s) => s.jiraConfigured)
+  const [creating, setCreating] = useState(false)
+  const [createdKey, setCreatedKey] = useState<string | null>(null)
+
+  // ⌘⇧N. 보드에 Jira 위젯이 여러 개면 **첫 번째만** 연다 — 안 그러면 모달이
+  // 위젯 수만큼 겹쳐 뜬다. 판정은 DOM 순서가 아니라 보드의 위젯 순서로 한다.
+  const isPrimaryJira = useBoardStore(
+    (s) =>
+      s.boards.find((b) => b.id === s.activeBoardId)?.widgets.find((w) => w.type === 'jira')?.id ===
+      widget.id,
+  )
+  useEffect(() => {
+    if (!isPrimaryJira || !jiraConfigured) return
+    const open = () => setCreating(true)
+    window.addEventListener('pegboard:jira-create', open)
+    return () => window.removeEventListener('pegboard:jira-create', open)
+  }, [isPrimaryJira, jiraConfigured])
 
   if (!definition) return null
   const View = definition.View
 
   return (
-    <WidgetShell
-      title={definition.deriveTitle(config)}
-      status={envelope.status}
-      fetchedAt={envelope.fetchedAt}
-      pollable
-      onRefresh={refresh}
-      onConfigure={onConfigure}
-      onRemove={onRemove}
-    >
-      <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
-    </WidgetShell>
+    <>
+      <WidgetShell
+        title={definition.deriveTitle(config)}
+        status={envelope.status}
+        fetchedAt={envelope.fetchedAt}
+        pollable
+        onRefresh={refresh}
+        onConfigure={onConfigure}
+        onRemove={onRemove}
+        actions={
+          // 연결이 없으면 만들 곳이 없다.
+          jiraConfigured ? (
+            <IconButton label="티켓 생성 (⌘⇧N)" onClick={() => setCreating(true)}>
+              <SquarePen size={13} />
+            </IconButton>
+          ) : undefined
+        }
+      >
+        <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
+      </WidgetShell>
+
+      <CreateIssueModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(key) => {
+          setCreating(false)
+          setCreatedKey(key)
+        }}
+      />
+      {/* 생성 → "상세 보기". 목록을 거치지 않아 골격(seed)이 없다. */}
+      <IssueDetailModal issueKey={createdKey} seed={null} onClose={() => setCreatedKey(null)} />
+    </>
   )
 }

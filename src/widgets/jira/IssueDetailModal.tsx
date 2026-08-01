@@ -1,5 +1,5 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { ChevronLeft, ExternalLink, X } from 'lucide-react'
+import { ChevronLeft, ExternalLink, Plus, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   commands,
@@ -8,11 +8,14 @@ import {
   type JiraCommentsView,
   type JiraIssue,
   type JiraIssueDetail,
+  type JiraProjectWithTypes,
 } from '#/ipc/bindings'
 import { useConnectionStore } from '#/store/connection'
 import { Modal } from '#/ui/Modal'
 import { absoluteDate, absoluteTime, relativeTime, useNow } from '#/ui/relativeTime'
 import { AdfDoc } from '#/widgets/jira/adf/AdfDoc'
+import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
+import { childTypesFor, levelOf, projectKeyOf } from '#/widgets/jira/childTypes'
 
 /**
  * 티켓 상세 모달.
@@ -55,6 +58,9 @@ export function IssueDetailModal({
   const [comments, setComments] = useState<JiraCommentsView | null>(null)
   const [commentsError, setCommentsError] = useState<JiraCallError | null>(null)
   const [loading, setLoading] = useState(false)
+  /** 하위 유형 판정에 쓸 프로젝트 유형 목록. 캐시가 있으면 0ms. */
+  const [projects, setProjects] = useState<JiraProjectWithTypes[]>([])
+  const [creatingChild, setCreatingChild] = useState(false)
 
   // 바깥에서 연 티켓이 바뀌면 스택을 새로 시작한다.
   useEffect(() => {
@@ -98,6 +104,15 @@ export function IssueDetailModal({
     void load(current)
   }, [current, load])
 
+  // 유형 계층을 알려면 프로젝트의 유형 목록이 필요하다. 생성 폼과 같은
+  // 디스크 캐시라 두 번째부터는 네트워크를 타지 않는다.
+  useEffect(() => {
+    if (!issueKey) return
+    void commands.jiraCreateOptions(false).then((r) => {
+      if (r.status === 'ok') setProjects(r.data.projects)
+    })
+  }, [issueKey])
+
   const openIssue = useCallback((key: string) => {
     // 직전과 같은 티켓이면 무시 — 스택에 같은 것이 쌓이면 ‹가 헛돈다.
     setStack((s) => (s.at(-1) === key ? s : [...s, key]))
@@ -126,6 +141,16 @@ export function IssueDetailModal({
   // 아무것도 그릴 게 없는 상태 = 골격도 없고 상세도 실패했다.
   const bodyIsEmpty = !summary && !detail
 
+  // 이 티켓 아래에 만들 수 있는 유형. 계층은 hierarchyLevel로 정해진다
+  // (에픽 1 → 작업 0 → 하위 작업 -1). 한 단계씩만 내려간다.
+  const projectTypes = projects.find((p) => p.key === projectKeyOf(current))?.issueTypes ?? []
+  const childTypes = childTypesFor(
+    levelOf(issueType?.name, issueType?.subtask, projectTypes),
+    projectTypes,
+  )
+  // 버튼 문구에 만들 유형을 그대로 쓴다 — "하위 만들기"보다 무엇이 생기는지 분명하다.
+  const childLabel = childTypes.length === 1 ? `${childTypes[0]?.name} 만들기` : '하위 만들기'
+
   return (
     <Modal open onClose={onClose} labelledBy="issue-detail-title" className="max-w-3xl">
       <header className="flex items-center gap-2 border-border-subtle border-b px-4 py-3">
@@ -153,6 +178,21 @@ export function IssueDetailModal({
           >
             <ExternalLink size={11} aria-hidden="true" />
             Jira에서 열기
+          </button>
+        )}
+
+        {/* 한 단계 아래를 만들 수 있을 때만 (에픽→작업, 작업→하위 작업).
+            하위 작업 아래로는 만들 수 없으므로 버튼이 사라진다. */}
+        {childTypes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setCreatingChild(true)}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-caption text-text-tertiary
+                       hover:bg-surface-inset hover:text-accent
+                       focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <Plus size={11} aria-hidden="true" />
+            {childLabel}
           </button>
         )}
 
@@ -253,6 +293,19 @@ export function IssueDetailModal({
           </>
         )}
       </div>
+
+      {/* 하위 티켓 생성. 상위는 지금 보고 있는 티켓으로 고정된다 —
+          사용자가 키를 칠 일이 없다. */}
+      <CreateIssueModal
+        open={creatingChild}
+        onClose={() => setCreatingChild(false)}
+        parent={{ key: current, summary, childTypes }}
+        onCreated={(key) => {
+          setCreatingChild(false)
+          // 만든 하위 티켓으로 전환한다. ‹로 지금 티켓에 돌아온다.
+          openIssue(key)
+        }}
+      />
     </Modal>
   )
 }
@@ -361,13 +414,18 @@ function Row({
   children,
 }: {
   label: string
-  /** 4칸을 다 쓴다(상위·라벨처럼 긴 값). */
+  /** 한 줄을 통째로 쓴다(상위·라벨처럼 긴 값). */
   wide?: boolean
   children: React.ReactNode
 }) {
+  // `wide`는 반드시 **새 줄에서 시작**해야 한다(`col-start-1`).
+  //
+  // 앞의 반쪽 행이 홀수 개면(마감 없이 스프린트만 있는 티켓 등) 오른쪽 두 칸이
+  // 비어 있는데, 거기에 3칸짜리 dd가 안 들어가서 값만 다음 줄로 밀린다.
+  // 그러면 라벨과 값이 서로 다른 줄에 놓여 배치가 깨져 보인다 (EDU-60에서 실측).
   return (
     <>
-      <dt className="text-text-quaternary">{label}</dt>
+      <dt className={`text-text-quaternary ${wide ? 'col-start-1' : ''}`}>{label}</dt>
       <dd className={`min-w-0 ${wide ? 'col-span-3' : ''}`}>{children}</dd>
     </>
   )

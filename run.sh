@@ -17,13 +17,29 @@ MODE="${1:-}"
 
 # 안정된 서명을 붙인다. 기본 ad-hoc 서명은 빌드할 때마다 바뀌어서
 # macOS가 매번 '다른 앱'으로 보고 키체인 접근을 다시 묻는다.
-IDENTITY="My AltTab Dev"
+#
+# 이 프로젝트 전용 인증서를 쓴다. 없으면 기기에 있는 아무 codesigning 신원으로
+# 떨어지는데, 그러면 로그에 엉뚱한 앱 이름이 찍혀 헷갈린다(예전에 AltTab용
+# 인증서를 그대로 썼다). 만드는 법은 scripts/make-signing-cert.md 참고.
+IDENTITY="${PEGBOARD_SIGN_IDENTITY:-my-pegboard Dev}"
+
 sign() {
   local target="$1"
-  if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
-    codesign --force --deep --sign "$IDENTITY" "$target" 2>/dev/null \
-      && echo "서명 완료 ($IDENTITY)" \
-      || echo "서명 실패 — 키체인을 매번 물을 수 있습니다"
+
+  # `-v`(valid only)를 쓰지 않는다. 새로 만든 self-signed 인증서는
+  # `CSSMERR_TP_NOT_TRUSTED`로 나오는데 **서명에는 아무 문제가 없다.**
+  # -v로 거르면 방금 만든 인증서를 못 찾아 "없습니다"라고 거짓말한다.
+  if ! security find-identity -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+    echo "서명 건너뜀 — '$IDENTITY' 인증서가 없습니다"
+    echo "  만드는 법: scripts/make-signing-cert.md"
+    echo "  (서명이 없으면 빌드할 때마다 키체인을 다시 물어봅니다)"
+    return
+  fi
+
+  if codesign --force --deep --sign "$IDENTITY" "$target" 2>/dev/null; then
+    echo "서명 완료 ($IDENTITY)"
+  else
+    echo "서명 실패 — 키체인을 매번 물을 수 있습니다"
   fi
 }
 

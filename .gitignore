@@ -35,3 +35,6 @@ CLAUDE.local.md
 .impeccable/live/deferred-svelte-component-accepts.json
 .impeccable/live/*.png
 # impeccable-ignore-end
+
+# TypeScript 증분 빌드 캐시 — 빌드마다 바뀌어 머지 충돌만 낸다
+tsconfig.tsbuildinfo

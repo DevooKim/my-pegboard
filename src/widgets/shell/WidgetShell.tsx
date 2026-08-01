@@ -21,6 +21,7 @@ export function WidgetShell({
   onRefresh,
   onConfigure,
   onRemove,
+  actions,
   children,
 }: {
   title: string
@@ -30,6 +31,15 @@ export function WidgetShell({
   onRefresh: () => void
   onConfigure: () => void
   onRemove: () => void
+  /**
+   * 위젯 고유 동작. 공통 버튼(새로고침·설정·삭제) **왼쪽**에 놓인다.
+   *
+   * 셸이 위젯 종류를 알면 안 되므로(위젯 하나 = 폴더 하나) 여기서는 자리만
+   * 내주고 내용은 각 위젯이 채운다. Jira의 "티켓 생성"이 그 첫 사례다.
+   *
+   * `IconButton`을 export해 두었으니 그것을 쓰면 생김새가 공통 버튼과 같아진다.
+   */
+  actions?: ReactNode
   children: ReactNode
 }) {
   // 데이터가 안 바뀌어도 시간은 흐른다. 자동 새로고침을 꺼두면 리렌더가
@@ -75,6 +85,9 @@ export function WidgetShell({
           className="flex shrink-0 items-center gap-0.5"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {/* 위젯 고유 동작이 먼저. 공통 버튼(새로고침·설정·삭제)의 자리가
+              위젯마다 달라지면 근육기억이 깨진다. */}
+          {actions}
           {pollable && (
             <IconButton label="새로고침" onClick={onRefresh} disabled={refreshing}>
               <RefreshCw size={13} className={refreshing ? 'animate-spin' : undefined} />
@@ -103,7 +116,7 @@ export function WidgetShell({
   )
 }
 
-function IconButton({
+export function IconButton({
   label,
   onClick,
   disabled,
