@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { TodoItem } from '#/ipc/bindings'
 import { TodoRow } from '#/widgets/todo/TodoRow'
@@ -184,7 +184,23 @@ describe('TodoRow 드래그', () => {
     fireEvent.dragStart(li, { dataTransfer })
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'x')
-    expect(drag.onStart).toHaveBeenCalled()
+  })
+
+  /**
+   * 접는 것은 **다음 프레임**이어야 한다.
+   *
+   * 브라우저는 dragstart 직후 소스 요소를 캡처해 드래그 이미지를 만든다.
+   * 그 자리에서 h-0으로 접으면 캡처할 것이 사라져 드래그가 취소된다 —
+   * 포인터만 잠깐 뜨고 끝난다(실측).
+   */
+  it('접기를 한 프레임 미룬다', async () => {
+    const drag = dragProps()
+    const li = renderDraggable(drag)
+
+    fireEvent.dragStart(li, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } })
+    expect(drag.onStart, 'dragstart 그 자리에서 접으면 안 된다').not.toHaveBeenCalled()
+
+    await waitFor(() => expect(drag.onStart).toHaveBeenCalled())
   })
 
   it('dragOver에서 onOver를 부른다', () => {

@@ -79,7 +79,15 @@ export function TodoRow({
         // Firefox는 dataTransfer가 비면 드래그를 시작하지 않는다.
         e.dataTransfer.setData('text/plain', item.id)
         e.dataTransfer.effectAllowed = 'move'
-        drag?.onStart()
+
+        // **다음 프레임에** 접는다.
+        //
+        // 브라우저는 dragstart가 끝난 뒤 소스 요소를 캡처해 드래그 이미지를
+        // 만든다. 여기서 곧바로 상태를 바꿔 행을 h-0으로 접으면 캡처할 것이
+        // 사라져 드래그가 그대로 취소된다 — 포인터만 잠깐 뜨고 끝난다.
+        //
+        // requestAnimationFrame으로 한 프레임 미루면 캡처가 끝난 뒤에 접힌다.
+        requestAnimationFrame(() => drag?.onStart())
       }}
       onDragOver={(e) => {
         if (!drag) return
