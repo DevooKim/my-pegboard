@@ -8,7 +8,7 @@ use tauri::State;
 
 use crate::providers::github::{
     apply_repo_filter, GithubClient, GithubCredentials, GithubError, GithubItem, GithubQuery,
-    GithubRepo, Preset, PRESETS,
+    GithubPreset, GithubRepo, PRESETS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
@@ -74,7 +74,7 @@ const fn default_refresh_secs() -> u32 {
 /// 프리셋 목록. 설정 폼이 드롭다운을 채운다.
 #[tauri::command]
 #[specta::specta]
-pub fn github_presets() -> Vec<Preset> {
+pub fn github_presets() -> Vec<GithubPreset> {
     PRESETS.to_vec()
 }
 

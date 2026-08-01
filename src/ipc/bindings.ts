@@ -170,7 +170,7 @@ async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, Ji
 /**
  * 프리셋 목록. 설정 폼이 드롭다운을 채운다.
  */
-async githubPresets() : Promise<Preset[]> {
+async githubPresets() : Promise<GithubPreset[]> {
     return await TAURI_INVOKE("github_presets");
 },
 /**
@@ -536,6 +536,14 @@ updatedAt: string;
  * 코멘트 수. 0이면 화면에 그리지 않는다.
  */
 comments: number }
+/**
+ * 프리셋 정의. 정적 테이블이므로 `&'static str`.
+ */
+export type GithubPreset = { 
+/**
+ * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
+ */
+id: string; name: string; description: string; query: string }
 /**
  * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 검색 문자열이거나.
  * 
@@ -941,14 +949,6 @@ name: string;
  * 이 프리셋이 무엇을 보여주는지 한 줄 설명.
  */
 description: string; jql: string }
-/**
- * 프리셋 정의. 정적 테이블이므로 `&'static str`.
- */
-export type Preset = { 
-/**
- * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
- */
-id: string; name: string; description: string; query: string }
 /**
  * PR 리뷰 결정. GraphQL `reviewDecision`.
  */

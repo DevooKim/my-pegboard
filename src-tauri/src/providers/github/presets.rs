@@ -42,7 +42,7 @@ impl GithubQuery {
     /// 실제로 API에 보낼 검색 문자열. 프리셋 id가 미지면 `None`.
     pub fn to_search(&self) -> Option<String> {
         match self {
-            GithubQuery::Preset { id } => Preset::by_id(id).map(|p| p.query.to_owned()),
+            GithubQuery::Preset { id } => GithubPreset::by_id(id).map(|p| p.query.to_owned()),
             GithubQuery::Raw { query } => Some(query.clone()),
         }
     }
@@ -50,7 +50,7 @@ impl GithubQuery {
     /// 위젯 기본 제목.
     pub fn default_title(&self) -> String {
         match self {
-            GithubQuery::Preset { id } => Preset::by_id(id)
+            GithubQuery::Preset { id } => GithubPreset::by_id(id)
                 .map(|p| p.name.to_owned())
                 .unwrap_or_else(|| "GitHub".to_owned()),
             GithubQuery::Raw { .. } => "GitHub".to_owned(),
@@ -61,7 +61,7 @@ impl GithubQuery {
 /// 프리셋 정의. 정적 테이블이므로 `&'static str`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Preset {
+pub struct GithubPreset {
     /// 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
     pub id: &'static str,
     pub name: &'static str,
@@ -73,32 +73,32 @@ pub struct Preset {
 ///
 /// `is:open`을 전부 박아둔 이유: 닫힌 것까지 섞이면 "지금 볼 것"이라는 목적이
 /// 흐려진다. 닫힌 것을 봐야 하면 직접 입력으로 간다.
-pub static PRESETS: &[Preset] = &[
-    Preset {
+pub static PRESETS: &[GithubPreset] = &[
+    GithubPreset {
         id: "involves-me",
         name: "내가 관련된 것",
         description: "작성·할당·멘션·리뷰 — 내가 얽힌 열린 PR과 이슈 전부",
         query: "involves:@me is:open",
     },
-    Preset {
+    GithubPreset {
         id: "review-requested",
         name: "리뷰 요청받은 PR",
         description: "나에게 리뷰가 요청된 열린 PR",
         query: "is:pr is:open review-requested:@me",
     },
-    Preset {
+    GithubPreset {
         id: "my-prs",
         name: "내 PR",
         description: "내가 올린 열린 PR",
         query: "is:pr is:open author:@me",
     },
-    Preset {
+    GithubPreset {
         id: "assigned-issues",
         name: "내게 할당된 이슈",
         description: "나에게 할당된 열린 이슈",
         query: "is:issue is:open assignee:@me",
     },
-    Preset {
+    GithubPreset {
         id: "my-issues",
         name: "내가 만든 이슈",
         description: "내가 만든 열린 이슈",
@@ -112,8 +112,8 @@ pub static PRESETS: &[Preset] = &[
 /// **뭐라도 보이는 것**이 중요하다. 빈 목록은 고장처럼 보인다.
 pub const DEFAULT_PRESET_ID: &str = "involves-me";
 
-impl Preset {
-    pub fn by_id(id: &str) -> Option<&'static Preset> {
+impl GithubPreset {
+    pub fn by_id(id: &str) -> Option<&'static GithubPreset> {
         PRESETS.iter().find(|p| p.id == id)
     }
 }

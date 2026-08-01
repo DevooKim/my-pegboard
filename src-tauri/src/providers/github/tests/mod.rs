@@ -9,7 +9,7 @@
 //!   손으로 썼다. 실제 계정에 그런 항목이 없어서 캡처할 수 없었다.
 
 use super::error::{classify_status, ErrorKind, GithubError};
-use super::presets::{apply_repo_filter, GithubQuery, Preset, DEFAULT_PRESET_ID, PRESETS};
+use super::presets::{apply_repo_filter, GithubPreset, GithubQuery, DEFAULT_PRESET_ID, PRESETS};
 use super::types::{CheckState, GqlEnvelope, ItemState, ReviewState, SearchData};
 
 /// fixture를 파싱해 평평한 항목 목록으로 만든다. 클라이언트가 하는 일과 같다.
@@ -197,7 +197,7 @@ fn parses_graphql_error_envelope() {
 #[test]
 fn default_preset_exists() {
     assert!(
-        Preset::by_id(DEFAULT_PRESET_ID).is_some(),
+        GithubPreset::by_id(DEFAULT_PRESET_ID).is_some(),
         "기본 프리셋 id가 목록에 없다 — 새 위젯이 빈 화면으로 시작한다"
     );
 }

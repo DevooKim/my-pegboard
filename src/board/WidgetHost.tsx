@@ -1,10 +1,11 @@
 import { ArrowDownToLine, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { JiraWidgetConfig, TodoItem } from '#/ipc/bindings'
+import type { GithubWidgetConfig, JiraWidgetConfig, TodoItem } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { dateKey, useTodoStore } from '#/store/todos'
 import { ConfirmDialog } from '#/ui/ConfirmDialog'
+import { useGithubData } from '#/widgets/github/useGithubData'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
 import { useJiraData } from '#/widgets/jira/useJiraData'
@@ -70,6 +71,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         />
       ) : widget.type === 'todo' ? (
         <TodoHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
+      ) : widget.type === 'github' ? (
+        <GithubHost
           widget={widget}
           width={width}
           onRemove={() => setConfirmingRemove(true)}
@@ -234,6 +242,47 @@ function carryTooltip(pending: TodoItem[]): string {
   const rest = pending.length - SHOWN
   const lines = rest > 0 ? [...head, `… 외 ${rest}개`] : head
   return [`미완료 ${pending.length}개 가져오기`, ...lines].join('\n')
+}
+
+/**
+ * GitHub 위젯 호스트.
+ *
+ * Jira와 달리 **actions 슬롯이 비어 있다.** 읽기 전용이라 만들 것이 없다
+ * (DECISIONS 12 — 상세도 생성도 없고, 누르면 브라우저로 나간다).
+ */
+function GithubHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('github')
+  const config = widget.config as unknown as GithubWidgetConfig
+  const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
+  const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
+  const { envelope, refresh } = useGithubData(widget.id, config, refreshMs)
+
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(config)}
+      status={envelope.status}
+      fetchedAt={envelope.fetchedAt}
+      pollable
+      onRefresh={refresh}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
+    </WidgetShell>
+  )
 }
 
 function JiraHost({

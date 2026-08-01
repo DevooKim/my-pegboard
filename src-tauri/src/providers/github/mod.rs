@@ -33,7 +33,7 @@ mod tests;
 
 pub use client::{GithubClient, GithubCredentials};
 pub use error::{ErrorKind, GithubError, GithubResult};
-pub use presets::{apply_repo_filter, GithubQuery, Preset, DEFAULT_PRESET_ID, PRESETS};
+pub use presets::{apply_repo_filter, GithubPreset, GithubQuery, DEFAULT_PRESET_ID, PRESETS};
 pub use types::{
     CheckState, GithubItem, GithubRepo, GithubSearchPage, ItemState, ReviewState,
 };
