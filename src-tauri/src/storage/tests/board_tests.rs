@@ -94,7 +94,7 @@ fn widget_serializes_with_type_and_camel_case_layout() {
 fn instance_limits_match_decisions() {
     assert_eq!(WidgetType::Jira.instance_limit(), 4);
     assert_eq!(WidgetType::Github.instance_limit(), 4);
-    assert_eq!(WidgetType::Todo.instance_limit(), 8);
+    assert_eq!(WidgetType::Todo.instance_limit(), 1);
 }
 
 #[test]
@@ -139,12 +139,12 @@ fn enforces_the_github_and_todo_caps() {
         .add_widget_to_active(widget("gh-4", WidgetType::Github))
         .is_err());
 
-    for n in 0..8 {
-        s.add_widget_to_active(widget(&format!("todo-{n}"), WidgetType::Todo))
-            .unwrap();
-    }
+    // Todo는 1개다 (2026-08-01, DECISIONS 21). 모든 Todo 위젯이 같은
+    // todos.json을 읽으므로 두 번째는 같은 목록을 한 번 더 그릴 뿐이다.
+    s.add_widget_to_active(widget("todo-0", WidgetType::Todo))
+        .unwrap();
     assert!(s
-        .add_widget_to_active(widget("todo-8", WidgetType::Todo))
+        .add_widget_to_active(widget("todo-1", WidgetType::Todo))
         .is_err());
 }
 
@@ -155,18 +155,20 @@ fn caps_are_per_type_not_shared() {
     let dir = TempDir::new().unwrap();
     let mut s = store(&dir);
 
-    for n in 0..8 {
-        s.add_widget_to_active(widget(&format!("todo-{n}"), WidgetType::Todo))
-            .unwrap();
-    }
+    // Todo 한도를 채운다 (1개).
+    s.add_widget_to_active(widget("todo-0", WidgetType::Todo))
+        .unwrap();
+    assert!(s
+        .add_widget_to_active(widget("todo-1", WidgetType::Todo))
+        .is_err());
 
-    // 8 widgets already placed, but Jira has its own budget.
+    // Todo가 꽉 찼어도 다른 타입은 자기 예산을 그대로 쓴다.
     s.add_widget_to_active(widget("jira-0", WidgetType::Jira))
         .unwrap();
     s.add_widget_to_active(widget("gh-0", WidgetType::Github))
         .unwrap();
 
-    assert_eq!(s.data().boards[0].widgets.len(), 10);
+    assert_eq!(s.data().boards[0].widgets.len(), 3);
 }
 
 #[test]

@@ -62,12 +62,16 @@ pub enum WidgetType {
 }
 
 impl WidgetType {
-    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 8.
+    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4.
+    ///
+    /// Todo was 8 until 2026-08-01. Every Todo widget reads the same
+    /// `todos.json`, so a second one shows the same list twice while adding
+    /// cross-widget sync cost — DECISIONS 21.
     pub const fn instance_limit(self) -> usize {
         match self {
             WidgetType::Jira => 4,
             WidgetType::Github => 4,
-            WidgetType::Todo => 8,
+            WidgetType::Todo => 1,
             WidgetType::Web => 4,
         }
     }

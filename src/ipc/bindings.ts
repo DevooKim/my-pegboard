@@ -167,6 +167,80 @@ async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, Ji
     else return { status: "error", error: e  as any };
 }
 },
+async todoList() : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 항목 추가. id는 **Rust가 만든다** — 생성 규칙이 한 곳에 있어야 한다.
+ */
+async todoAdd(text: string, date: string) : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_add", { text, date }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async todoSetDone(id: string, done: boolean) : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_set_done", { id, done }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 텍스트 수정. 프론트는 Enter/blur에서만 부른다 — 글자마다 디스크를 때리지 않는다.
+ */
+async todoSetText(id: string, text: string) : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_set_text", { id, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 삭제. **사용자가 명시적으로 요청했을 때만** 호출된다 (DECISIONS 13: 자동 삭제 금지).
+ */
+async todoRemove(id: string) : Promise<Result<TodoItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_remove", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 과거의 미완료 항목을 `today`로 옮긴다.
+ * 
+ * `today`를 프론트가 넘기는 이유: 자정 넘김 감지와 "과거를 보는 중에는 미룬다"는
+ * 판단이 전부 UI 조건이다(`todos.rs`의 `carry_over` 주석). Rust는 시계를 모른다.
+ * 
+ * 멱등이다 — 이월 직후 다시 불러도 빈 report가 온다. 앱 시작과 자정 감지가
+ * 몇 초 차이로 겹쳐도 안전한 이유다.
+ */
+async todoCarryOver(today: string) : Promise<Result<CarryOverResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_carry_over", { today }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async todoUndoCarryOver(report: CarryOverReport) : Promise<Result<UndoCarryResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("todo_undo_carry_over", { report }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async boardLoad() : Promise<Result<BoardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_load") };
@@ -212,6 +286,41 @@ export type AppInfo = { version: string;
 memory_bytes: number | null }
 export type Board = { id: string; name: string; widgets?: Widget[] }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
+/**
+ * One item's before-state, enough to put it back.
+ */
+export type CarriedItem = { id: string; 
+/**
+ * The date it was on before the sweep.
+ */
+fromDate: string; 
+/**
+ * The date it landed on (always the `today` passed to the sweep).
+ */
+toDate: string; 
+/**
+ * `carried_count` before the increment.
+ */
+previousCarriedCount: number }
+/**
+ * Result of a carry-over sweep.
+ * 
+ * DECISIONS 13: 자동 실행 + 되돌리기 가능. This carries enough state for the
+ * caller to offer an undo, and to decide whether to say anything at all.
+ */
+export type CarryOverReport = { carried: CarriedItem[]; 
+/**
+ * Distinct source dates the items came from, ascending. Lets the UI say
+ * "3일치 항목을 가져왔습니다" after a weekend.
+ */
+sourceDates: string[]; targetDate: string }
+/**
+ * 이월 결과 + 갱신된 전체 목록.
+ * 
+ * 둘을 함께 주는 이유: 프론트가 목록을 다시 요청하는 왕복을 없애고,
+ * 배너("3개를 가져왔습니다")와 목록이 **같은 시점의 상태**임을 보장한다.
+ */
+export type CarryOverResult = { items: TodoItem[]; report: CarryOverReport }
 /**
  * 티켓 생성 요청. 최소 폼 + createmeta로 알아낸 추가 필드 (DECISIONS 11.3).
  * 
@@ -584,6 +693,25 @@ export type SortDirection = "asc" | "desc"
  * 우리가 덧붙일 수 없고, 없더라도 정렬은 그 JQL의 일부로 사용자가 정할 몫이다.
  */
 export type SortField = "updated" | "created" | "due" | "priority" | "key"
+export type TodoItem = { id: string; text: string; done: boolean; 
+/**
+ * The date this item currently sits on. Carry-over mutates this field.
+ */
+date: string; 
+/**
+ * The date it was first created. Never changes — it is what makes
+ * "N일째" meaningful after several carries.
+ */
+originDate: string; 
+/**
+ * How many times this item has been carried forward.
+ */
+carriedCount: number }
+/**
+ * 되돌리기 결과. `restored`가 report의 개수보다 적을 수 있다 —
+ * 이월 뒤에 사용자가 지우거나 옮긴 항목은 건드리지 않는다.
+ */
+export type UndoCarryResult = { items: TodoItem[]; restored: number }
 export type Widget = { id: string; type: WidgetType; layout: WidgetLayout; 
 /**
  * Type-specific settings — JQL, GitHub query, refresh interval, and so on.
