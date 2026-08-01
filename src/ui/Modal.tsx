@@ -44,6 +44,17 @@ export function Modal({
     body.style.overflow = 'hidden'
     if (gap > 0) body.style.paddingRight = `${gap}px`
 
+    // 모달을 연 요소에서 포커스를 걷어낸다.
+    //
+    // 안 하면 포커스가 그 자리에 남아 있다가, ESC(키보드 입력)를 누르는 순간
+    // 브라우저의 :focus-visible 판정이 "키보드 사용 중"으로 뒤집혀 **모달을 닫자마자
+    // 목록 행에 포커스 링이 뜬다.** 마우스로 열었는데 키보드 표시가 나오는 셈이다.
+    //
+    // 포커스를 body로 옮기는 대신 blur만 한다 — 되돌릴 위치를 기억했다가 복원하면
+    // 같은 문제가 다시 생긴다(복원 자체가 키보드 포커스로 취급된다).
+    const opener = document.activeElement
+    if (opener instanceof HTMLElement) opener.blur()
+
     return () => {
       document.removeEventListener('keydown', onKey)
       body.style.overflow = prevOverflow
