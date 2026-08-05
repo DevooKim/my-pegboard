@@ -1,9 +1,11 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { AlertCircle, Check, ExternalLink, Loader2, X } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import appIcon from '#/assets/icon.png'
 import { commands } from '#/ipc/bindings'
 import { IN_TAURI } from '#/ipc/env'
 import { useConnectionStore } from '#/store/connection'
+import { RELEASES_PAGE, type UpdatePhase, useUpdateStore } from '#/store/update'
 import { Modal } from '#/ui/Modal'
 
 const TOKEN_PAGE = 'https://id.atlassian.com/manage-profile/security/api-tokens'
@@ -17,11 +19,18 @@ type TestState =
   | { kind: 'ok'; displayName: string }
   | { kind: 'failed'; message: string }
 
+export type SettingsTab = 'connections' | 'about'
+
 /**
  * 통합 설정창 (DECISIONS 15장).
  *
  * 별도 Tauri 창이 아니라 전체 모달인 이유: 별도 창은 위치 기억·중복 방지·
  * 포커스 관리라는 상태가 늘지만 얻는 게 없다. 잠깐 열었다 닫는 화면이다.
+ *
+ * 탭이 **연결/정보 둘**인 이유: 연결(Jira·GitHub)은 한 번 넣고 안 건드리는 것이고
+ * 정보(버전·업데이트)는 자주 보는 것이다. 한 스크롤에 쌓으면 자주 보는 쪽이
+ * 아래로 밀린다. Jira와 GitHub를 각각의 탭으로 쪼개지 않는 이유는 둘 다
+ * "토큰 넣기" 한 덩어리라, 쪼개면 탭 이동만 늘기 때문이다.
  *
  * 토큰은 이 폼을 떠나 키체인으로 바로 간다. 어떤 상태에도 보관하지 않고,
  * 저장 직후 입력을 비운다.
@@ -30,11 +39,109 @@ export function SettingsModal({
   open,
   onClose,
   onSaved,
+  initialTab = 'connections',
 }: {
   open: boolean
   onClose: () => void
   onSaved: () => void
+  /** 열 때 보여줄 탭. 업데이트 배지로 들어오면 'about'이다. */
+  initialTab?: SettingsTab
 }) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab)
+
+  // 열 때마다 요청된 탭으로 되돌린다. 마지막 탭을 기억하지 않는다 —
+  // 어제 정보 탭을 봤다고 오늘 설정을 열었을 때 정보가 뜨면 당황스럽다.
+  useEffect(() => {
+    if (open) setTab(initialTab)
+  }, [open, initialTab])
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="settings-title">
+      <header className="flex shrink-0 items-center justify-between border-border-subtle border-b px-4 pt-3">
+        <div className="flex flex-col gap-3">
+          <h2 id="settings-title" className="text-body text-text-primary">
+            설정
+          </h2>
+          {/* 탭. 밑줄 하나로만 현재 위치를 말한다 — 알약 배경이나 채움은
+              이 앱의 "크롬은 얇을수록 좋다"와 어긋난다. */}
+          <div role="tablist" aria-label="설정 구획" className="-mb-px flex gap-1">
+            <TabButton id="connections" current={tab} onSelect={setTab}>
+              연결
+            </TabButton>
+            <TabButton id="about" current={tab} onSelect={setTab}>
+              정보
+            </TabButton>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="닫기"
+          className="-mt-0.5 grid size-7 place-items-center self-start rounded text-text-tertiary
+                       hover:bg-surface-inset hover:text-text-primary"
+        >
+          <X size={15} />
+        </button>
+      </header>
+
+      <div
+        role="tabpanel"
+        id={`settings-panel-${tab}`}
+        aria-labelledby={`settings-tab-${tab}`}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
+        {tab === 'connections' ? (
+          <>
+            <JiraSection onSaved={onSaved} onClose={onClose} />
+            <hr className="my-5 border-border-subtle" />
+            <GithubSection onSaved={onSaved} />
+          </>
+        ) : (
+          <AboutSection />
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+function TabButton({
+  id,
+  current,
+  onSelect,
+  children,
+}: {
+  id: SettingsTab
+  current: SettingsTab
+  onSelect: (t: SettingsTab) => void
+  children: React.ReactNode
+}) {
+  const active = current === id
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`settings-tab-${id}`}
+      aria-selected={active}
+      aria-controls={`settings-panel-${id}`}
+      onClick={() => onSelect(id)}
+      className={`border-b-2 px-2.5 py-1.5 text-caption transition-colors duration-fast ${
+        active
+          ? 'border-accent text-text-primary'
+          : 'border-transparent text-text-tertiary hover:text-text-secondary'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * Jira 연결.
+ *
+ * 입력이 셋이다 — 사이트 URL·이메일·토큰. GitHub과 달리 self-hosted가 아니어도
+ * 사이트마다 도메인이 다르고, Basic 인증이 `email:token`을 요구한다.
+ */
+function JiraSection({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
   const refreshConnection = useConnectionStore((s) => s.refresh)
   const configured = useConnectionStore((s) => s.jiraConfigured)
   const [baseUrl, setBaseUrl] = useState('https://your-team.atlassian.net')
@@ -78,125 +185,102 @@ export function SettingsModal({
   }, [baseUrl, email, token, canSubmit, refreshConnection, onSaved, onClose])
 
   return (
-    <Modal open={open} onClose={onClose} labelledBy="settings-title">
-      <header className="flex shrink-0 items-center justify-between border-border-subtle border-b px-4 py-3">
-        <h2 id="settings-title" className="text-body text-text-primary">
-          설정
-        </h2>
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-caption text-text-secondary">Jira 연결</h3>
+        <p className="mt-0.5 text-caption text-text-tertiary leading-relaxed-ko">
+          토큰은 macOS 키체인에 저장되며 파일이나 로그에 남지 않습니다.
+        </p>
+      </div>
+
+      {/* 지금 연결돼 있는가 — 저장 여부를 매번 의심하지 않게 상시 표시한다 */}
+      <p
+        className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-caption ${
+          configured ? 'bg-success-muted text-success' : 'bg-surface-inset text-text-tertiary'
+        }`}
+      >
+        {configured ? <Check size={13} /> : <AlertCircle size={13} />}
+        {configured ? '연결됨 — 토큰이 키체인에 저장돼 있습니다' : '아직 연결되지 않았습니다'}
+      </p>
+
+      <Field label="사이트 URL">
+        <input
+          data-selectable
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          spellCheck={false}
+          placeholder="https://your-team.atlassian.net"
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="계정 이메일">
+        <input
+          data-selectable
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          spellCheck={false}
+          placeholder="you@company.com"
+          className={inputClass}
+        />
+      </Field>
+
+      <Field label="API 토큰">
+        <input
+          data-selectable
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="ATATT3x..."
+          className={`${inputClass} font-mono`}
+        />
         <button
           type="button"
-          onClick={onClose}
-          aria-label="닫기"
-          className="grid size-7 place-items-center rounded text-text-tertiary
-                       hover:bg-surface-inset hover:text-text-primary"
+          onClick={() => void openUrl(TOKEN_PAGE)}
+          className="mt-1 flex items-center gap-1 self-start text-caption text-accent hover:underline"
         >
-          <X size={15} />
+          토큰 발급 페이지 열기
+          <ExternalLink size={11} />
         </button>
-      </header>
+      </Field>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <section className="flex flex-col gap-3">
-          <div>
-            <h3 className="text-caption text-text-secondary">Jira 연결</h3>
-            <p className="mt-0.5 text-caption text-text-tertiary leading-relaxed-ko">
-              토큰은 macOS 키체인에 저장되며 파일이나 로그에 남지 않습니다.
-            </p>
-          </div>
+      {test.kind === 'ok' && (
+        <p className="flex items-center gap-1.5 text-caption text-success">
+          <Check size={13} />
+          연결됨 — {test.displayName}
+        </p>
+      )}
+      {test.kind === 'failed' && (
+        <p className="text-caption text-danger leading-relaxed-ko">{test.message}</p>
+      )}
 
-          {/* 지금 연결돼 있는가 — 저장 여부를 매번 의심하지 않게 상시 표시한다 */}
-          <p
-            className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-caption ${
-              configured ? 'bg-success-muted text-success' : 'bg-surface-inset text-text-tertiary'
-            }`}
-          >
-            {configured ? <Check size={13} /> : <AlertCircle size={13} />}
-            {configured ? '연결됨 — 토큰이 키체인에 저장돼 있습니다' : '아직 연결되지 않았습니다'}
-          </p>
-
-          <Field label="사이트 URL">
-            <input
-              data-selectable
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              spellCheck={false}
-              placeholder="https://your-team.atlassian.net"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="계정 이메일">
-            <input
-              data-selectable
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              spellCheck={false}
-              placeholder="you@company.com"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="API 토큰">
-            <input
-              data-selectable
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="ATATT3x..."
-              className={`${inputClass} font-mono`}
-            />
-            <button
-              type="button"
-              onClick={() => void openUrl(TOKEN_PAGE)}
-              className="mt-1 flex items-center gap-1 self-start text-caption text-accent hover:underline"
-            >
-              토큰 발급 페이지 열기
-              <ExternalLink size={11} />
-            </button>
-          </Field>
-
-          {test.kind === 'ok' && (
-            <p className="flex items-center gap-1.5 text-caption text-success">
-              <Check size={13} />
-              연결됨 — {test.displayName}
-            </p>
-          )}
-          {test.kind === 'failed' && (
-            <p className="text-caption text-danger leading-relaxed-ko">{test.message}</p>
-          )}
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => void runTest()}
-              disabled={!canSubmit || test.kind === 'testing'}
-              className="flex items-center gap-1.5 rounded border border-border-subtle px-3 py-1.5
-                           text-caption text-text-secondary hover:bg-surface-inset
-                           disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {test.kind === 'testing' && <Loader2 size={13} className="animate-spin" />}
-              연결 테스트
-            </button>
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!canSubmit || saving}
-              className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-caption
-                           text-surface-base disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saving && <Loader2 size={13} className="animate-spin" />}
-              {configured ? '토큰 교체' : '저장'}
-            </button>
-          </div>
-        </section>
-
-        <hr className="my-5 border-border-subtle" />
-
-        <GithubSection onSaved={onSaved} />
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => void runTest()}
+          disabled={!canSubmit || test.kind === 'testing'}
+          className="flex items-center gap-1.5 rounded border border-border-subtle px-3 py-1.5
+                       text-caption text-text-secondary hover:bg-surface-inset
+                       disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {test.kind === 'testing' && <Loader2 size={13} className="animate-spin" />}
+          연결 테스트
+        </button>
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!canSubmit || saving}
+          className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-caption
+                       text-surface-base disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {saving && <Loader2 size={13} className="animate-spin" />}
+          {configured ? '토큰 교체' : '저장'}
+        </button>
       </div>
-    </Modal>
+    </section>
   )
 }
 
@@ -336,6 +420,154 @@ function GithubSection({ onSaved }: { onSaved: () => void }) {
     </section>
   )
 }
+
+const REPO_PAGE = 'https://github.com/DevooKim/my-pegboard'
+
+/**
+ * 정보 탭 — 이 앱에 대하여 + 업데이트.
+ *
+ * macOS의 "이 앱에 대하여"와 같은 세로 중앙 배치다. 여기가 **버전 정보의 집**이고,
+ * 업데이트 확인·설치도 이 화면 하나에서 끝난다.
+ *
+ * 업데이트 결과는 버튼 자리에 그대로 나타난다. "최신 버전입니다"까지 반드시
+ * 보여주는 이유: 눌렀는데 아무 일도 안 일어나면 버튼이 고장 난 것처럼 보인다.
+ */
+function AboutSection() {
+  const version = useUpdateStore((s) => s.currentVersion)
+  const phase = useUpdateStore((s) => s.phase)
+  const check = useUpdateStore((s) => s.check)
+  const downloadAndInstall = useUpdateStore((s) => s.downloadAndInstall)
+  const restart = useUpdateStore((s) => s.restart)
+
+  return (
+    <section className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+      {/* 아이콘은 장식이 아니라 신원이다. "지금 보고 있는 게 이 앱"을 말한다. */}
+      <img src={appIcon} alt="" width={112} height={112} className="size-28" />
+
+      <div className="flex flex-col gap-0.5">
+        <h3 className="font-semibold text-md text-text-primary">my-pegboard</h3>
+        <p className="text-caption text-text-tertiary">
+          {version ? `버전 ${version}` : '버전 확인 중'}
+        </p>
+      </div>
+
+      <UpdateControl
+        phase={phase}
+        onCheck={() => void check({ manual: true })}
+        onInstall={() => void downloadAndInstall()}
+        onRestart={() => void restart()}
+      />
+
+      <button
+        type="button"
+        onClick={() => void openUrl(REPO_PAGE)}
+        className="text-caption text-accent hover:underline"
+      >
+        GitHub
+      </button>
+
+      <p className="text-caption text-text-quaternary">© 2026 DevooKim. MIT License.</p>
+    </section>
+  )
+}
+
+/**
+ * 업데이트 확인 버튼과 그 결과.
+ *
+ * 한 자리에서 상태가 바뀐다 — 버튼이 결과 표시로 변신하고, 새 버전이 있으면
+ * 설치 버튼이 된다. 자리를 옮기지 않는 이유: 방금 누른 곳에 답이 나와야 읽는다.
+ */
+function UpdateControl({
+  phase,
+  onCheck,
+  onInstall,
+  onRestart,
+}: {
+  phase: UpdatePhase
+  onCheck: () => void
+  onInstall: () => void
+  onRestart: () => void
+}) {
+  if (phase.kind === 'available') {
+    return (
+      <div className="flex flex-col items-center gap-1.5">
+        <button type="button" onClick={onInstall} className={primaryPill}>
+          {phase.version}(으)로 업데이트
+        </button>
+        <p className="text-caption text-text-tertiary">새 버전이 있습니다</p>
+      </div>
+    )
+  }
+
+  if (phase.kind === 'downloading') {
+    // 진행률을 그리지 않는다 — 6MB라 정상이면 1~3초에 끝난다.
+    return (
+      <p className="flex h-7 items-center gap-1.5 text-caption text-text-secondary">
+        <Loader2 size={13} className="animate-spin" />
+        업데이트 중…
+      </p>
+    )
+  }
+
+  if (phase.kind === 'installed') {
+    return (
+      <div className="flex flex-col items-center gap-1.5">
+        <button type="button" onClick={onRestart} className={primaryPill}>
+          지금 재시작
+        </button>
+        <p className="max-w-64 text-caption text-text-tertiary leading-relaxed-ko">
+          {phase.version} 설치가 끝났습니다. 다음에 앱을 열 때 적용해도 됩니다.
+        </p>
+      </div>
+    )
+  }
+
+  if (phase.kind === 'failed') {
+    return (
+      <div className="flex flex-col items-center gap-1.5">
+        {/* 서명 검증 실패는 앱 안에서 할 수 있는 게 없다. 유일한 출구를 준다. */}
+        {phase.signature ? (
+          <button
+            type="button"
+            onClick={() => void openUrl(RELEASES_PAGE)}
+            className={`${primaryPill} flex items-center gap-1.5`}
+          >
+            릴리즈 페이지에서 직접 받기
+            <ExternalLink size={11} />
+          </button>
+        ) : (
+          <button type="button" onClick={onCheck} className={neutralPill}>
+            다시 시도
+          </button>
+        )}
+        <p className="max-w-72 text-caption text-danger leading-relaxed-ko">{phase.message}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onCheck}
+        disabled={phase.kind === 'checking'}
+        className={`${neutralPill} flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-60`}
+      >
+        {phase.kind === 'checking' && <Loader2 size={13} className="animate-spin" />}
+        업데이트 확인
+      </button>
+      {/* 수동 확인의 결과는 반드시 말한다. 조용하면 고장으로 보인다. */}
+      {phase.kind === 'latest' && (
+        <p className="text-caption text-text-tertiary">최신 버전입니다</p>
+      )}
+    </div>
+  )
+}
+
+/** 정보 탭의 버튼 두 종. 작은 컨트롤이라 알약이 맞다. */
+const neutralPill =
+  'rounded-md bg-surface-inset px-3 py-1.5 text-caption text-text-secondary hover:text-text-primary'
+const primaryPill = 'rounded-md bg-accent px-3 py-1.5 text-caption text-surface-base'
 
 type GithubState =
   | { kind: 'idle' }

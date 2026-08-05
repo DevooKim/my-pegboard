@@ -28,8 +28,17 @@
       "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: https:; style-src 'self' 'unsafe-inline'; frame-src https: http://localhost:* http://127.0.0.1:*"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI0Q0Q3OTdGRjMwRUNBM0UKUldRK3lnN3pmM25OSkZ3b2Y2R202V3VxbUVjRjlWa3I0TDB0Y1RNQ0hmajYzMTMvcDhTRTF2VjgK",
+      "endpoints": [
+        "https://github.com/DevooKim/my-pegboard/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "app",
       "dmg"
