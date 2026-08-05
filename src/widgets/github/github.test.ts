@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GithubItem } from '#/ipc/bindings'
+import type { GithubItem, GithubRepo } from '#/ipc/bindings'
 import { groupByRepo, shortRepo } from '#/widgets/github/grouping'
 
 function item(over: Partial<GithubItem> = {}): GithubItem {
@@ -127,5 +127,56 @@ describe('shortRepo', () => {
   /** 슬래시가 없는 이상한 값이 와도 잘라내지 않는다. */
   it('슬래시가 없으면 그대로', () => {
     expect(shortRepo('weird', true)).toBe('weird')
+  })
+})
+
+/**
+ * 조직 목록은 저장소 소유자에서 뽑는다. 별도 API 호출을 안 하는 이유:
+ * 저장소 목록에 이미 소유자가 들어 있고, 우리가 관심 있는 조직은
+ * "내 저장소가 있는 조직"뿐이다.
+ */
+describe('조직 추출', () => {
+  function orgsOf(repos: GithubRepo[]) {
+    const seen = new Map<string, number>()
+    for (const r of repos) {
+      if (!r.isOrganization) continue
+      const login = r.owner || r.nameWithOwner.split('/')[0]
+      if (login) seen.set(login, (seen.get(login) ?? 0) + 1)
+    }
+    return [...seen.entries()]
+      .map(([login, count]) => ({ login, count }))
+      .sort((a, b) => b.count - a.count)
+  }
+
+  function repo(over: Partial<GithubRepo> = {}): GithubRepo {
+    return {
+      nameWithOwner: 'o/r',
+      pushedAt: null,
+      isPrivate: false,
+      isArchived: false,
+      owner: 'o',
+      isOrganization: false,
+      ...over,
+    }
+  }
+
+  it('개인 저장소는 조직 목록에 없다', () => {
+    expect(orgsOf([repo({ owner: 'me', isOrganization: false })])).toEqual([])
+  })
+
+  it('저장소가 많은 조직이 위로', () => {
+    const list = orgsOf([
+      repo({ nameWithOwner: 'small/a', owner: 'small', isOrganization: true }),
+      repo({ nameWithOwner: 'big/a', owner: 'big', isOrganization: true }),
+      repo({ nameWithOwner: 'big/b', owner: 'big', isOrganization: true }),
+    ])
+    expect(list.map((o) => o.login)).toEqual(['big', 'small'])
+    expect(list[0]?.count).toBe(2)
+  })
+
+  /** owner는 serde(default)라 예전 캐시에는 없다. 이름에서 잘라 써야 한다. */
+  it('owner가 비어도 이름에서 복구한다', () => {
+    const list = orgsOf([repo({ nameWithOwner: 'acme/thing', owner: '', isOrganization: true })])
+    expect(list).toEqual([{ login: 'acme', count: 1 }])
   })
 })

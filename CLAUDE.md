@@ -255,3 +255,41 @@ Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 
   등록 지점이 7곳이라 하나만 빠뜨려도 위젯이 재시작 때 조용히 사라진다.
 - 단축키: `⌘,` 설정 / `⌘R` 전체 새로고침 / `⌘N` 위젯 추가 / `Esc` 모달 닫기
   / `⌘⇧N` 티켓 생성(첫 Jira 위젯)
+
+---
+
+## 릴리즈
+
+```bash
+# 1. 버전을 네 곳에 올린다 (셋을 고치면 Cargo.lock이 따라온다)
+#    package.json · src-tauri/tauri.conf.json · src-tauri/Cargo.toml
+cd src-tauri && cargo check && cd ..
+
+# 2. 검증
+bun run typecheck && bun run lint && bun run test
+cd src-tauri && cargo test && cd ..
+
+# 3. 빌드
+bun run tauri build
+
+# 4. ★ 배포 전 검사 — 건너뛰지 말 것
+./scripts/verify-release.sh
+
+# 5. 태그 + 릴리즈
+git tag -a vX.Y.Z-alpha -m "..." && git push origin vX.Y.Z-alpha
+gh release create vX.Y.Z-alpha <dmg> --prerelease --notes-file <notes>
+```
+
+**4번이 있는 이유:** v0.3.0-alpha를 **서명되지 않은 채로 배포했다.** 다른
+맥에서 "손상되었기 때문에 열 수 없습니다"가 뜨고 우클릭→열기로도 안 뚫렸다.
+
+무서운 부분은 **빌드한 기기에서는 멀쩡했다는 것**이다. 직접 만든 파일에는
+quarantine이 없어 Gatekeeper가 검사를 안 하고, `run.sh`는 개발 빌드를 따로
+서명해준다. **로컬에서 실행되는 것은 배포 가능하다는 증거가 아니다.**
+
+`verify-release.sh`가 dmg를 마운트해 서명·리소스 봉인·quarantine 상태·
+Gatekeeper 판정·버전 일치를 본다. 실패하면 exit 1이다.
+
+**자체 서명이라 받는 사람은 첫 실행을 우클릭 → 열기로 해야 한다.** 이건
+정상이고 릴리즈 노트에 매번 적는다. 경고까지 없애려면 Apple Developer
+공증($99/년)이 필요한데, 개인용 앱이라 하지 않는다.

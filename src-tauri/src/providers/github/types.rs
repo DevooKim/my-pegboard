@@ -100,11 +100,23 @@ pub struct GithubSearchPage {
 pub struct GithubRepo {
     /// `owner/name`. 설정에 저장되는 식별자다.
     pub name_with_owner: String,
-    /// 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 68개를 알파벳순으로 늘어놓으면
-    /// 지금 일하는 저장소를 찾아야 한다.
+    /// 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 70여 개를 알파벳순으로
+    /// 늘어놓으면 지금 일하는 저장소를 찾아야 한다.
     pub pushed_at: Option<String>,
     pub is_private: bool,
     pub is_archived: bool,
+    /// 소유자 로그인(`owner/name`의 앞부분). 조직 필터가 이걸로 묶는다.
+    ///
+    /// `name_with_owner`에서 잘라 쓸 수도 있지만, 조직 여부는 거기서 알 수
+    /// 없으므로 어차피 따로 받아야 한다. 같이 둔다.
+    #[serde(default)]
+    pub owner: String,
+    /// 소유자가 조직인가. GraphQL `owner.__typename == "Organization"`.
+    ///
+    /// 기존 캐시에는 이 필드가 없다 → `serde(default)`로 false가 된다.
+    /// 조직 목록이 비어 보이면 사용자가 ↻로 갱신하면 채워진다.
+    #[serde(default)]
+    pub is_organization: bool,
 }
 
 // ─────────────────────────── GraphQL 응답 파싱용 ───────────────────────────
@@ -244,6 +256,15 @@ pub(crate) struct RepoNode {
     pub pushed_at: Option<String>,
     pub is_private: bool,
     pub is_archived: bool,
+    pub owner: Option<RepoOwner>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RepoOwner {
+    pub login: String,
+    /// `User` 또는 `Organization`.
+    #[serde(rename = "__typename")]
+    pub typename: Option<String>,
 }
 
 impl SearchNode {

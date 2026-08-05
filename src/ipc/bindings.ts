@@ -570,10 +570,24 @@ export type GithubRepo = {
  */
 nameWithOwner: string; 
 /**
- * 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 68개를 알파벳순으로 늘어놓으면
- * 지금 일하는 저장소를 찾아야 한다.
+ * 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 70여 개를 알파벳순으로
+ * 늘어놓으면 지금 일하는 저장소를 찾아야 한다.
  */
-pushedAt: string | null; isPrivate: boolean; isArchived: boolean }
+pushedAt: string | null; isPrivate: boolean; isArchived: boolean; 
+/**
+ * 소유자 로그인(`owner/name`의 앞부분). 조직 필터가 이걸로 묶는다.
+ * 
+ * `name_with_owner`에서 잘라 쓸 수도 있지만, 조직 여부는 거기서 알 수
+ * 없으므로 어차피 따로 받아야 한다. 같이 둔다.
+ */
+owner?: string; 
+/**
+ * 소유자가 조직인가. GraphQL `owner.__typename == "Organization"`.
+ * 
+ * 기존 캐시에는 이 필드가 없다 → `serde(default)`로 false가 된다.
+ * 조직 목록이 비어 보이면 사용자가 ↻로 갱신하면 채워진다.
+ */
+isOrganization?: boolean }
 export type GithubRepoList = { repos: GithubRepo[]; fetchedAt: string | null }
 export type GithubWidgetConfig = { 
 /**
@@ -588,14 +602,17 @@ title?: string | null; query: GithubQuery; maxResults: number;
  */
 repos?: string[]; 
 /**
+ * 조직 범위. 빈 목록이면 전체.
+ * 
+ * `repos`와 **합집합**이다(실측). GitHub 검색에서 `org:x repo:o/a`는
+ * "x 조직 **또는** o/a"이지 교집합이 아니다. 설정 UI가 둘을 동시에 쓰지
+ * 않도록 안내한다.
+ */
+orgs?: string[]; 
+/**
  * 저장소별로 묶어서 보여줄까. 기본 켬.
  */
-groupByRepo?: boolean; 
-/**
- * 그룹 순서를 사용자가 지정한 것. 여기 없는 저장소는 **숨지 않고**
- * 아래쪽에 최신순으로 붙는다 — 숨기면 리뷰 요청이 조용히 사라진다.
- */
-repoOrder?: string[]; refreshSecs?: number }
+groupByRepo?: boolean; refreshSecs?: number }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  */

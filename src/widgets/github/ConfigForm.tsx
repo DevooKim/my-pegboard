@@ -1,4 +1,4 @@
-import { GripVertical, RefreshCw, X } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   commands,
@@ -8,6 +8,7 @@ import {
 } from '#/ipc/bindings'
 import { relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetConfigFormProps } from '#/widgets/types'
+import { ScopePicker } from './ScopePicker'
 
 const RAW = '__raw__'
 
@@ -45,20 +46,12 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
   }, [loadRepos])
 
   const scoped = config.repos ?? []
-  const order = config.repoOrder ?? []
   const selected = config.query.kind === 'preset' ? config.query.id : RAW
 
   const defaultTitle =
     config.query.kind === 'preset'
       ? (presets.find((p) => p.id === presetId(config))?.name ?? 'GitHub')
       : 'GitHub'
-
-  const toggleRepo = (name: string) => {
-    onChange({
-      ...config,
-      repos: scoped.includes(name) ? scoped.filter((r) => r !== name) : [...scoped, name],
-    })
-  }
 
   return (
     <div className="flex flex-col">
@@ -133,12 +126,11 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
         )}
       </Section>
 
-      {/* 저장소 범위 — 프리셋·직접 입력 **양쪽 모두**에 적용된다.
-          `repo:`를 더하는 것은 순수한 교집합이라 원 쿼리의 뜻을 바꾸지 않는다. */}
+      {/* 범위 — 프리셋·직접 입력 **양쪽 모두**에 적용된다. */}
       <Section>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <span className="flex items-center gap-2">
-            <span className="text-caption text-text-secondary">저장소 범위</span>
+            <span className="text-caption text-text-secondary">범위</span>
             <button
               type="button"
               onClick={() => void loadRepos(true)}
@@ -171,25 +163,19 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
             </p>
           )}
 
-          <div className="flex flex-wrap gap-1">
-            {repos.map((r) => (
-              <Chip
-                key={r.nameWithOwner}
-                active={scoped.includes(r.nameWithOwner)}
-                onClick={() => toggleRepo(r.nameWithOwner)}
-                title={r.nameWithOwner}
-              >
-                {r.nameWithOwner}
-              </Chip>
-            ))}
-          </div>
-          <span className="text-caption text-text-tertiary">
-            {scoped.length === 0 ? '전체 저장소' : `${scoped.length}개 저장소로 좁힘`}
-          </span>
+          <ScopePicker
+            repos={repos}
+            selectedRepos={scoped}
+            selectedOrgs={config.orgs ?? []}
+            onChangeRepos={(next) => onChange({ ...config, repos: next })}
+            onChangeOrgs={(next) => onChange({ ...config, orgs: next })}
+          />
         </div>
       </Section>
 
-      {/* 그룹핑 */}
+      {/* 그룹핑.
+          순서 지정 UI가 여기 없는 이유: 위 "범위"에서 고른 순서가 곧 그룹
+          순서다. 같은 저장소 목록을 두 군데서 고르게 하지 않는다. */}
       <Section>
         <label className="flex items-center gap-2">
           <input
@@ -200,13 +186,11 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
           />
           <span className="text-body text-text-primary">저장소별로 묶어서 보기</span>
         </label>
-
         {(config.groupByRepo ?? true) && (
-          <RepoOrder
-            order={order}
-            repos={repos}
-            onChange={(next) => onChange({ ...config, repoOrder: next })}
-          />
+          <span className="text-caption text-text-tertiary">
+            그룹 순서는 위 <b>범위</b>에서 고른 순서를 따릅니다. 범위를 지정하지 않으면 최근
+            갱신순입니다.
+          </span>
         )}
       </Section>
 
@@ -231,116 +215,6 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
   )
 }
 
-/**
- * 그룹 순서. 지정한 것이 위로 오고, **나머지는 자동으로 최신순**이다.
- *
- * 여기 없는 저장소를 숨기지 않는 이유: 리뷰 요청이 조용히 사라지면 안 된다.
- * 필터가 필요하면 위의 저장소 범위를 쓴다 — 순서와 필터는 다른 기능이다.
- *
- * 드래그는 Todo 위젯과 같은 패턴이다 — **손잡이가 드래그 소스**다.
- * 행에 draggable을 걸고 켰다 껐다 하면 React 재조정과 싸우게 된다
- * (DECISIONS 13에 실패 두 번의 기록이 있다).
- */
-function RepoOrder({
-  order,
-  repos,
-  onChange,
-}: {
-  order: string[]
-  repos: GithubRepo[]
-  onChange: (next: string[]) => void
-}) {
-  const [dragging, setDragging] = useState<string | null>(null)
-
-  const move = (from: string, toIndex: number) => {
-    const next = order.filter((r) => r !== from)
-    next.splice(toIndex, 0, from)
-    onChange(next)
-  }
-
-  const unordered = repos.filter((r) => !order.includes(r.nameWithOwner))
-
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-caption text-text-secondary">그룹 순서</span>
-
-      {order.length === 0 ? (
-        <span className="text-caption text-text-tertiary">
-          지정하지 않으면 최근 갱신순으로 정렬됩니다
-        </span>
-      ) : (
-        <ul className="flex flex-col">
-          {order.map((repo, index) => (
-            <li
-              key={repo}
-              onDragOver={(e) => {
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (dragging && dragging !== repo) move(dragging, index)
-                setDragging(null)
-              }}
-              className={`group flex items-center gap-1.5 rounded px-1 py-0.5
-                          ${dragging === repo ? 'bg-surface-inset opacity-25' : 'hover:bg-surface-inset'}`}
-            >
-              <span
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', repo)
-                  e.dataTransfer.effectAllowed = 'move'
-                  requestAnimationFrame(() => setDragging(repo))
-                }}
-                onDragEnd={() => setDragging(null)}
-                title="끌어서 순서 변경"
-                aria-hidden="true"
-                className="shrink-0 cursor-grab rounded p-0.5 text-text-quaternary
-                           opacity-0 transition-opacity duration-fast active:cursor-grabbing
-                           group-hover:opacity-100"
-              >
-                <GripVertical size={11} />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-caption text-text-primary">{repo}</span>
-              <button
-                type="button"
-                onClick={() => onChange(order.filter((r) => r !== repo))}
-                title="순서 지정에서 빼기"
-                aria-label={`${repo} 순서 지정 해제`}
-                className="shrink-0 rounded p-0.5 text-text-quaternary opacity-0
-                           transition-opacity duration-fast hover:text-danger
-                           focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <X size={11} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {unordered.length > 0 && (
-        <details className="mt-1">
-          <summary className="cursor-pointer text-caption text-text-tertiary">
-            순서 지정에 추가 ({unordered.length})
-          </summary>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {unordered.map((r) => (
-              <Chip
-                key={r.nameWithOwner}
-                active={false}
-                onClick={() => onChange([...order, r.nameWithOwner])}
-                title={`${r.nameWithOwner} 순서 지정에 추가`}
-              >
-                {r.nameWithOwner}
-              </Chip>
-            ))}
-          </div>
-        </details>
-      )}
-    </div>
-  )
-}
-
 function Section({ last, children }: { last?: boolean; children: React.ReactNode }) {
   return (
     <div className={`flex flex-col gap-3 px-3 py-3 ${last ? '' : 'border-border-subtle border-b'}`}>
@@ -358,35 +232,6 @@ function currentSearch(config: GithubWidgetConfig, presets: GithubPreset[]): str
   const query = config.query
   if (query.kind === 'raw') return query.query
   return presets.find((p) => p.id === query.id)?.query ?? 'is:open'
-}
-
-function Chip({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={`max-w-full truncate rounded border px-1.5 py-0.5 text-caption
-                  transition-colors duration-fast focus-visible:outline-2 focus-visible:outline-accent
-                  ${
-                    active
-                      ? 'border-border-accent bg-accent-muted text-text-primary'
-                      : 'border-border-subtle text-text-tertiary hover:text-text-primary'
-                  }`}
-    >
-      {children}
-    </button>
-  )
 }
 
 function NumberField({

@@ -66,18 +66,35 @@ query($q: String!, $first: Int!) {
 
 /// 저장소 목록 쿼리.
 ///
-/// `ownerAffiliations`에 세 가지를 다 넣는 이유: 내 저장소만이 아니라 협업자로
-/// 참여한 것, 조직 소속인 것까지 봐야 한다. 실측 68개가 이 조합의 결과다.
+/// # `affiliations`와 `ownerAffiliations`는 다른 것이다
+///
+/// 이름이 비슷해서 헷갈리는데 뜻이 다르다:
+///
+/// - `ownerAffiliations` — **저장소 소유자**와 나의 관계
+/// - `affiliations` — **저장소 자체**에 대한 나의 권한
+///
+/// 처음에는 `ownerAffiliations`만 썼고 **저장소 4개가 조용히 빠졌다**(실측
+/// 68 vs 72). 남의 개인 저장소에 협업자로 초대된 경우가 전자로는 안 잡힌다 —
+/// 소유자가 나와 아무 관계 없는 사람이기 때문이다.
+///
+/// 둘 다 넣어야 전부 나온다.
+///
+/// `owner { login __typename }`은 조직 필터 UI가 쓴다. `__typename`으로
+/// 사용자와 조직을 가른다(`User` / `Organization`).
 const REPOS_QUERY: &str = r#"
 query($first: Int!, $after: String) {
   viewer {
     repositories(
       first: $first
       after: $after
+      affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
       orderBy: { field: PUSHED_AT, direction: DESC }
     ) {
-      nodes { nameWithOwner pushedAt isPrivate isArchived }
+      nodes {
+        nameWithOwner pushedAt isPrivate isArchived
+        owner { login __typename }
+      }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -267,11 +284,26 @@ impl GithubClient {
                 .await?;
 
             let conn = data.viewer.repositories;
-            all.extend(conn.nodes.into_iter().flatten().map(|n| GithubRepo {
-                name_with_owner: n.name_with_owner,
-                pushed_at: n.pushed_at,
-                is_private: n.is_private,
-                is_archived: n.is_archived,
+            all.extend(conn.nodes.into_iter().flatten().map(|n| {
+                // owner가 없으면 `owner/name`에서 잘라 쓴다. 조직 여부는
+                // 알 수 없으므로 false로 둔다 — 조직 필터에서 빠질 뿐이다.
+                let (owner, is_organization) = match n.owner {
+                    Some(o) => (o.login, o.typename.as_deref() == Some("Organization")),
+                    None => (
+                        n.name_with_owner
+                            .split_once('/')
+                            .map_or(String::new(), |(o, _)| o.to_owned()),
+                        false,
+                    ),
+                };
+                GithubRepo {
+                    name_with_owner: n.name_with_owner,
+                    pushed_at: n.pushed_at,
+                    is_private: n.is_private,
+                    is_archived: n.is_archived,
+                    owner,
+                    is_organization,
+                }
             }));
 
             if !conn.page_info.has_next_page {

@@ -9,7 +9,7 @@
 //!   손으로 썼다. 실제 계정에 그런 항목이 없어서 캡처할 수 없었다.
 
 use super::error::{classify_status, ErrorKind, GithubError};
-use super::presets::{apply_repo_filter, GithubPreset, GithubQuery, DEFAULT_PRESET_ID, PRESETS};
+use super::presets::{apply_scope, GithubPreset, GithubQuery, DEFAULT_PRESET_ID, PRESETS};
 use super::types::{CheckState, GqlEnvelope, ItemState, ReviewState, SearchData};
 
 /// fixture를 파싱해 평평한 항목 목록으로 만든다. 클라이언트가 하는 일과 같다.
@@ -249,7 +249,7 @@ fn raw_query_passes_through_untouched() {
 
 #[test]
 fn empty_filter_leaves_query_alone() {
-    assert_eq!(apply_repo_filter("is:open", &[]), "is:open");
+    assert_eq!(apply_scope("is:open", &[], &[]), "is:open");
 }
 
 /// `repo:`가 여러 개면 GitHub 검색에서 OR로 동작한다 — "이 저장소들 중에서".
@@ -257,8 +257,31 @@ fn empty_filter_leaves_query_alone() {
 fn repo_filter_appends_each_repo() {
     let repos = vec!["o/a".to_string(), "o/b".to_string()];
     assert_eq!(
-        apply_repo_filter("is:open", &repos),
+        apply_scope("is:open", &repos, &[]),
         "is:open repo:o/a repo:o/b"
+    );
+}
+
+#[test]
+fn org_filter_appends_each_org() {
+    let orgs = vec!["acme".to_string(), "globex".to_string()];
+    assert_eq!(
+        apply_scope("is:open", &[], &orgs),
+        "is:open org:acme org:globex"
+    );
+}
+
+/// 조직이 저장소보다 앞에 온다. 넓은 범위를 먼저 읽는 편이 눈에 낫다.
+///
+/// **둘을 함께 쓰면 합집합이다** — 실측으로 확인했다(2026-08-05):
+/// `involves:@me org:X`가 21건, 여기에 `repo:Y`(0건)를 더해도 21건이었다.
+/// 교집합이면 0이 나왔어야 한다. 이 문자열 조립 자체는 옳고, 의미가
+/// 사용자 기대와 다를 수 있다는 것을 설정 UI가 알려준다.
+#[test]
+fn org_comes_before_repo() {
+    assert_eq!(
+        apply_scope("is:open", &["o/a".to_string()], &["acme".to_string()]),
+        "is:open org:acme repo:o/a"
     );
 }
 
