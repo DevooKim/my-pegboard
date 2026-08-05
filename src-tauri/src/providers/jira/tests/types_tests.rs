@@ -881,3 +881,188 @@ fn plain_project_page_reads_is_last() {
     let page: super::super::types::ProjectSearchPage = serde_json::from_value(raw).unwrap();
     assert!(page.is_last, "isLast를 읽지 못하면 빈 페이지를 한 번 더 받는다");
 }
+
+// ---------------------------------------------------------------------------
+// 상태 전이 (DECISIONS 11.5 개정)
+// ---------------------------------------------------------------------------
+
+const TRANSITIONS: &str = include_str!("fixtures/transitions.json");
+
+/// fixture는 실측 응답(2026-08-06, EDU 5개 / DTH 7개)의 모양을 따르되 필수 필드
+/// 조합을 일부러 심어 뒀다. 실측한 두 프로젝트는 전이 전부가 `fields: {}`여서
+/// 그것만으로는 `has_required_fields`의 true 경로를 검증할 수 없다.
+fn transitions() -> Vec<JiraTransition> {
+    let raw: super::super::types::RawTransitionsResponse =
+        serde_json::from_str(TRANSITIONS).expect("fixture should deserialize");
+    raw.transitions.into_iter().map(Into::into).collect()
+}
+
+fn transition(id: &str) -> JiraTransition {
+    transitions()
+        .into_iter()
+        .find(|t| t.id == id)
+        .unwrap_or_else(|| panic!("전이 {id}이 fixture에 있어야 한다"))
+}
+
+/// 응답 한 개를 만들어 변환까지 돌린다. 필드 조합을 좁게 겨냥하는 테스트용.
+fn one_transition(raw: serde_json::Value) -> JiraTransition {
+    let parsed: super::super::types::RawTransitionsResponse =
+        serde_json::from_value(serde_json::json!({ "transitions": [raw] })).unwrap();
+    parsed.transitions.into_iter().next().unwrap().into()
+}
+
+#[test]
+fn deserializes_all_transitions_with_status_category() {
+    let all = transitions();
+    assert_eq!(all.len(), 4);
+
+    let todo = transition("11");
+    assert_eq!(todo.name, "할 일");
+    assert_eq!(todo.to_status_name.as_deref(), Some("할 일"));
+    // 색의 근거는 상태 이름이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
+    assert_eq!(todo.to_status_category.as_deref(), Some("new"));
+
+    assert_eq!(
+        transition("21").to_status_category.as_deref(),
+        Some("indeterminate")
+    );
+    assert_eq!(transition("41").to_status_category.as_deref(), Some("done"));
+}
+
+/// 전이 이름과 도달 상태 이름은 별개다. 실측한 두 프로젝트에서는 우연히
+/// 같았지만 Jira가 같을 것을 보장하지는 않는다.
+#[test]
+fn transition_name_and_target_status_name_are_separate() {
+    let done = transition("41");
+    assert_eq!(done.name, "완료 처리");
+    assert_eq!(done.to_status_name.as_deref(), Some("완료"));
+}
+
+// --- has_required_fields 판정: required × hasDefaultValue 네 조합 ------------
+
+/// (1) 필드가 아예 없음 — 실측한 EDU·DTH의 모든 전이가 이 모양이다.
+#[test]
+fn no_fields_means_no_required_input() {
+    assert!(!transition("11").has_required_fields);
+    assert!(!transition("21").has_required_fields);
+}
+
+/// (2) required:true + hasDefaultValue:false → 사용자가 채워야 한다 → 브라우저로.
+/// 전형적인 사례가 '완료' 전이의 resolution이다.
+#[test]
+fn required_without_default_needs_user_input() {
+    assert!(
+        transition("41").has_required_fields,
+        "resolution이 required + hasDefaultValue:false다"
+    );
+}
+
+/// (3) required:true + hasDefaultValue:true → 서버가 채운다 → 앱에서 실행 가능.
+/// 생성 폼의 EDU reporter와 같은 논리다 (CLAUDE.local.md 실측).
+#[test]
+fn required_with_default_does_not_need_user_input() {
+    assert!(
+        !transition("61").has_required_fields,
+        "hasDefaultValue: true는 서버가 채운다 — 폼이 필요 없다"
+    );
+}
+
+/// (4) required:false → 몇 개가 있든, 기본값이 있든 없든 판정에 영향이 없다.
+#[test]
+fn optional_fields_alone_do_not_trigger_the_link() {
+    let t = one_transition(serde_json::json!({
+        "id": "99", "name": "이동",
+        "to": { "name": "진행 중", "statusCategory": { "key": "indeterminate" } },
+        "fields": {
+            "assignee": { "required": false, "hasDefaultValue": false },
+            "labels": { "required": false, "hasDefaultValue": true }
+        }
+    }));
+    assert!(!t.has_required_fields, "required가 아닌 필드는 폼이 필요 없다");
+}
+
+/// 필수 필드 하나라도 있으면 참이다. 선택 필드에 섞여 있어도 놓치지 않는다.
+#[test]
+fn one_required_field_among_optionals_is_enough() {
+    let t = one_transition(serde_json::json!({
+        "id": "99", "name": "완료",
+        "fields": {
+            "assignee": { "required": false, "hasDefaultValue": false },
+            "resolution": { "required": true, "hasDefaultValue": false },
+            "labels": { "required": false, "hasDefaultValue": true }
+        }
+    }));
+    assert!(t.has_required_fields);
+}
+
+/// `hasDefaultValue`가 응답에서 빠진 경우. serde 기본값 false로 읽혀
+/// **필수로 판정**돼야 한다 — 모르면 안전한 쪽(브라우저)으로 보낸다.
+#[test]
+fn missing_has_default_value_is_treated_as_required_input() {
+    let t = one_transition(serde_json::json!({
+        "id": "99", "name": "완료",
+        "fields": { "resolution": { "required": true } }
+    }));
+    assert!(
+        t.has_required_fields,
+        "hasDefaultValue를 모르면 서버가 채운다고 가정하면 안 된다"
+    );
+}
+
+// --- 빠진 필드에 대한 내구성 ------------------------------------------------
+
+/// 권한이 없거나 워크플로우 끝단이면 Jira가 200 + 빈 배열을 준다.
+/// **에러가 아니다** — 빈 Vec으로 흘려보내고 화면이 그 사실을 말한다.
+#[test]
+fn empty_transition_list_is_not_an_error() {
+    let parsed: super::super::types::RawTransitionsResponse =
+        serde_json::from_str(r#"{"expand":"transitions","transitions":[]}"#).unwrap();
+    assert!(parsed.transitions.is_empty());
+}
+
+/// `transitions` 키 자체가 없어도 빈 목록으로 읽는다.
+#[test]
+fn absent_transitions_key_reads_as_empty() {
+    let parsed: super::super::types::RawTransitionsResponse =
+        serde_json::from_str(r#"{"expand":"transitions"}"#).unwrap();
+    assert!(parsed.transitions.is_empty());
+}
+
+/// `to.statusCategory`가 없어도 깨지지 않는다. 워크플로우가 이상하게 설정된
+/// 프로젝트에서 실제로 누락될 수 있고, 그때는 배지 색만 기본값이 되면 된다.
+#[test]
+fn missing_status_category_does_not_break_parsing() {
+    let t = one_transition(serde_json::json!({
+        "id": "77", "name": "이동", "to": { "name": "어딘가" }
+    }));
+    assert_eq!(t.to_status_name.as_deref(), Some("어딘가"));
+    assert_eq!(t.to_status_category, None);
+    assert_eq!(t.name, "이동");
+}
+
+/// `to`가 통째로 없는 경우까지.
+#[test]
+fn missing_to_object_does_not_break_parsing() {
+    let t = one_transition(serde_json::json!({ "id": "88", "name": "이동" }));
+    assert_eq!(t.to_status_name, None);
+    assert_eq!(t.to_status_category, None);
+    assert!(!t.has_required_fields);
+}
+
+/// 이름이 없으면 도달 상태 이름 → id 순으로 대신한다.
+/// 빈 버튼(무엇을 누르는지 모르는 버튼)을 그리지 않기 위해서다.
+#[test]
+fn nameless_transition_falls_back_to_target_then_id() {
+    let no_name = one_transition(serde_json::json!({ "id": "1", "to": { "name": "완료" } }));
+    assert_eq!(no_name.name, "완료", "이름이 없으면 도달 상태 이름을 쓴다");
+
+    let blank = one_transition(serde_json::json!({ "id": "2", "name": "  " }));
+    assert_eq!(blank.name, "2", "그것도 없으면 id를 쓴다");
+}
+
+/// 우리가 안 읽는 필드(`hasScreen`·`isLooped`·`isConditional`·`self`·`allowedValues` …)가
+/// 있어도 역직렬화가 깨지지 않는다. fixture를 실제 응답 모양으로 둔 이유다.
+#[test]
+fn unread_response_fields_do_not_break_deserialization() {
+    assert_eq!(transitions().len(), 4, "부가 필드가 파싱을 막지 않는다");
+}

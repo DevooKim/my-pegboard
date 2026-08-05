@@ -8,6 +8,7 @@ import {
   renderedColumns,
   type ToggleableColumn,
 } from '#/widgets/jira/columns'
+import { StatusTransitionPopover } from '#/widgets/jira/StatusTransitionPopover'
 
 /**
  * 티켓 행 하나.
@@ -25,6 +26,7 @@ export function IssueRow({
   now,
   browseUrl,
   onOpen,
+  onTransitioned,
 }: {
   issue: JiraIssue
   density: 'compact' | 'normal' | 'wide'
@@ -36,9 +38,12 @@ export function IssueRow({
   browseUrl: (key: string) => string | null
   /** 행 클릭 → 상세 모달 (D1). */
   onOpen: (key: string) => void
+  /** 상태 전이 성공 → 목록 재조회 (DECISIONS 11.5 개정). */
+  onTransitioned?: (() => void) | undefined
 }) {
   // 색의 근거는 상태 '이름'이 아니라 카테고리 키다 — 이름은 프로젝트마다 다르다.
   const statusCategory = issue.status?.statusCategory?.key ?? 'new'
+  const href = browseUrl(issue.key)
   const shown = renderedColumns(density, visible)
 
   const openDetail = () => onOpen(issue.key)
@@ -46,7 +51,6 @@ export function IssueRow({
   // ⌘+클릭은 브라우저로. "새 창에서 열기"라는 익숙한 관습을 그대로 쓴다.
   const handleClick = (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) {
-      const href = browseUrl(issue.key)
       if (href) void openUrl(href)
       return
     }
@@ -83,9 +87,7 @@ export function IssueRow({
       }}
     >
       {shown.map((col) =>
-        col === 'key' ? (
-          <IssueLink key={col} issueKey={issue.key} href={browseUrl(issue.key)} mono />
-        ) : null,
+        col === 'key' ? <IssueLink key={col} issueKey={issue.key} href={href} mono /> : null,
       )}
 
       {/* 제목은 항상, 그리고 키 바로 다음에 온다 */}
@@ -109,6 +111,8 @@ export function IssueRow({
               statusCategory={statusCategory}
               now={now}
               browseUrl={browseUrl}
+              href={href}
+              onTransitioned={onTransitioned}
             />
           </div>
         ))}
@@ -183,6 +187,8 @@ function Cell({
   statusCategory,
   now,
   browseUrl,
+  href,
+  onTransitioned,
 }: {
   col: ToggleableColumn
   issue: JiraIssue
@@ -190,6 +196,9 @@ function Cell({
   statusCategory: string
   now: number
   browseUrl: (key: string) => string | null
+  /** 이 티켓의 Jira URL. 상위 항목은 키가 달라서 `browseUrl`을 따로 쓴다. */
+  href: string | null
+  onTransitioned?: (() => void) | undefined
 }) {
   switch (col) {
     case 'issueType':
@@ -203,30 +212,43 @@ function Cell({
       )
 
     case 'status':
-      return density === 'compact' ? (
-        <span
-          role="img"
-          className="size-1.5 rounded-full"
-          style={{ backgroundColor: statusColor(statusCategory) }}
-          title={issue.status?.name ?? '상태 없음'}
-          aria-label={issue.status?.name ?? '상태 없음'}
-        />
-      ) : (
-        // 배지는 글자만 감싼다 — min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
-        // 열 전체가 색칠된 것처럼 보인다.
-        //
-        // 음수 마진으로 패딩을 상쇄하지 않는다. 그러면 배지 배경이 트랙 밖으로
-        // 삐져나가고 글자만 왼쪽으로 당겨져 오히려 이웃 열과 어긋나 보인다.
-        // 트랙 자체는 이미 헤더와 픽셀 단위로 일치한다(실측).
-        <span
-          className="max-w-full truncate rounded px-1.5 py-0.5 text-caption"
-          style={{
-            color: statusColor(statusCategory),
-            backgroundColor: statusMuted(statusCategory),
-          }}
+      // 배지를 누르면 상태 전이 팝오버가 열린다 (DECISIONS 11.5 개정).
+      // 클릭이 행까지 번지지 않게 막는 것은 팝오버 쪽 책임이다 —
+      // 안 막으면 상세 모달이 같이 열린다.
+      return (
+        <StatusTransitionPopover
+          issueKey={issue.key}
+          browseUrl={href}
+          // 연결이 없으면 전이를 조회할 수도, 실행할 수도 없다. 평범한 배지로 남는다.
+          disabled={!href}
+          onTransitioned={onTransitioned}
         >
-          {issue.status?.name ?? '—'}
-        </span>
+          {density === 'compact' ? (
+            <span
+              role="img"
+              className="block size-1.5 rounded-full"
+              style={{ backgroundColor: statusColor(statusCategory) }}
+              title={issue.status?.name ?? '상태 없음'}
+              aria-label={issue.status?.name ?? '상태 없음'}
+            />
+          ) : (
+            // 배지는 글자만 감싼다 — min-w-0 + truncate를 주면 그리드 셀을 꽉 채워
+            // 열 전체가 색칠된 것처럼 보인다.
+            //
+            // 음수 마진으로 패딩을 상쇄하지 않는다. 그러면 배지 배경이 트랙 밖으로
+            // 삐져나가고 글자만 왼쪽으로 당겨져 오히려 이웃 열과 어긋나 보인다.
+            // 트랙 자체는 이미 헤더와 픽셀 단위로 일치한다(실측).
+            <span
+              className="block max-w-full truncate rounded px-1.5 py-0.5 text-caption"
+              style={{
+                color: statusColor(statusCategory),
+                backgroundColor: statusMuted(statusCategory),
+              }}
+            >
+              {issue.status?.name ?? '—'}
+            </span>
+          )}
+        </StatusTransitionPopover>
       )
 
     case 'priority':

@@ -168,6 +168,46 @@ async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, Ji
 }
 },
 /**
+ * 이 티켓에서 지금 실행할 수 있는 전이 목록.
+ * 
+ * **캐시하지 않는다.** 전이 가능성은 상태가 바뀌면 즉시 낡는다 —
+ * 방금 '완료'로 옮긴 티켓에 '완료로 이동'을 다시 보여주는 것보다
+ * 조회 한 번이 싸다. 프론트가 30초 TTL 메모리 캐시를 갖는 것은
+ * 팝오버를 연달아 여닫을 때의 중복 호출만 막기 위해서고, 그 이상은 아니다.
+ * 
+ * **빈 Vec은 에러가 아니다.** 권한이 없거나 워크플로우 끝단이면 Jira가
+ * 200 + 빈 배열을 준다. 화면이 "가능한 전이가 없습니다"를 말한다.
+ */
+async jiraTransitions(issueKey: string) : Promise<Result<JiraTransition[], JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_transitions", { issueKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 상태 전이 실행. 티켓 생성과 함께 우리가 하는 두 번째 쓰기다.
+ * 
+ * **자동 재시도가 없다.** 전이는 멱등이 아니어서 같은 요청이 두 번 나가면
+ * 워크플로우를 두 칸 움직일 수 있고, 우리에겐 되돌리는 기능이 없다.
+ * 생성(`jira_create_issue`)이 400만 재시도하는 것과 같은 이유이며,
+ * 여기서는 그 400조차 재시도하지 않는다 — 400이면 필수 필드가 걸렸다는 뜻이고
+ * 그건 폼 없이는 못 채운다. 재시도 판단은 사람이 팝오버에서 한다.
+ * 
+ * 성공 후 목록 갱신은 프론트가 한다. **낙관적 업데이트를 하지 않는다** —
+ * `to_status_name`은 알지만 워크플로우 후처리(자동 담당자 변경 등)는
+ * 예측할 수 없어서, 우리가 그린 값이 서버와 다를 수 있다.
+ */
+async jiraTransition(issueKey: string, transitionId: string) : Promise<Result<null, JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_transition", { issueKey, transitionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 프리셋 목록. 설정 폼이 드롭다운을 채운다.
  */
 async githubPresets() : Promise<GithubPreset[]> {
@@ -878,6 +918,52 @@ key: string;
  * `blue-gray` | `yellow` | `green` — 표시용 힌트
  */
 colorName?: string | null; name?: string | null }
+/**
+ * 이 티켓에서 지금 실행할 수 있는 상태 전이 하나 (DECISIONS 11.5 개정).
+ * 
+ * **워크플로우는 프로젝트마다 다르므로 목록을 하드코딩하지 않는다.**
+ * 실측(2026-08-06): EDU 5개 / DTH 7개로 개수도 이름도 다르다.
+ * 
+ * Jira 응답에는 `hasScreen`·`isGlobal`·`isConditional`·`isLooped` 등이 더 있지만
+ * 우리가 그리는 UI(팝오버 목록 한 줄)에 필요한 것만 남긴다. IPC 페이로드를
+ * 줄이는 것이 이 앱의 기본 규칙이다(CLAUDE.md "필요한 필드만 남겨서").
+ */
+export type JiraTransition = { 
+/**
+ * 전이 실행 시 POST 본문에 넣는 id. **상태 id가 아니다.**
+ */
+id: string; 
+/**
+ * 전이 버튼 이름. Jira 웹에서 보이는 그 문구다.
+ */
+name: string; 
+/**
+ * 이 전이를 실행하면 도달하는 상태 이름.
+ * 
+ * `name`과 다를 수 있다 — Jira에서 전이 이름과 목표 상태 이름은 별개다
+ * (실측한 두 프로젝트에서는 우연히 같았다). 화면에는 도달 상태를 우선해
+ * 보여준다. 사용자가 알고 싶은 것은 "누르면 무엇이 되는가"이기 때문.
+ */
+toStatusName: string | null; 
+/**
+ * `new` | `indeterminate` | `done`. 배지 색의 근거.
+ * 
+ * `Option`인 이유: 워크플로우가 이상하게 설정된 프로젝트에서 `to.statusCategory`가
+ * 누락될 수 있다. [`JiraStatus`]가 같은 이유로 이미 `Option`이다.
+ */
+toStatusCategory: string | null; 
+/**
+ * **사용자가 채워야 하는 필수 필드가 이 전이에 걸려 있는가.**
+ * 
+ * `true`면 앱에서 실행하지 않고 브라우저 링크로 바꾼다 (DECISIONS 11.5 개정).
+ * 판정은 생성 폼과 같은 규칙이다 — `required: true`이면서
+ * `hasDefaultValue != true`인 필드가 하나라도 있으면 참.
+ * `hasDefaultValue: true`는 서버가 채우므로 폼이 필요 없다(EDU reporter 사례).
+ * 
+ * 계산을 Rust에서 하는 이유: 프론트가 Jira의 필드 스키마를 알 필요가 없다.
+ * 이 축 하나만 알면 UI를 고를 수 있다.
+ */
+hasRequiredFields: boolean }
 /**
  * 사용자. 식별자는 **`accountId`** — 이메일/username이 아니다 (GDPR 이후 Cloud 정책).
  */

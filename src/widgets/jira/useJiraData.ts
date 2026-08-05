@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { commands, type JiraIssue, type JiraWidgetConfig } from '#/ipc/bindings'
 import { IN_TAURI } from '#/ipc/env'
 import { useConnectionStore } from '#/store/connection'
+import { JIRA_TRANSITIONED_EVENT } from '#/widgets/jira/StatusTransitionPopover'
 import type { WidgetEnvelope } from '#/widgets/types'
 
 type Data = { issues: JiraIssue[] }
@@ -158,6 +159,20 @@ export function useJiraData(
     }
     window.addEventListener('pegboard:jira-created', onCreated)
     return () => window.removeEventListener('pegboard:jira-created', onCreated)
+  }, [fetchNow])
+
+  // 상태 전이 직후의 갱신 (DECISIONS 11.5 개정).
+  //
+  // 생성과 달리 **즉시 한 번만** 조회한다. 전이는 이슈를 새로 만드는 것이 아니라
+  // 이미 인덱스에 있는 문서를 갱신하는 것이라, 검색 인덱스 지연을 기다릴 이유가
+  // 적다. 갱신이 늦어 옛 상태가 한 번 더 보여도 다음 폴링이 잡는다.
+  //
+  // **낙관적 업데이트를 하지 않는다.** 도달 상태는 Rust가 알려주지만
+  // 워크플로우 후처리(자동 담당자 변경 등)는 예측할 수 없다.
+  useEffect(() => {
+    const onTransitioned = () => void fetchNow()
+    window.addEventListener(JIRA_TRANSITIONED_EVENT, onTransitioned)
+    return () => window.removeEventListener(JIRA_TRANSITIONED_EVENT, onTransitioned)
   }, [fetchNow])
 
   // 언마운트될 때 예약된 재조회를 정리한다. 안 하면 위젯을 지운 뒤에도

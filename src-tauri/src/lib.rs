@@ -52,6 +52,8 @@ pub fn run() {
         commands::jira::jira_createmeta,
         commands::jira::jira_myself,
         commands::jira::jira_create_issue,
+        commands::jira::jira_transitions,
+        commands::jira::jira_transition,
         commands::github::github_presets,
         commands::github::github_is_configured,
         commands::github::github_save_token,

@@ -8,6 +8,7 @@ import { ColumnHeader } from './ColumnHeader'
 import { type ColumnWidths, visibleColumns, withDefaults } from './columns'
 import { IssueDetailModal } from './IssueDetailModal'
 import { IssueRow } from './IssueRow'
+import { notifyTransitioned } from './StatusTransitionPopover'
 
 /**
  * Jira 위젯 본문.
@@ -108,6 +109,7 @@ export function JiraView({
               now={now}
               browseUrl={browseUrl}
               onOpen={() => setDetail({ key: issue.key, seed: issue })}
+              onTransitioned={notifyTransitioned}
             />
           </li>
         ))}
