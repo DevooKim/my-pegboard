@@ -2191,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "my-pegboard"
-version = "0.3.1-alpha"
+version = "0.4.0-alpha"
 dependencies = [
  "base64 0.22.1",
  "chrono",

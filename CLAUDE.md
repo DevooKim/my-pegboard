@@ -272,8 +272,11 @@ bun run typecheck && bun run lint && bun run test
 cd src-tauri && cargo test && cd ..
 
 # 3. ★ 서명 키를 환경변수로 — 없으면 updater 번들이 조용히 안 만들어진다
+#    비밀번호는 키체인에서 읽는다. 명령줄에 적으면 셸 히스토리에 남는다.
+#    최초 1회 등록:
+#      security add-generic-password -a "$USER" -s my-pegboard-updater-key -w '<비밀번호>'
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/my-pegboard.key)"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD='<비밀번호 관리자에 있음>'
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s my-pegboard-updater-key -w)"
 
 # 4. 빌드
 bun run tauri build
