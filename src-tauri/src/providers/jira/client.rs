@@ -17,8 +17,9 @@ use std::time::Duration;
 use super::error::{parse_retry_after, JiraError};
 use super::types::{
     CommentPage, CreateIssueInput, CreateMeta, CreatedIssue, FilterSearchPage, JiraFilter,
-    JiraIdentity, JiraIssueDetail, JiraProject, JiraProjectWithTypes, ProjectSearchPage,
-    ProjectWithTypesSearchPage, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraIdentity, JiraIssueDetail, JiraProject, JiraProjectWithTypes, JiraTransition,
+    ProjectSearchPage, ProjectWithTypesSearchPage, RawTransitionsResponse, SearchPage,
+    DETAIL_FIELDS, LIST_FIELDS,
 };
 
 /// 요청 타임아웃. 위젯 체감 목표가 1초(CLAUDE.md 성능표)이므로
@@ -122,6 +123,18 @@ pub fn build_search_body(
 /// 0을 그대로 보내면 Jira가 빈 배열을 주고, 위젯은 "결과 없음"을 잘못 표시한다.
 fn clamp_max_results(requested: u32) -> u32 {
     requested.clamp(1, MAX_RESULTS_LIMIT)
+}
+
+/// 상태 전이 요청 본문.
+///
+/// `{ "transition": { "id": "..." } }` — **중첩이 필수다.** `{"transition": "31"}`처럼
+/// 평평하게 보내면 Jira가 400을 낸다. 순수 함수로 뽑아 둔 이유는 이 모양을
+/// 네트워크 없이 테스트로 고정하기 위해서다.
+///
+/// `fields`를 함께 보내지 않는다. 필수 필드가 걸린 전이는 아예 앱에서
+/// 실행하지 않고 브라우저로 넘기기 때문이다 (DECISIONS 11.5 개정).
+pub fn build_transition_body(transition_id: &str) -> serde_json::Value {
+    serde_json::json!({ "transition": { "id": transition_id } })
 }
 
 /// `fields` 쿼리 파라미터 값 (GET 엔드포인트용). 쉼표로 잇는다.
@@ -501,6 +514,73 @@ impl JiraClient {
             .await
             .map_err(JiraError::from)?;
         Self::handle(response, "create issue").await
+    }
+
+    /// 이 티켓에서 지금 실행할 수 있는 상태 전이 목록 (DECISIONS 11.5 개정).
+    ///
+    /// **`expand=transitions.fields`를 반드시 붙인다.** 이걸 빼면 응답의 각 전이에
+    /// `fields`가 아예 없고, 그러면 [`JiraTransition::has_required_fields`]가 전부
+    /// `false`로 계산된다. 필수 필드가 걸린 전이를 앱에서 실행하려다 400을 맞는다.
+    /// 우리가 판정하려는 것 자체가 이 expand에 실려 오므로 옵션이 아니다.
+    ///
+    /// **빈 배열은 에러가 아니다.** 권한이 없거나 워크플로우 끝단이면 Jira가 200 +
+    /// `{"transitions": []}`을 준다. 그대로 빈 Vec으로 올려보내고, "가능한 전이가
+    /// 없습니다"를 말하는 것은 화면의 몫이다.
+    pub async fn get_transitions(&self, key: &str) -> Result<Vec<JiraTransition>, JiraError> {
+        let response = self
+            .get(&format!(
+                "/rest/api/3/issue/{}/transitions",
+                encode_path(key)
+            ))
+            .query(&[("expand", "transitions.fields")])
+            .send()
+            .await
+            .map_err(JiraError::from)?;
+        let raw: RawTransitionsResponse = Self::handle(response, "transitions").await?;
+        Ok(raw.transitions.into_iter().map(Into::into).collect())
+    }
+
+    /// 상태 전이 실행. 티켓 생성과 함께 우리가 하는 두 번째 쓰기다.
+    ///
+    /// 성공 시 Jira는 **204 No Content**를 준다 — 본문이 없다. 그래서
+    /// [`handle`](Self::handle)을 쓰지 않는다. 그쪽은 성공 본문을 파싱하므로
+    /// 빈 본문에서 `Decode` 에러를 내고, 실제로는 전이가 된 것을 실패로 보고한다.
+    /// 상태코드 분류는 [`JiraError::from_response`]로 직접 한다.
+    ///
+    /// **재시도하지 않는다.** 전이는 멱등이 아니다 — 같은 요청을 두 번 보내면
+    /// 워크플로우를 두 칸 움직일 수 있고(할 일→진행 중→검토 중), 우리에겐
+    /// 되돌리는 기능이 없다. 재시도 여부는 사람이 팝오버에서 판단한다.
+    pub async fn transition_issue(
+        &self,
+        key: &str,
+        transition_id: &str,
+    ) -> Result<(), JiraError> {
+        let response = self
+            .post(&format!(
+                "/rest/api/3/issue/{}/transitions",
+                encode_path(key)
+            ))
+            .json(&build_transition_body(transition_id))
+            .send()
+            .await
+            .map_err(JiraError::from)?;
+
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
+        }
+
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
+        let body = response.text().await.unwrap_or_default();
+        Err(JiraError::from_response(
+            status.as_u16(),
+            &body,
+            retry_after,
+        ))
     }
 
     /// 설정창 "연결 테스트" 버튼.

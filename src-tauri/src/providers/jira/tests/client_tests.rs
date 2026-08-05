@@ -294,3 +294,39 @@ fn preview_leaves_short_bodies_intact() {
     assert_eq!(preview("{\"ok\":true}"), "{\"ok\":true}");
     assert_eq!(preview(""), "");
 }
+
+// ---------------------------------------------------------------------------
+// 상태 전이 요청 본문 (DECISIONS 11.5 개정)
+// ---------------------------------------------------------------------------
+
+/// **중첩이 필수다.** `{"transition": "31"}`처럼 평평하게 보내면 Jira가 400을 낸다.
+#[test]
+fn transition_body_nests_the_id_under_transition() {
+    let body = build_transition_body("31");
+    assert_eq!(body, serde_json::json!({ "transition": { "id": "31" } }));
+}
+
+/// id는 **문자열**로 보낸다. Jira 응답의 `id`가 문자열이므로 숫자로 바꿔
+/// 보낼 이유가 없고, 숫자가 아닌 id를 쓰는 사이트에서 깨질 여지만 남는다.
+#[test]
+fn transition_body_keeps_the_id_as_a_string() {
+    let body = build_transition_body("41");
+    assert_eq!(body["transition"]["id"], serde_json::json!("41"));
+    assert!(body["transition"]["id"].is_string());
+}
+
+/// `fields`를 함께 보내지 않는다. 필수 필드가 걸린 전이는 앱에서 실행하지 않고
+/// 브라우저로 넘기기 때문이다 — 본문에 fields가 생기면 그 결정이 흐려진다.
+#[test]
+fn transition_body_carries_no_fields() {
+    let body = build_transition_body("11");
+    assert!(
+        body.get("fields").is_none(),
+        "필드가 필요한 전이는 브라우저로 넘긴다 (11.5 개정)"
+    );
+    assert_eq!(
+        body.as_object().map(|o| o.len()),
+        Some(1),
+        "본문에는 transition 하나만 있어야 한다"
+    );
+}

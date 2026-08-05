@@ -9,7 +9,8 @@ use tauri::State;
 use crate::providers::jira::{
     apply_sort, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue, JiraClient, JiraComment,
     JiraError, JiraFilter, JiraIdentity, JiraIssue, JiraIssueDetail, JiraProject,
-    JiraProjectWithTypes, JiraQuery, Preset, SortDirection, SortField, LIST_FIELDS,
+    JiraProjectWithTypes, JiraQuery, JiraTransition, Preset, SortDirection, SortField,
+    LIST_FIELDS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::{AppState, JiraSessionCache};
@@ -746,6 +747,78 @@ pub fn reconcile_with_meta(
     (out, missing)
 }
 
+// ---------------------------------------------------------------------------
+// 상태 전이 (DECISIONS 11.5 개정)
+// ---------------------------------------------------------------------------
+
+/// 이 티켓에서 지금 실행할 수 있는 전이 목록.
+///
+/// **캐시하지 않는다.** 전이 가능성은 상태가 바뀌면 즉시 낡는다 —
+/// 방금 '완료'로 옮긴 티켓에 '완료로 이동'을 다시 보여주는 것보다
+/// 조회 한 번이 싸다. 프론트가 30초 TTL 메모리 캐시를 갖는 것은
+/// 팝오버를 연달아 여닫을 때의 중복 호출만 막기 위해서고, 그 이상은 아니다.
+///
+/// **빈 Vec은 에러가 아니다.** 권한이 없거나 워크플로우 끝단이면 Jira가
+/// 200 + 빈 배열을 준다. 화면이 "가능한 전이가 없습니다"를 말한다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_transitions(
+    state: State<'_, AppState>,
+    issue_key: String,
+) -> Result<Vec<JiraTransition>, JiraCallError> {
+    let client = client_for(&state)?;
+    let transitions = client.get_transitions(&issue_key).await.map_err(|e| {
+        tracing::warn!(issue = %issue_key, error = %e, "전이 목록 조회 실패");
+        JiraCallError::from(e)
+    })?;
+
+    tracing::debug!(
+        issue = %issue_key,
+        count = transitions.len(),
+        // 필수 필드가 걸린 전이가 몇 개인지 남긴다. 나중에 "왜 브라우저로
+        // 나가지?"를 물었을 때 이 숫자가 답이다.
+        with_required = transitions.iter().filter(|t| t.has_required_fields).count(),
+        "전이 목록 조회됨"
+    );
+    Ok(transitions)
+}
+
+/// 상태 전이 실행. 티켓 생성과 함께 우리가 하는 두 번째 쓰기다.
+///
+/// **자동 재시도가 없다.** 전이는 멱등이 아니어서 같은 요청이 두 번 나가면
+/// 워크플로우를 두 칸 움직일 수 있고, 우리에겐 되돌리는 기능이 없다.
+/// 생성(`jira_create_issue`)이 400만 재시도하는 것과 같은 이유이며,
+/// 여기서는 그 400조차 재시도하지 않는다 — 400이면 필수 필드가 걸렸다는 뜻이고
+/// 그건 폼 없이는 못 채운다. 재시도 판단은 사람이 팝오버에서 한다.
+///
+/// 성공 후 목록 갱신은 프론트가 한다. **낙관적 업데이트를 하지 않는다** —
+/// `to_status_name`은 알지만 워크플로우 후처리(자동 담당자 변경 등)는
+/// 예측할 수 없어서, 우리가 그린 값이 서버와 다를 수 있다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_transition(
+    state: State<'_, AppState>,
+    issue_key: String,
+    transition_id: String,
+) -> Result<(), JiraCallError> {
+    let client = client_for(&state)?;
+    client
+        .transition_issue(&issue_key, &transition_id)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                issue = %issue_key,
+                transition = %transition_id,
+                error = %e,
+                "상태 전이 실패"
+            );
+            JiraCallError::from(e)
+        })?;
+
+    tracing::info!(issue = %issue_key, transition = %transition_id, "상태 전이됨");
+    Ok(())
+}
+
 /// 폼이 이미 보내는 필드인가.
 fn is_covered_by_form(field_id: &str, input: &CreateIssueInput) -> bool {
     match field_id {
@@ -969,6 +1042,73 @@ mod reconcile_tests {
         };
         let (_, missing) = reconcile_with_meta(&input(), &meta);
         assert!(missing.is_empty(), "{missing:?}");
+    }
+}
+
+/// 전이 실패가 팝오버에 도달하는 모양을 고정한다 (DECISIONS 11.5 개정 · 16장).
+///
+/// 팝오버는 `kind`만 보고 [다시 시도]를 그릴지 고른다. 그래서 분류가 틀리면
+/// 404(전이 id가 사라짐)에 대고 재시도 버튼을 주거나, 429에 대고 안 주게 된다.
+#[cfg(test)]
+mod transition_error_tests {
+    use super::JiraCallError;
+    use crate::providers::jira::JiraError;
+
+    #[test]
+    fn not_found_is_permanent_and_not_auth_failure() {
+        // 티켓이 없거나, 조회 후 워크플로우가 바뀌어 전이 id가 사라진 경우.
+        let e: JiraCallError =
+            JiraError::from_response(404, r#"{"errorMessages":["Issue does not exist"]}"#, None)
+                .into();
+        assert_eq!(e.kind, "permanent");
+        assert!(!e.is_auth_failure, "404에 로그인 배너를 띄우면 틀린 안내다");
+    }
+
+    #[test]
+    fn forbidden_is_permanent_and_not_auth_failure() {
+        // 전이 권한이 없는 경우. 전역 "로그인하세요" 배너를 띄우면 안 된다 —
+        // 토큰은 멀쩡하고 이 티켓만 못 옮긴다.
+        let e: JiraCallError =
+            JiraError::from_response(403, r#"{"errorMessages":["권한이 없습니다."]}"#, None).into();
+        assert_eq!(e.kind, "permanent");
+        assert!(!e.is_auth_failure);
+    }
+
+    #[test]
+    fn unauthorized_still_raises_the_global_banner() {
+        let e: JiraCallError = JiraError::from_response(401, "", None).into();
+        assert_eq!(e.kind, "permanent");
+        assert!(e.is_auth_failure, "401은 전역 배너 1회 규칙의 트리거다");
+    }
+
+    /// 400은 대개 "필수 필드가 걸렸다"다. 영구로 분류돼 재시도 버튼이 안 나온다 —
+    /// 같은 요청을 다시 보내도 같은 400이고, 채울 폼이 없다.
+    #[test]
+    fn bad_request_is_permanent_and_keeps_jira_wording() {
+        let e: JiraCallError = JiraError::from_response(
+            400,
+            r#"{"errors":{"resolution":"해결책을 지정해야 합니다."}}"#,
+            None,
+        )
+        .into();
+        assert_eq!(e.kind, "permanent");
+        assert!(
+            e.message.contains("해결책을 지정해야 합니다."),
+            "Jira 원문을 그대로 보여준다: {}",
+            e.message
+        );
+    }
+
+    /// 429/5xx는 일시적이다 — 팝오버가 [다시 시도]를 그린다.
+    /// 자동 재시도는 하지 않는다(전이는 멱등이 아니다). 사람이 누른다.
+    #[test]
+    fn rate_limit_and_server_error_are_transient() {
+        let e: JiraCallError = JiraError::from_response(429, "", Some(30)).into();
+        assert_eq!(e.kind, "transient");
+        assert_eq!(e.retry_after_secs, Some(30));
+
+        let e: JiraCallError = JiraError::from_response(503, "", None).into();
+        assert_eq!(e.kind, "transient");
     }
 }
 

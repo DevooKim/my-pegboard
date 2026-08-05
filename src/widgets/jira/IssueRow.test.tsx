@@ -7,6 +7,20 @@ import { IssueRow } from '#/widgets/jira/IssueRow'
 const openUrl = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl }))
 
+// 상태 배지가 전이 팝오버가 됐다(11.5 개정). 이 파일의 관심사는 클릭이 어디로
+// 가는가이므로 IPC는 빈 목록으로 세워둔다 — 목이 없으면 Tauri가 없는 환경에서
+// 팝오버의 조회가 미처리 거부로 터진다.
+vi.mock('#/ipc/bindings', () => ({
+  commands: {
+    jiraTransitions: vi.fn().mockResolvedValue({ status: 'ok', data: [] }),
+    jiraTransition: vi.fn(),
+  },
+}))
+vi.mock('#/store/connection', () => ({
+  useConnectionStore: (selector: (s: unknown) => unknown) =>
+    selector({ setJiraAuthFailed: () => {} }),
+}))
+
 /**
  * 행 클릭의 세 갈래를 고정한다 (D1).
  *
@@ -102,5 +116,19 @@ describe('IssueRow', () => {
   it('키보드로 도달할 수 있다', () => {
     renderRow()
     expect(row()).toHaveAttribute('tabIndex', '0')
+  })
+
+  /**
+   * 상태 배지는 전이 팝오버를 연다 (DECISIONS 11.5 개정).
+   *
+   * 위의 "키 링크" 케이스와 같은 함정이다 — stopPropagation을 빠뜨리면
+   * 배지를 눌렀을 때 팝오버와 상세 모달이 동시에 열린다.
+   */
+  it('상태 배지를 클릭해도 상세 모달이 열리지 않는다', () => {
+    const onOpen = renderRow()
+    fireEvent.click(screen.getByRole('button', { name: /ABC-142 상태 변경/ }))
+
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(openUrl).not.toHaveBeenCalled()
   })
 })

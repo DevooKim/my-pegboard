@@ -50,8 +50,8 @@ pub mod types;
 mod tests;
 
 pub use client::{
-    auth_header, build_search_body, fields_param, join_url, JiraClient, JiraCredentials,
-    DEFAULT_MAX_RESULTS, DEFAULT_TIMEOUT, MAX_RESULTS_LIMIT,
+    auth_header, build_search_body, build_transition_body, fields_param, join_url, JiraClient,
+    JiraCredentials, DEFAULT_MAX_RESULTS, DEFAULT_TIMEOUT, MAX_RESULTS_LIMIT,
 };
 pub use error::{parse_retry_after, ErrorKind, JiraError};
 pub use presets::{
@@ -62,5 +62,6 @@ pub use types::{
     Adf, AllowedValue, CommentPage, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue,
     JiraComment, JiraFilter, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType,
     JiraIssueTypeOption, JiraPriority, JiraStatus, JiraParent, JiraProject, JiraProjectWithTypes,
-    JiraSprint, JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraSprint, JiraStatusCategory, JiraTransition, JiraUser, SearchPage, DETAIL_FIELDS,
+    LIST_FIELDS,
 };
