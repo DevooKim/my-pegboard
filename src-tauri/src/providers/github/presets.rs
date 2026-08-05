@@ -118,20 +118,28 @@ impl GithubPreset {
     }
 }
 
-/// 저장소 필터를 검색 문자열에 붙인다.
+/// 저장소·조직 범위를 검색 문자열에 붙인다.
 ///
-/// GitHub 검색에서 `repo:` 여러 개는 **OR**로 동작한다. 그래서 그냥 이어붙이면
-/// "이 저장소들 중에서"가 된다 — 우리가 원하는 의미 그대로다.
+/// GitHub 검색에서 같은 종류의 한정자 여러 개는 **OR**로 동작한다. 그래서
+/// 그냥 이어붙이면 "이것들 중에서"가 된다 — 우리가 원하는 의미 그대로다.
 ///
-/// 빈 목록이면 원본을 그대로 돌려준다. 필터를 안 건 것이 곧 전체 검색이다.
-pub fn apply_repo_filter(search: &str, repos: &[String]) -> String {
-    if repos.is_empty() {
+/// ```text
+/// repo:o/a repo:o/b   →  a 또는 b
+/// org:x org:y         →  x 또는 y
+/// ```
+///
+/// **둘을 함께 쓰면 교집합이 아니라 합집합이다.** `org:x repo:o/a`는
+/// "x 조직 **또는** o/a"가 된다. 서로 다른 한정자끼리는 AND라고 생각하기 쉬운데
+/// GitHub은 그렇지 않다. 설정 UI에서 둘 중 하나만 쓰도록 안내한다.
+///
+/// 빈 목록이면 원본을 그대로 돌려준다. 범위를 안 건 것이 곧 전체 검색이다.
+pub fn apply_scope(search: &str, repos: &[String], orgs: &[String]) -> String {
+    let mut parts = Vec::new();
+    parts.extend(orgs.iter().map(|o| format!("org:{o}")));
+    parts.extend(repos.iter().map(|r| format!("repo:{r}")));
+
+    if parts.is_empty() {
         return search.to_owned();
     }
-    let filter = repos
-        .iter()
-        .map(|r| format!("repo:{r}"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    format!("{search} {filter}")
+    format!("{search} {}", parts.join(" "))
 }

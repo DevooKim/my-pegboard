@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::providers::github::{
-    apply_repo_filter, GithubClient, GithubCredentials, GithubError, GithubItem, GithubQuery,
+    apply_scope, GithubClient, GithubCredentials, GithubError, GithubItem, GithubQuery,
     GithubPreset, GithubRepo, PRESETS,
 };
 use crate::secrets::{Secret, SecretKey};
@@ -52,6 +52,13 @@ pub struct GithubWidgetConfig {
     /// 똑같이 적용돼야 하고, 프리셋마다 저장소별 변종을 만드는 것은 조합 폭발이다.
     #[serde(default)]
     pub repos: Vec<String>,
+    /// 조직 범위. 빈 목록이면 전체.
+    ///
+    /// `repos`와 **합집합**이다(실측). GitHub 검색에서 `org:x repo:o/a`는
+    /// "x 조직 **또는** o/a"이지 교집합이 아니다. 설정 UI가 둘을 동시에 쓰지
+    /// 않도록 안내한다.
+    #[serde(default)]
+    pub orgs: Vec<String>,
     /// 저장소별로 묶어서 보여줄까. 기본 켬.
     #[serde(default = "default_true")]
     pub group_by_repo: bool,
@@ -201,12 +208,12 @@ pub async fn github_fetch(
         ));
     };
 
-    // 저장소 범위는 프리셋·생 쿼리 모두에 적용한다.
+    // 범위는 프리셋·생 쿼리 모두에 적용한다.
     //
     // Jira에서 정렬·범위를 프리셋에만 적용한 것과 다르다. JQL은 `ORDER BY`가
-    // 있어서 우리가 손대면 사용자 의도를 덮어쓸 수 있지만, GitHub 검색에서
-    // `repo:`를 더하는 것은 순수한 교집합이라 원 쿼리의 뜻을 바꾸지 않는다.
-    let search = apply_repo_filter(&search, &config.repos);
+    // 있어서 우리가 손대면 사용자 의도를 덮어쓸 수 있지만, GitHub 검색에
+    // 한정자를 더하는 것은 원 쿼리의 조건을 지운다거나 하지 않는다.
+    let search = apply_scope(&search, &config.repos, &config.orgs);
 
     match client.search(&search, config.max_results).await {
         Ok(page) => {
@@ -377,7 +384,7 @@ mod tests {
             query: "is:pr author:someone".into(),
         };
         let search = raw.to_search().unwrap();
-        let scoped = apply_repo_filter(&search, &["o/a".to_string()]);
+        let scoped = apply_scope(&search, &["o/a".to_string()], &[]);
         assert_eq!(scoped, "is:pr author:someone repo:o/a");
     }
 }

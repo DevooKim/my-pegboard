@@ -8,6 +8,7 @@ import {
 } from '#/ipc/bindings'
 import { relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetConfigFormProps } from '#/widgets/types'
+import { ScopePicker } from './ScopePicker'
 
 const RAW = '__raw__'
 
@@ -52,13 +53,6 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
     config.query.kind === 'preset'
       ? (presets.find((p) => p.id === presetId(config))?.name ?? 'GitHub')
       : 'GitHub'
-
-  const toggleRepo = (name: string) => {
-    onChange({
-      ...config,
-      repos: scoped.includes(name) ? scoped.filter((r) => r !== name) : [...scoped, name],
-    })
-  }
 
   return (
     <div className="flex flex-col">
@@ -133,12 +127,11 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
         )}
       </Section>
 
-      {/* 저장소 범위 — 프리셋·직접 입력 **양쪽 모두**에 적용된다.
-          `repo:`를 더하는 것은 순수한 교집합이라 원 쿼리의 뜻을 바꾸지 않는다. */}
+      {/* 범위 — 프리셋·직접 입력 **양쪽 모두**에 적용된다. */}
       <Section>
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <span className="flex items-center gap-2">
-            <span className="text-caption text-text-secondary">저장소 범위</span>
+            <span className="text-caption text-text-secondary">범위</span>
             <button
               type="button"
               onClick={() => void loadRepos(true)}
@@ -171,21 +164,13 @@ export function GithubConfigForm({ config, onChange }: WidgetConfigFormProps<Git
             </p>
           )}
 
-          <div className="flex flex-wrap gap-1">
-            {repos.map((r) => (
-              <Chip
-                key={r.nameWithOwner}
-                active={scoped.includes(r.nameWithOwner)}
-                onClick={() => toggleRepo(r.nameWithOwner)}
-                title={r.nameWithOwner}
-              >
-                {r.nameWithOwner}
-              </Chip>
-            ))}
-          </div>
-          <span className="text-caption text-text-tertiary">
-            {scoped.length === 0 ? '전체 저장소' : `${scoped.length}개 저장소로 좁힘`}
-          </span>
+          <ScopePicker
+            repos={repos}
+            selectedRepos={scoped}
+            selectedOrgs={config.orgs ?? []}
+            onChangeRepos={(next) => onChange({ ...config, repos: next })}
+            onChangeOrgs={(next) => onChange({ ...config, orgs: next })}
+          />
         </div>
       </Section>
 

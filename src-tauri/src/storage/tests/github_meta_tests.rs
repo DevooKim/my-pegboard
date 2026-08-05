@@ -18,6 +18,8 @@ fn repo(name: &str, archived: bool) -> GithubRepo {
         pushed_at: Some("2026-08-01T00:00:00Z".into()),
         is_private: false,
         is_archived: archived,
+        owner: name.split_once('/').map_or(String::new(), |(o, _)| o.to_string()),
+        is_organization: false,
     }
 }
 
