@@ -612,12 +612,7 @@ orgs?: string[];
 /**
  * 저장소별로 묶어서 보여줄까. 기본 켬.
  */
-groupByRepo?: boolean; 
-/**
- * 그룹 순서를 사용자가 지정한 것. 여기 없는 저장소는 **숨지 않고**
- * 아래쪽에 최신순으로 붙는다 — 숨기면 리뷰 요청이 조용히 사라진다.
- */
-repoOrder?: string[]; refreshSecs?: number }
+groupByRepo?: boolean; refreshSecs?: number }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  */

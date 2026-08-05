@@ -62,10 +62,6 @@ pub struct GithubWidgetConfig {
     /// 저장소별로 묶어서 보여줄까. 기본 켬.
     #[serde(default = "default_true")]
     pub group_by_repo: bool,
-    /// 그룹 순서를 사용자가 지정한 것. 여기 없는 저장소는 **숨지 않고**
-    /// 아래쪽에 최신순으로 붙는다 — 숨기면 리뷰 요청이 조용히 사라진다.
-    #[serde(default)]
-    pub repo_order: Vec<String>,
     #[serde(default = "default_refresh_secs")]
     pub refresh_secs: u32,
 }

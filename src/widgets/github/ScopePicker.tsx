@@ -1,4 +1,4 @@
-import { Check, Search, X } from 'lucide-react'
+import { Check, GripVertical, Search, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { GithubRepo } from '#/ipc/bindings'
 
@@ -35,6 +35,8 @@ export function ScopePicker({
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [cursor, setCursor] = useState(0)
+  /** 지금 끌고 있는 항목. 종류가 다르면 서로 못 섞인다. */
+  const [drag, setDrag] = useState<{ kind: 'org' | 'repo'; id: string } | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const listId = useId()
 
@@ -111,18 +113,53 @@ export function ScopePicker({
   const bothUsed = selectedOrgs.length > 0 && selectedRepos.length > 0
   const totalSelected = selectedOrgs.length + selectedRepos.length
 
+  /**
+   * 같은 종류 안에서만 옮긴다.
+   *
+   * 조직과 저장소를 섞어 정렬하지 않는 이유: `apply_scope`가 `org:`를 먼저
+   * 내보내므로 검색 문자열 순서와 화면 순서가 어긋난다. 종류별로 묶어두면
+   * 화면에 보이는 순서가 곧 실제 순서다.
+   */
+  const moveWithin = (kind: 'org' | 'repo', toIndex: number) => {
+    if (!drag || drag.kind !== kind) return
+    const list = kind === 'org' ? selectedOrgs : selectedRepos
+    const next = list.filter((x) => x !== drag.id)
+    next.splice(toIndex, 0, drag.id)
+    if (kind === 'org') onChangeOrgs(next)
+    else onChangeRepos(next)
+  }
+
   return (
     <div className="flex flex-col gap-1.5" ref={boxRef}>
-      {/* 고른 것들 — 여기서 바로 뺄 수 있다 */}
+      {/* 고른 것들 — **이 순서가 곧 그룹 순서다.** 끌어서 바꾼다.
+          조직을 저장소보다 위에 두는 것은 강제다(넓은 범위가 먼저 읽힌다). */}
       {totalSelected > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {selectedOrgs.map((o) => (
-            <SelectedChip key={`org:${o}`} label={`org:${o}`} onRemove={() => toggle('org', o)} />
+        <ul className="flex flex-col">
+          {selectedOrgs.map((o, i) => (
+            <SelectedRow
+              key={`org:${o}`}
+              label={`org:${o}`}
+              isOrg
+              dragging={drag?.kind === 'org' && drag.id === o}
+              onDragStart={() => setDrag({ kind: 'org', id: o })}
+              onDragEnd={() => setDrag(null)}
+              onDropHere={() => moveWithin('org', i)}
+              onRemove={() => toggle('org', o)}
+            />
           ))}
-          {selectedRepos.map((r) => (
-            <SelectedChip key={`repo:${r}`} label={r} onRemove={() => toggle('repo', r)} />
+          {selectedRepos.map((r, i) => (
+            <SelectedRow
+              key={`repo:${r}`}
+              label={r}
+              isOrg={false}
+              dragging={drag?.kind === 'repo' && drag.id === r}
+              onDragStart={() => setDrag({ kind: 'repo', id: r })}
+              onDragEnd={() => setDrag(null)}
+              onDropHere={() => moveWithin('repo', i)}
+              onRemove={() => toggle('repo', r)}
+            />
           ))}
-        </div>
+        </ul>
       )}
 
       {/* 검색 입력 */}
@@ -228,22 +265,79 @@ export function ScopePicker({
   )
 }
 
-function SelectedChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+/**
+ * 고른 항목 한 줄. **이 목록의 순서가 곧 그룹 순서다.**
+ *
+ * 끄는 주체는 **손잡이**다. 행에 `draggable`을 걸고 켰다 껐다 하면 React
+ * 재조정과 싸우게 된다 — Todo 위젯에서 두 번 실패한 기록이 DECISIONS 13에 있다.
+ * 손잡이를 항상 draggable로 두면 켜고 끌 일이 없다.
+ */
+function SelectedRow({
+  label,
+  isOrg,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onDropHere,
+  onRemove,
+}: {
+  label: string
+  isOrg: boolean
+  dragging: boolean
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDropHere: () => void
+  onRemove: () => void
+}) {
   return (
-    <span
-      className="flex max-w-full items-center gap-1 rounded border border-border-accent
-                 bg-accent-muted px-1.5 py-0.5 text-caption text-text-primary"
+    <li
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDropHere()
+      }}
+      className={`group flex items-center gap-1.5 rounded px-1 py-0.5
+                  ${dragging ? 'bg-surface-inset opacity-25' : 'hover:bg-surface-inset'}`}
     >
-      <span className="truncate">{label}</span>
+      <span
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', label)
+          e.dataTransfer.effectAllowed = 'move'
+          // 한 프레임 미룬다 — dragstart 중에 모양을 바꾸면 캡처가 어긋난다.
+          requestAnimationFrame(onDragStart)
+        }}
+        onDragEnd={onDragEnd}
+        title="끌어서 순서 변경"
+        aria-hidden="true"
+        className="shrink-0 cursor-grab rounded p-0.5 text-text-quaternary opacity-0
+                   transition-opacity duration-fast active:cursor-grabbing
+                   group-hover:opacity-100"
+      >
+        <GripVertical size={11} />
+      </span>
+
+      {isOrg && (
+        <span className="shrink-0 rounded bg-accent-subtle px-1 text-caption text-accent">
+          조직
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate text-caption text-text-primary">{label}</span>
+
       <button
         type="button"
         onClick={onRemove}
         aria-label={`${label} 제거`}
-        className="shrink-0 rounded text-text-tertiary hover:text-danger
-                   focus-visible:outline-1 focus-visible:outline-accent"
+        title="범위에서 빼기"
+        className="shrink-0 rounded p-0.5 text-text-quaternary opacity-0 transition-opacity
+                   duration-fast hover:text-danger focus-visible:opacity-100
+                   group-hover:opacity-100"
       >
-        <X size={10} />
+        <X size={11} />
       </button>
-    </span>
+    </li>
   )
 }

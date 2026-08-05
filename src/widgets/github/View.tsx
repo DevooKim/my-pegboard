@@ -31,9 +31,15 @@ export function GithubView({
   // `serde(default)`라 생성 타입에서 optional이다. 이 설정이 생기기 전에 만든
   // 위젯은 값이 없는데, 그대로 두면 그룹핑이 조용히 꺼진다 — 기본은 켬이다.
   const grouped = config.groupByRepo ?? true
+
+  // **범위에서 고른 순서가 곧 그룹 순서다.** 별도 설정을 두지 않는다.
+  //
+  // `repoOrder`를 따로 갖고 있었는데, 같은 저장소 목록을 두 군데서 고르게
+  // 만드는 것이라 없앴다. 범위를 지정하지 않으면 여기가 빈 배열이 되고
+  // `groupByRepo`가 최근 갱신순으로 정렬한다.
   const groups = useMemo(
-    () => (grouped ? groupByRepo(items, config.repoOrder ?? []) : null),
-    [items, grouped, config.repoOrder],
+    () => (grouped ? groupByRepo(items, config.repos ?? []) : null),
+    [items, grouped, config.repos],
   )
 
   if (items.length === 0) return null // WidgetShell이 빈/로딩/에러를 그린다
@@ -43,13 +49,18 @@ export function GithubView({
       {groups ? (
         groups.map((group) => (
           <section key={group.repo}>
-            {/* 그룹 헤더. sticky로 두어 스크롤 중에도 어느 저장소인지 보인다.
+            {/* 그룹 헤더.
                 14px(text-base)은 위젯 제목과 같은 크기다 — 이것도 제목이므로 맞다.
                 항목(13px)보다 크지만 색을 한 단 낮춰(secondary) 본문을 이기지
-                않게 한다. 12px일 때는 저장소를 읽기 위해 눈을 모아야 했다. */}
+                않게 한다. 12px일 때는 저장소를 읽기 위해 눈을 모아야 했다.
+
+                **sticky를 쓰지 않는다.** 처음엔 "스크롤 중에도 어느 저장소인지
+                보이게" 하려고 걸었는데, 위젯 높이가 10행 남짓이라 고정된 헤더가
+                보이는 행을 잡아먹는다. 첫 헤더만 상단에 붙어 있는 것처럼 보여
+                고장으로 읽힌다. 그룹이 짧으면 헤더가 곧 다시 나타나므로
+                고정할 값어치가 없다. */}
             <h3
-              className="sticky top-0 z-10 truncate bg-surface-raised px-1.5 pt-2 pb-1
-                         text-base text-text-secondary"
+              className="truncate px-1.5 pt-2 pb-1 text-base text-text-secondary"
               title={group.repo}
             >
               {group.repo}

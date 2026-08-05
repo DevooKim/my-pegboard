@@ -28,8 +28,8 @@ export const githubWidget: WidgetDefinition<GithubWidgetConfig> = {
     query: { kind: 'preset', id: 'involves-me' },
     maxResults: 30,
     repos: [],
+    orgs: [],
     groupByRepo: true,
-    repoOrder: [],
     refreshSecs: 300,
   },
   // 2행 구성이라 Jira보다 행당 높이가 크다. 기본 높이를 넉넉히 준다.
