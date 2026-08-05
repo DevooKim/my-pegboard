@@ -881,3 +881,101 @@ fn plain_project_page_reads_is_last() {
     let page: super::super::types::ProjectSearchPage = serde_json::from_value(raw).unwrap();
     assert!(page.is_last, "isLast를 읽지 못하면 빈 페이지를 한 번 더 받는다");
 }
+
+// ---------------------------------------------------------------------------
+// 저장된 필터 (DECISIONS 11.1)
+// ---------------------------------------------------------------------------
+
+/// `/filter/search?expand=jql` 응답 파싱.
+///
+/// **이 응답 모양은 실측으로 확인하지 못했다** (구현 시점에 자격증명 접근이
+/// 막혀 있었다). 문서 기준으로 썼고, 필드마다 `default`를 붙여 모양이 달라도
+/// 파싱이 통째로 실패하지 않게 했다. 이 테스트는 그 방어가 실제로 되는지 본다.
+#[test]
+fn filter_search_page_reads_documented_shape() {
+    let raw = serde_json::json!({
+        "values": [{
+            "id": "10001",
+            "name": "우리 팀 스프린트",
+            "jql": "project = ABC AND sprint IN openSprints()",
+            "owner": {
+                "accountId": "acc-me",
+                "displayName": "김현우",
+                "avatarUrls": { "48x48": "https://example.com/a.png" }
+            }
+        }]
+    });
+    let page: super::super::types::FilterSearchPage = serde_json::from_value(raw).unwrap();
+    let f = page.values[0].clone().into_filter(Some("acc-me"));
+
+    assert_eq!(f.id, "10001");
+    assert_eq!(f.name, "우리 팀 스프린트");
+    assert_eq!(
+        f.jql.as_deref(),
+        Some("project = ABC AND sprint IN openSprints()")
+    );
+    assert!(f.owner_is_me, "소유자 accountId가 내 것과 같으면 내 필터다");
+}
+
+/// 남이 공유해준 필터. 소유자가 다르면 `owner_is_me`가 false다.
+#[test]
+fn shared_filter_is_not_owned_by_me() {
+    let raw = serde_json::json!({
+        "values": [{
+            "id": "10002",
+            "name": "남의 필터",
+            "owner": { "accountId": "acc-other", "displayName": "다른 사람" }
+        }]
+    });
+    let page: super::super::types::FilterSearchPage = serde_json::from_value(raw).unwrap();
+    let f = page.values[0].clone().into_filter(Some("acc-me"));
+    assert!(!f.owner_is_me);
+    // expand=jql이 없거나 권한이 없으면 jql이 안 온다. 그래도 파싱은 성공해야 한다.
+    assert!(f.jql.is_none());
+}
+
+/// 내 accountId를 모르면(=/myself 실패) 판정을 포기하고 목록은 살린다.
+/// "내가 만든 필터" 그룹이 안 갈리는 것보다 목록 자체가 안 뜨는 게 나쁘다.
+#[test]
+fn unknown_identity_does_not_lose_the_filter_list() {
+    let raw = serde_json::json!({
+        "values": [{ "id": "10003", "name": "필터", "owner": { "accountId": "acc-x" } }]
+    });
+    let page: super::super::types::FilterSearchPage = serde_json::from_value(raw).unwrap();
+    let f = page.values[0].clone().into_filter(None);
+    assert_eq!(f.id, "10003");
+    assert!(!f.owner_is_me);
+}
+
+/// 소유자가 아예 없는 항목(삭제된 계정 등)도 목록에서 떨어지지 않아야 한다.
+#[test]
+fn filter_without_owner_still_parses() {
+    let raw = serde_json::json!({ "values": [{ "id": "10004", "name": "주인 없는 필터" }] });
+    let page: super::super::types::FilterSearchPage = serde_json::from_value(raw).unwrap();
+    let f = page.values[0].clone().into_filter(Some("acc-me"));
+    assert_eq!(f.name, "주인 없는 필터");
+    assert!(!f.owner_is_me);
+}
+
+/// 응답에 우리가 모르는 필드가 잔뜩 있어도 무시하고 지나간다.
+#[test]
+fn unknown_filter_response_fields_are_ignored() {
+    let raw = serde_json::json!({
+        "self": "https://x/rest/api/3/filter/search?startAt=0",
+        "maxResults": 50,
+        "startAt": 0,
+        "total": 1,
+        "isLast": true,
+        "values": [{
+            "id": "10005",
+            "name": "필터",
+            "description": "설명",
+            "favourite": true,
+            "favouritedCount": 3,
+            "sharePermissions": [],
+            "viewUrl": "https://x/issues/?filter=10005"
+        }]
+    });
+    let page: super::super::types::FilterSearchPage = serde_json::from_value(raw).unwrap();
+    assert_eq!(page.values.len(), 1);
+}

@@ -1,7 +1,13 @@
 import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { SortDirection, SortField } from '#/ipc/bindings'
-import { commands, type JiraProject, type JiraWidgetConfig, type Preset } from '#/ipc/bindings'
+import {
+  commands,
+  type JiraFilter,
+  type JiraProject,
+  type JiraWidgetConfig,
+  type Preset,
+} from '#/ipc/bindings'
 import { relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetConfigFormProps } from '#/widgets/types'
 import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn, visibleColumns } from './columns'
@@ -9,11 +15,20 @@ import { COLUMN_LABELS, TOGGLEABLE_COLUMNS, type ToggleableColumn, visibleColumn
 const RAW = '__raw__'
 
 /**
- * DECISIONS 11.1 — 프리셋 + JQL 탈출구.
+ * 저장된 필터 셀렉트 값의 프리픽스.
+ *
+ * 프리셋 id와 필터 id를 **한 셀렉트 안에서** 구분해야 한다. 프리셋 id는
+ * `assigned-to-me` 같은 문자열이고 필터 id는 숫자라 사실상 겹치지 않지만,
+ * 프리픽스가 있으면 겹칠 수 없다는 것이 코드에 드러난다.
+ */
+const FILTER_PREFIX = 'filter:'
+
+/**
+ * DECISIONS 11.1 — 프리셋 + 저장된 필터 + JQL 탈출구.
  *
  * 폼 빌더를 만들지 않는 이유: "우리 팀 티켓"의 정의가 조직마다 달라서
  * 결국 JQL의 표현력이 필요해진다. 프리셋으로 흔한 경우를 덮고,
- * 나머지는 JQL을 그대로 열어준다.
+ * 이미 Jira에 만들어둔 필터는 그대로 불러오고, 나머지는 JQL을 열어준다.
  */
 export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraWidgetConfig>) {
   const [presets, setPresets] = useState<Preset[]>([])
@@ -21,6 +36,27 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const now = useNow()
+
+  // 저장된 필터 목록. 프리셋과 달리 서버에 물어봐야 하므로 실패할 수 있다.
+  //
+  // **실패해도 프리셋 선택을 막지 않는다.** 필터 조회가 안 됐다고 위젯 설정
+  // 자체를 못 하게 되면, 원래 되던 일이 새 기능 때문에 막히는 것이다.
+  // 그래서 에러를 셀렉트 옆에 인라인으로 드러내고(조용한 실패 금지) 셀렉트는 살려둔다.
+  const [filters, setFilters] = useState<JiraFilter[]>([])
+  const [filtersError, setFiltersError] = useState<string | null>(null)
+  const [filtersLoading, setFiltersLoading] = useState(true)
+
+  const loadFilters = useCallback(async () => {
+    setFiltersLoading(true)
+    setFiltersError(null)
+    const r = await commands.jiraFilters()
+    if (r.status === 'ok') {
+      setFilters(r.data)
+    } else {
+      setFiltersError(r.error.message)
+    }
+    setFiltersLoading(false)
+  }, [])
 
   // 생성 폼과 **같은 캐시**를 쓴다 (D9). jiraProjects를 따로 부르면 같은
   // 데이터를 두 경로로 가져오게 되고 캐시가 둘이 된다.
@@ -34,21 +70,29 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
     setRefreshing(false)
   }, [])
 
+  // 설정창을 열 때 1회. **앱 시작 경로가 아니다** — 위젯을 그리는 데는
+  // config에 저장된 필터 이름만 있으면 되고, 목록은 여기서만 필요하다.
   useEffect(() => {
     void commands.jiraPresets().then(setPresets)
     void loadProjects(false)
-  }, [loadProjects])
+    void loadFilters()
+  }, [loadProjects, loadFilters])
 
-  // 정렬과 프로젝트 범위는 프리셋에만 적용된다. 생 JQL은 사용자가 ORDER BY와
-  // project 조건을 직접 쓰므로, 우리가 UI로 덧붙이면 의도를 덮어쓴다.
+  // 정렬과 프로젝트 범위는 프리셋과 저장된 필터에 적용된다 (Rust와 같은 판단 —
+  // 둘 다 우리가 만든 완결된 JQL이라 ORDER BY를 잘라 붙이는 것이 안전하다).
+  // 생 JQL만 손대지 않는다 — 사용자가 ORDER BY와 project 조건을 직접 쓴다.
   const isPreset = config.query.kind === 'preset'
+  const isSavedFilter = config.query.kind === 'savedFilter'
+  const isGenerated = isPreset || isSavedFilter
   const scoped = config.projects ?? []
 
-  // placeholder로 보여줄 기본 이름 — 프리셋 이름이거나 'Jira'.
+  // placeholder로 보여줄 기본 이름 — 프리셋/필터 이름이거나 'Jira'.
   const defaultTitle =
     config.query.kind === 'preset'
       ? (presets.find((p) => p.id === presetId(config))?.name ?? 'Jira')
-      : 'Jira'
+      : config.query.kind === 'savedFilter'
+        ? config.query.name || 'Jira'
+        : 'Jira'
   const toggleProject = (key: string) => {
     onChange({
       ...config,
@@ -56,7 +100,35 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
     })
   }
 
-  const selected = config.query.kind === 'preset' ? config.query.id : RAW
+  const selected =
+    config.query.kind === 'preset'
+      ? config.query.id
+      : config.query.kind === 'savedFilter'
+        ? `${FILTER_PREFIX}${config.query.id}`
+        : RAW
+
+  /** 셀렉트 값 → config.query. 프리픽스로 세 갈래를 가른다. */
+  const selectQuery = (value: string) => {
+    if (value === RAW) {
+      onChange({ ...config, query: { kind: 'raw', jql: currentJql(config, presets) } })
+      return
+    }
+    if (value.startsWith(FILTER_PREFIX)) {
+      const id = value.slice(FILTER_PREFIX.length)
+      // 이름을 함께 저장한다 — 위젯 제목과 에러 메시지가 서버 응답을 기다리지
+      // 않아도 되게. 진실의 원천은 id이고 name은 표시용 캐시다.
+      const name = filters.find((f) => f.id === id)?.name ?? ''
+      onChange({ ...config, query: { kind: 'savedFilter', id, name } })
+      return
+    }
+    onChange({ ...config, query: { kind: 'preset', id: value } })
+  }
+
+  // 현재 고른 필터. 목록에 없으면(지워졌거나 조회 실패) 셀렉트가 매칭 option을
+  // 못 찾아 엉뚱한 항목을 고른 것처럼 보인다 — 아래에서 임시 option으로 막는다.
+  const savedFilter = config.query.kind === 'savedFilter' ? config.query : null
+  const selectedFilterMissing =
+    savedFilter !== null && !filters.some((f) => f.id === savedFilter.id)
 
   return (
     <div className="flex flex-col">
@@ -77,16 +149,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
           <span className="text-caption text-text-secondary">쿼리</span>
           <select
             value={selected}
-            onChange={(e) => {
-              const v = e.target.value
-              onChange({
-                ...config,
-                query:
-                  v === RAW
-                    ? { kind: 'raw', jql: currentJql(config, presets) }
-                    : { kind: 'preset', id: v },
-              })
-            }}
+            onChange={(e) => selectQuery(e.target.value)}
             className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5
                      text-body text-text-primary"
           >
@@ -95,7 +158,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
             넣어둔다. 안 그러면 select가 매칭되는 option을 못 찾아 마지막 항목(RAW)을
             고른 것처럼 보이고, 사용자가 건드리지도 않은 설정이 바뀐 듯 보인다.
           */}
-            {presets.length === 0 && selected !== RAW && (
+            {presets.length === 0 && !savedFilter && selected !== RAW && (
               <option value={selected}>불러오는 중…</option>
             )}
             {presets.map((p) => (
@@ -103,11 +166,68 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
                 {p.name}
               </option>
             ))}
+
+            {/*
+              저장된 필터를 프리셋과 **같은 목록 안**에 둔다. 둘은 사용자에게
+              "무엇을 볼지 고르는 일" 하나이고, 셀렉트를 두 개로 나누면
+              어느 쪽이 이기는지를 사용자가 추론해야 한다.
+
+              현재 고른 필터가 목록에 없으면 그것만 임시 항목으로 넣는다 —
+              위 프리셋 로딩과 같은 이유(선택이 조용히 튀는 것을 막는다).
+            */}
+            {selectedFilterMissing && savedFilter && (
+              <optgroup label="저장된 필터">
+                <option value={`${FILTER_PREFIX}${savedFilter.id}`}>
+                  {savedFilter.name || `필터 ${savedFilter.id}`}
+                  {filtersLoading ? ' (불러오는 중…)' : ' (목록에 없음)'}
+                </option>
+              </optgroup>
+            )}
+            {filters.length > 0 && (
+              <optgroup label="저장된 필터">
+                {filters.map((f) => (
+                  <option key={f.id} value={`${FILTER_PREFIX}${f.id}`}>
+                    {f.name}
+                    {f.ownerIsMe ? '' : ' (공유받음)'}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+
             <option value={RAW}>직접 입력 (JQL)</option>
           </select>
+
           {config.query.kind === 'preset' && (
             <span className="text-caption text-text-tertiary">
               {presets.find((p) => p.id === presetId(config))?.description}
+            </span>
+          )}
+
+          {/*
+            필터 조회 실패를 화면에 드러낸다 (CLAUDE.md 대전제 2 — 조용한 실패 금지).
+            셀렉트 자체는 살아 있으므로 프리셋은 그대로 고를 수 있다.
+          */}
+          {filtersError && (
+            <span className="flex flex-wrap items-center gap-2 text-caption text-danger">
+              <span>저장된 필터 목록을 불러오지 못했습니다: {filtersError}</span>
+              <button
+                type="button"
+                onClick={() => void loadFilters()}
+                className="rounded border border-border-subtle px-1.5 py-0.5
+                           text-text-secondary hover:bg-surface-inset"
+              >
+                다시 시도
+              </button>
+              <span className="text-text-tertiary">프리셋은 그대로 선택할 수 있습니다</span>
+            </span>
+          )}
+          {filtersLoading && !filtersError && (
+            <span className="text-caption text-text-quaternary">저장된 필터 불러오는 중…</span>
+          )}
+          {/* 필터의 JQL을 보여준다 — 이 필터가 무엇을 보는지 확인용(저장하지는 않는다) */}
+          {savedFilter && (
+            <span className="font-mono text-caption text-text-tertiary">
+              {filters.find((f) => f.id === savedFilter.id)?.jql ?? `filter = ${savedFilter.id}`}
             </span>
           )}
         </label>
@@ -132,8 +252,8 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
           </label>
         )}
 
-        {/* 프로젝트 범위와 정렬은 프리셋 전용이다 (생 JQL에는 사용자가 직접 쓴다) */}
-        {isPreset && (
+        {/* 프로젝트 범위와 정렬은 프리셋·저장된 필터에만 (생 JQL에는 사용자가 직접 쓴다) */}
+        {isGenerated && (
           <div className="flex flex-col gap-1">
             <span className="flex items-center gap-2">
               <span className="text-caption text-text-secondary">프로젝트</span>
@@ -184,7 +304,7 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
           </div>
         )}
 
-        {isPreset && (
+        {isGenerated && (
           <div className="flex flex-col gap-1">
             <span className="text-caption text-text-secondary">정렬</span>
             <div className="flex gap-1">
@@ -305,10 +425,18 @@ function presetId(config: JiraWidgetConfig): string | null {
   return config.query.kind === 'preset' ? config.query.id : null
 }
 
-/** 프리셋 → 직접 입력으로 전환할 때, 그 프리셋의 JQL을 시작점으로 준다. */
+/**
+ * 프리셋·저장된 필터 → 직접 입력으로 전환할 때의 시작점.
+ *
+ * 저장된 필터는 `filter = <id>`를 준다. 필터의 실제 JQL을 펼쳐 넣지 않는 이유:
+ * 그러면 Jira에서 필터를 고쳐도 위젯이 따라가지 않는데, 사용자는 "저장된 필터를
+ * 쓰던 위젯"이라고 기억한다. `filter = <id>`로 남기면 연결이 유지되고,
+ * 펼치고 싶으면 Jira에서 복사해 붙이면 된다.
+ */
 function currentJql(config: JiraWidgetConfig, presets: Preset[]): string {
   const q = config.query
   if (q.kind === 'raw') return q.jql
+  if (q.kind === 'savedFilter') return `filter = ${q.id} ORDER BY updated DESC`
   return presets.find((p) => p.id === q.id)?.jql ?? ''
 }
 

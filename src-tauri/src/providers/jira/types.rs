@@ -808,6 +808,81 @@ pub(crate) struct ProjectSearchPage {
 }
 
 // ---------------------------------------------------------------------------
+// 저장된 필터 (DECISIONS 11.1)
+// ---------------------------------------------------------------------------
+
+/// 설정창 쿼리 셀렉트의 "저장된 필터" 항목.
+///
+/// `/rest/api/3/filter/search?expand=jql` 응답에서 우리가 쓰는 부분만 남긴다.
+/// (Rust가 파싱하고 필요한 필드만 IPC로 넘긴다 — CLAUDE.md 아키텍처)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraFilter {
+    /// Jira의 숫자 필터 id. `filter = <id>`로 JQL에 들어간다.
+    pub id: String,
+    pub name: String,
+    /// 필터의 JQL. **위젯이 이 값을 저장하지 않는다** — 설정창에서
+    /// "이 필터가 무엇을 보는지" 미리보기로만 쓴다. 위젯이 굳혀 저장하면
+    /// Jira에서 필터를 고쳤을 때 따라가지 못한다.
+    ///
+    /// `expand=jql`을 안 붙이면 오지 않으므로 없을 수 있다.
+    #[serde(default)]
+    pub jql: Option<String>,
+    /// 내가 만든 필터인가. 남이 공유해준 필터와 구분해 보여주기 위한 값이다.
+    #[serde(default)]
+    pub owner_is_me: bool,
+}
+
+/// `/rest/api/3/filter/search` 응답.
+///
+/// 필드마다 `default`를 붙인 이유: 이 응답 모양을 실측으로 확인하지 못했다
+/// (구현 시점에 자격증명 접근이 막혀 있었다). 문서와 다른 필드가 오더라도
+/// 파싱이 통째로 실패해 "필터 목록이 안 뜬다"가 되는 것보다,
+/// 아는 필드만 채우고 나머지를 비우는 편이 낫다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FilterSearchPage {
+    #[serde(default)]
+    pub values: Vec<FilterSearchItem>,
+}
+
+/// 응답 항목. `owner`를 계정 비교용으로 들고 있다가 [`JiraFilter`]로 좁힌다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FilterSearchItem {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub jql: Option<String>,
+    /// 필터 소유자. 공유받은 필터면 내가 아니다.
+    ///
+    /// `de_user`를 쓰는 이유: Jira는 `avatarUrls`를 **맵**으로 보내는데
+    /// [`JiraUser`]의 파생 구현은 단일 `avatarUrl`을 기대한다. 이 헬퍼가
+    /// 그 맵을 접어준다 (다른 사용자 필드들도 전부 이 경로를 쓴다).
+    #[serde(default, deserialize_with = "de_user")]
+    pub owner: Option<JiraUser>,
+}
+
+impl FilterSearchItem {
+    /// `my_account_id`와 소유자를 비교해 IPC용 타입으로 좁힌다.
+    pub fn into_filter(self, my_account_id: Option<&str>) -> JiraFilter {
+        let owner_is_me = match (&self.owner, my_account_id) {
+            (Some(owner), Some(me)) => owner.account_id == me,
+            // 내 계정을 모르면 판정하지 않는다. false는 "내 것이 아니다"가 아니라
+            // "모른다"에 가깝지만, UI가 이 값으로 그룹을 나눌 뿐이라 해가 없다.
+            _ => false,
+        };
+        JiraFilter {
+            id: self.id,
+            name: self.name,
+            jql: self.jql,
+            owner_is_me,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 프로젝트 + 이슈타입 (생성 폼 / 설정창 공용)
 // ---------------------------------------------------------------------------
 

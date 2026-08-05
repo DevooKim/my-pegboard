@@ -15,6 +15,7 @@ mod tests {
         let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
             commands::app_info,
             commands::jira::jira_presets,
+            commands::jira::jira_filters,
             commands::jira::jira_projects,
             commands::jira::jira_is_configured,
             commands::jira::jira_connection,

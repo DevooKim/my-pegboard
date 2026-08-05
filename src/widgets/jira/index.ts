@@ -43,9 +43,12 @@ export const jiraWidget: WidgetDefinition<JiraWidgetConfig> = {
     // 사용자가 붙인 이름이 항상 이긴다.
     const custom = config.title?.trim()
     if (custom) return custom
-    return config.query.kind === 'preset'
-      ? (PRESET_TITLES[config.query.id] ?? 'Jira')
-      : '직접 입력한 쿼리'
+    if (config.query.kind === 'preset') return PRESET_TITLES[config.query.id] ?? 'Jira'
+    // 저장된 필터는 config에 이름이 함께 저장돼 있다. **여기가 그 이유다** —
+    // 이 함수는 앱 시작 0ms에 불린다. 이름을 서버에서 풀어야 했다면 제목이
+    // 'Jira'로 떴다가 목록이 도착한 뒤 바뀌었을 것이다(깜빡임).
+    if (config.query.kind === 'savedFilter') return config.query.name || 'Jira'
+    return '직접 입력한 쿼리'
   },
 }
 
