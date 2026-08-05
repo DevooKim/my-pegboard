@@ -74,7 +74,11 @@ function subscribeSave(): void {
 
   useBoardStore.subscribe((state, prev) => {
     // hydrate 자체가 저장을 유발하면 안 된다.
-    if (!state.hydrated || state.boards === prev.boards) return
+    if (!state.hydrated) return
+    // activeBoardId도 저장 대상이다 — 앱을 다시 켜면 마지막에 보던 보드가
+    // 열려야 한다. 탭 전환은 boards 배열을 건드리지 않으므로 여기를 빼면
+    // "탭을 옮겨두고 재시작했는데 첫 보드가 뜬다"는 조용한 실패가 된다.
+    if (state.boards === prev.boards && state.activeBoardId === prev.activeBoardId) return
 
     clearTimeout(timer)
     pending = save

@@ -1,8 +1,10 @@
-import { Settings } from 'lucide-react'
+import { Columns, Settings } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { AddWidgetMenu } from '#/board/AddWidgetMenu'
 import { Board } from '#/board/Board'
+import { BoardTabs } from '#/board/BoardTabs'
 import { SettingsModal, type SettingsTab } from '#/settings/SettingsModal'
+import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { bootstrap } from '#/store/persist'
 import { startUpdateChecks, useUpdateStore } from '#/store/update'
@@ -49,6 +51,19 @@ export function App() {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('pegboard:jira-create'))
       }
+      // ⌘1~⌘9 보드 전환. 브라우저·에디터의 탭 전환 관례를 그대로 따른다.
+      // 기존 단축키(⌘, ⌘R ⌘N ⌘⇧N)와 겹치지 않는다. ⇧를 안 눌렀을 때만 —
+      // ⌘⇧숫자는 macOS 입력기가 가져가는 경우가 있다.
+      if (e.metaKey && !e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        const state = useBoardStore.getState()
+        const target = state.boards[Number(e.key) - 1]
+        // 보드가 그 자리에 없으면 아무것도 하지 않는다. preventDefault도 하지
+        // 않아서 다른 핸들러가 있다면 그쪽이 받는다.
+        if (target) {
+          e.preventDefault()
+          state.setActiveBoard(target.id)
+        }
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -57,11 +72,15 @@ export function App() {
   return (
     <div className="flex h-full flex-col bg-surface-base text-text-primary">
       <AuthBanner onOpenSettings={openSettings} />
-      {/* macOS 오버레이 타이틀바 — 창을 끌 수 있게 비워두되, 우측에 액션을 얹는다 */}
-      <header
-        data-tauri-drag-region
-        className="flex h-9 shrink-0 items-center justify-end gap-1 pr-2 pl-20"
-      >
+      {/* macOS 오버레이 타이틀바 — 창을 끌 수 있게 비워두되, 좌측에 보드 탭,
+          우측에 액션을 얹는다.
+
+          보드 탭이 여기 있는 이유: 보드 영역을 쓰지 않으려면 이미 비어 있는
+          줄에 넣어야 한다. pl-20은 신호등 버튼 자리다. */}
+      <header data-tauri-drag-region className="flex h-9 shrink-0 items-center gap-1 pr-2 pl-20">
+        <BoardTabs />
+        <div data-tauri-drag-region className="flex-1" />
+        <AddBoardButton />
         <AddWidgetMenu />
         <button
           type="button"
@@ -93,6 +112,35 @@ export function App() {
         onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
       />
     </div>
+  )
+}
+
+/**
+ * 보드가 하나일 때만 보이는 "보드 추가".
+ *
+ * BoardTabs는 탭이 1개면 아무것도 그리지 않는다(DECISIONS 14장 개정 — 쓰지
+ * 않는 기능이 화면을 차지하면 안 된다). 그러면 보드를 처음 만들 길이 없어지므로
+ * 여기에 하나 둔다. 탭이 생기면 사라지고, 그 뒤로는 탭 바의 ✚가 받는다.
+ *
+ * ✚가 아니라 칸 아이콘을 쓴다 — 옆의 "위젯 추가"와 같은 모양이면 둘 중
+ * 무엇이 무엇인지 아이콘만으로 구분되지 않는다.
+ */
+function AddBoardButton() {
+  const boardCount = useBoardStore((s) => s.boards.length)
+  const addBoard = useBoardStore((s) => s.addBoard)
+  if (boardCount > 1) return null
+  return (
+    <button
+      type="button"
+      onClick={() => addBoard()}
+      title="보드 추가 — 맥락이 다른 위젯 묶음을 따로 둡니다"
+      aria-label="보드 추가"
+      className="flex items-center gap-1 rounded px-2 py-1 text-caption text-text-tertiary
+                 transition-colors duration-fast hover:bg-surface-inset hover:text-text-primary"
+    >
+      <Columns size={13} />
+      보드 추가
+    </button>
   )
 }
 
