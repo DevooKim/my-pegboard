@@ -229,11 +229,13 @@ src-tauri/src/
 | 다중 보드 | 데이터 구조는 준비됨, **UI만 없음** |
 | 다중 연결 | 구조 준비됨 (`connectionId: "default"`), UI 없음 |
 | 트레이 상주·백그라운드 폴링·알림 | 4차 |
+| 설정창 `일반` 탭 | 넣을 앱 전역 설정이 0개 (DECISIONS 15) |
+| 정보 탭의 메모리·폴링 소요 시간 | 성능 계측은 별개 작업. `app_info`가 자리만 잡아둠 |
 | Jira 상태 변경(transition) | 워크플로우가 프로젝트마다 달라 보류 |
 | 이미지 첨부 렌더링 | 인증 URL 재요청 필요, 보류 |
 | PWA | **폐기됨** (Tauri로 대체) |
 | i18n | 한국어 단일 |
-| 자동 업데이트 | 로컬 빌드, 업데이트 서버 없음 |
+| 자동 업데이트 | **있음** — GitHub Release 기반 (DECISIONS 23) |
 
 **위젯 개수 제한:** Jira 4 / GitHub 4 / **Todo 1** / Web 4 (타입별)
 Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 두 번째는
@@ -269,16 +271,43 @@ cd src-tauri && cargo check && cd ..
 bun run typecheck && bun run lint && bun run test
 cd src-tauri && cargo test && cd ..
 
-# 3. 빌드
+# 3. ★ 서명 키를 환경변수로 — 없으면 updater 번들이 조용히 안 만들어진다
+#    비밀번호는 키체인에서 읽는다. 명령줄에 적으면 셸 히스토리에 남는다.
+#    최초 1회 등록:
+#      security add-generic-password -a "$USER" -s my-pegboard-updater-key -w '<비밀번호>'
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/my-pegboard.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s my-pegboard-updater-key -w)"
+
+# 4. 빌드
 bun run tauri build
 
-# 4. ★ 배포 전 검사 — 건너뛰지 말 것
+# 5. latest.json 생성 (손으로 만들지 말 것)
+./scripts/make-latest-json.sh
+
+# 6. ★ 배포 전 검사 — 건너뛰지 말 것 (검사 9개)
 ./scripts/verify-release.sh
 
-# 5. 태그 + 릴리즈
+# 7. 태그 + 릴리즈 — 에셋 4개 전부, --prerelease 없이
 git tag -a vX.Y.Z-alpha -m "..." && git push origin vX.Y.Z-alpha
-gh release create vX.Y.Z-alpha <dmg> --prerelease --notes-file <notes>
+B=src-tauri/target/release/bundle
+gh release create vX.Y.Z-alpha --notes-file <notes> \
+  $B/dmg/my-pegboard_X.Y.Z-alpha_aarch64.dmg \
+  $B/macos/my-pegboard_X.Y.Z-alpha_aarch64.app.tar.gz \
+  $B/macos/my-pegboard_X.Y.Z-alpha_aarch64.app.tar.gz.sig \
+  $B/macos/latest.json
 ```
+
+**⚠️ `--prerelease`를 붙이지 말 것.** GitHub의 `/releases/latest`가 prerelease를
+건너뛰어서 updater endpoint가 404가 된다. 태그의 `-alpha`는 그대로 두므로
+"알파"라는 신호는 유지된다. (DECISIONS 23.5)
+
+**⚠️ `latest.json`이 빠지면 기존 사용자는 새 버전을 영원히 못 본다.** 조용한 실패다.
+
+**3번이 있는 이유:** 개인키 없이 빌드하면 tauri가 updater 번들을 **에러 없이 그냥
+만들지 않는다.** dmg는 정상이라 빌드한 기기에서는 아무 이상이 없고, 기존 사용자만
+"새 버전이 안 뜬다"를 겪는다. v0.3.0 서명 사고와 구조가 같다. `verify-release.sh`의
+검사 6이 이걸 막는다. **키/비밀번호를 잃으면 이미 배포된 앱은 영구히 업데이트를
+받지 못한다** (DECISIONS 23.2).
 
 **4번이 있는 이유:** v0.3.0-alpha를 **서명되지 않은 채로 배포했다.** 다른
 맥에서 "손상되었기 때문에 열 수 없습니다"가 뜨고 우클릭→열기로도 안 뚫렸다.

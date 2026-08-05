@@ -2,25 +2,40 @@ import { Settings } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { AddWidgetMenu } from '#/board/AddWidgetMenu'
 import { Board } from '#/board/Board'
-import { SettingsModal } from '#/settings/SettingsModal'
+import { SettingsModal, type SettingsTab } from '#/settings/SettingsModal'
 import { useConnectionStore } from '#/store/connection'
 import { bootstrap } from '#/store/persist'
+import { startUpdateChecks, useUpdateStore } from '#/store/update'
 
 export function App() {
   const [ready, setReady] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('connections')
+  const hasUpdate = useUpdateStore((s) => s.hasUpdate)
+
+  // 알려야 할 게 있으면 그것부터 보여준다 — 배지를 보고 열었다면 답은 정보 탭에 있다.
+  const openSettings = useCallback(() => {
+    setSettingsTab(hasUpdate ? 'about' : 'connections')
+    setSettingsOpen(true)
+  }, [hasUpdate])
 
   useEffect(() => {
     void bootstrap().finally(() => setReady(true))
   }, [])
+
+  // 업데이트 확인은 보드가 그려진 뒤에 조용히 시작한다 (DECISIONS 23장).
+  useEffect(() => startUpdateChecks(), [])
 
   // ⌘, 설정 / ⌘R 전체 새로고침 / ⌘⇧N 티켓 생성
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey && e.key === ',') {
         e.preventDefault()
-        setSettingsOpen((v) => !v)
+        setSettingsOpen((v) => {
+          // 열 때만 탭을 정한다. 닫는 길에 정하면 닫히는 화면이 한 번 깜빡인다.
+          if (!v) setSettingsTab(useUpdateStore.getState().hasUpdate ? 'about' : 'connections')
+          return !v
+        })
       }
       if (e.metaKey && e.key === 'r') {
         e.preventDefault()
@@ -51,17 +66,28 @@ export function App() {
         <button
           type="button"
           onClick={openSettings}
-          title="설정 (⌘,)"
-          aria-label="설정"
-          className="grid size-7 place-items-center rounded text-text-tertiary
+          title={hasUpdate ? '설정 (⌘,) — 새 버전이 있습니다' : '설정 (⌘,)'}
+          aria-label={hasUpdate ? '설정 — 새 버전이 있습니다' : '설정'}
+          className="relative grid size-7 place-items-center rounded text-text-tertiary
                      transition-colors duration-fast hover:bg-surface-inset hover:text-text-primary"
         >
           <Settings size={14} />
+          {/* 새 버전 알림. 업데이트는 에러가 아니므로 배너를 쓰지 않는다 —
+              점 하나가 급수에 맞고, AuthBanner의 danger 채널과 섞이지 않는다.
+              dismiss는 없다. 업데이트하면 사라진다. */}
+          {hasUpdate && (
+            <span
+              aria-hidden="true"
+              className="absolute top-1 right-1 size-1.5 rounded-full bg-accent
+                         ring-2 ring-surface-base"
+            />
+          )}
         </button>
       </header>
       {ready && <Board />}
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
         // 저장 직후 모든 위젯을 즉시 갱신한다. 저장의 결과가 화면 변화로 보여야 한다.
         onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}

@@ -39,18 +39,48 @@ export async function bootstrap(): Promise<void> {
   subscribeSave()
 }
 
+/**
+ * 디바운스 대기 중인 저장을 즉시 확정한다. 대기 중인 게 없으면 아무 일도 없다.
+ *
+ * 앱을 스스로 재시작하기 전에 반드시 호출한다 (업데이트 설치 후 재시작).
+ * 디바운스 타이머가 살아 있는 채로 프로세스가 죽으면 **직전 배치 변경이
+ * 조용히 사라진다** — 드래그로 위젯을 옮긴 직후가 정확히 그 구간이다.
+ *
+ * Todo는 여기 해당하지 않는다. 모든 변경이 즉시 Rust로 가므로 대기분이 없다.
+ */
+export function flushPendingSaves(): Promise<void> {
+  return flushImpl()
+}
+
+/** subscribeSave가 실제 구현을 여기에 꽂는다. bootstrap 전에는 대기분이 없다. */
+let flushImpl: () => Promise<void> = async () => {}
+
 function subscribeSave(): void {
   let timer: ReturnType<typeof setTimeout> | undefined
+  let pending: (() => Promise<void>) | undefined
+
+  const save = async () => {
+    const state = useBoardStore.getState()
+    const r = await commands.boardSave(serializeBoard(state) as never)
+    if (r.status === 'error') console.error('보드 저장 실패:', r.error)
+  }
+
+  flushImpl = async () => {
+    if (!pending) return
+    clearTimeout(timer)
+    pending = undefined
+    await save()
+  }
 
   useBoardStore.subscribe((state, prev) => {
     // hydrate 자체가 저장을 유발하면 안 된다.
     if (!state.hydrated || state.boards === prev.boards) return
 
     clearTimeout(timer)
+    pending = save
     timer = setTimeout(() => {
-      void commands.boardSave(serializeBoard(state) as never).then((r) => {
-        if (r.status === 'error') console.error('보드 저장 실패:', r.error)
-      })
+      pending = undefined
+      void save()
     }, SAVE_DEBOUNCE_MS)
   })
 }

@@ -19,6 +19,14 @@ use tauri_specta::{collect_commands, Builder as SpectaBuilder};
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
 
+    // 업데이트는 앱 안에서 받아 설치한다 (DECISIONS 23장).
+    // 서명 검증은 minisign 공개키(tauri.conf.json)로 하며, 개인키가 없으면
+    // 빌드가 updater 번들을 **조용히 만들지 않는다** — verify-release.sh가 막는다.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
         // 이미 실행 중이면 새 인스턴스를 띄우는 대신 기존 창을 앞으로.

@@ -111,10 +111,122 @@ else
   fail=1
 fi
 
+# ══════════════════════════════════════════════════════════════════════
+# updater 검사 (6~9)
+# ──────────────────────────────────────────────────────────────────────
+# 이 네 검사가 있는 이유는 v0.3.0 서명 사고와 **구조가 같은** 실패가
+# updater에도 있기 때문이다: 개인키가 없는 맥에서 빌드하면 tauri는 에러 없이
+# updater 번들을 만들지 않는다. dmg는 정상이라 로컬에서는 아무 이상이 없고,
+# 기존 사용자만 "새 버전이 안 뜬다"를 겪는다. 조용한 실패를 여기서 깬다.
+# ══════════════════════════════════════════════════════════════════════
+
+BUNDLE_DIR="$(dirname "$DMG")/../macos"
+CONF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src-tauri/tauri.conf.json"
+
+# ── 6. updater 번들과 서명이 있는가 ────────────────────────────────────
+TARBALL=$(ls -t "$BUNDLE_DIR"/*.app.tar.gz 2>/dev/null | head -1 || true)
+if [[ -n "$TARBALL" && -f "$TARBALL" && -f "${TARBALL}.sig" ]]; then
+  echo "✓ updater 번들 + 서명 있음 ($(basename "$TARBALL"))"
+else
+  echo "✗ updater 번들(.app.tar.gz)이나 .sig가 없습니다"
+  echo "    개인키 없이 빌드했을 때 tauri는 **조용히** 만들지 않습니다."
+  echo "    TAURI_SIGNING_PRIVATE_KEY(+PASSWORD)를 설정하고 다시 빌드하세요."
+  fail=1
+fi
+
+# ── 7. 서명이 앱에 박힌 공개키로 검증되는가 ────────────────────────────
+# 키를 새로 만들어 빌드하면 6번은 통과한다. 그런데 공개키가 달라서 기존
+# 사용자는 설치 단계에서 검증 실패를 본다 — 그건 **복구 불가**다.
+if [[ -n "$TARBALL" && -f "${TARBALL}.sig" ]]; then
+  PUBKEY=$(/usr/bin/python3 -c \
+    "import json,sys; print(json.load(open(sys.argv[1]))['plugins']['updater']['pubkey'])" \
+    "$CONF" 2>/dev/null || true)
+  if [[ -z "$PUBKEY" ]]; then
+    echo "✗ tauri.conf.json에서 updater pubkey를 읽지 못했습니다"
+    fail=1
+  else
+    # minisign 형식: 공개키/서명 모두 base64로 한 겹 싸여 있다. 벗겨서
+    # keynum(8바이트 = base64 앞부분)이 같은지 본다. 다르면 다른 키다.
+    KEY_ID=$(/usr/bin/python3 -c "
+import base64,sys
+raw = base64.b64decode(sys.argv[1]).decode().splitlines()
+print(base64.b64decode(raw[1])[2:10].hex())
+" "$PUBKEY" 2>/dev/null || true)
+    SIG_ID=$(/usr/bin/python3 -c "
+import base64,sys
+raw = base64.b64decode(open(sys.argv[1]).read()).decode().splitlines()
+print(base64.b64decode(raw[1])[2:10].hex())
+" "${TARBALL}.sig" 2>/dev/null || true)
+    if [[ -n "$KEY_ID" && "$KEY_ID" == "$SIG_ID" ]]; then
+      echo "✓ 서명이 앱의 공개키와 같은 키로 만들어졌습니다"
+    else
+      echo "✗ 서명 키가 앱에 박힌 공개키와 다릅니다 (key=$KEY_ID sig=$SIG_ID)"
+      echo "    이대로 배포하면 기존 사용자는 설치 단계에서 검증 실패를 봅니다."
+      echo "    원래 개인키(~/.tauri/my-pegboard.key)로 다시 빌드하세요."
+      fail=1
+    fi
+  fi
+fi
+
+# ── 8. latest.json 버전이 tauri.conf.json과 맞는가 ─────────────────────
+LATEST="$BUNDLE_DIR/latest.json"
+CONF_VER=$(/usr/bin/python3 -c \
+  "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$CONF" 2>/dev/null || true)
+if [[ ! -f "$LATEST" ]]; then
+  echo "✗ latest.json이 없습니다 — ./scripts/make-latest-json.sh를 실행하세요"
+  echo "    이 파일이 릴리즈에 없으면 기존 사용자는 새 버전을 영원히 못 봅니다."
+  fail=1
+else
+  JSON_VER=$(/usr/bin/python3 -c \
+    "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$LATEST" 2>/dev/null || true)
+  if [[ -n "$JSON_VER" && "$JSON_VER" == "$CONF_VER" ]]; then
+    echo "✓ latest.json 버전 일치: $JSON_VER"
+  else
+    echo "✗ latest.json 버전($JSON_VER)이 tauri.conf.json($CONF_VER)과 다릅니다"
+    fail=1
+  fi
+
+  # ── 9. latest.json의 URL이 올릴 파일과 정확히 맞는가 ─────────────────
+  # 파일명이 어긋나면 updater가 404를 받는다. 앱은 "업데이트 없음"처럼 조용하다.
+  # URL이 가리키는 이름의 파일이 **실제로 번들 디렉토리에 있는지**까지 본다 —
+  # 이름만 맞춰봐야 올릴 파일이 없으면 릴리즈에서 빠진다.
+  JSON_URL=$(/usr/bin/python3 -c "
+import json,sys
+d = json.load(open(sys.argv[1]))
+print(d['platforms']['darwin-aarch64']['url'])
+" "$LATEST" 2>/dev/null || true)
+  URL_ASSET="${JSON_URL##*/}"
+  if [[ -n "$URL_ASSET" && -f "$BUNDLE_DIR/$URL_ASSET" && -f "$BUNDLE_DIR/${URL_ASSET}.sig" ]]; then
+    echo "✓ latest.json URL이 올릴 파일과 일치: $URL_ASSET"
+    UPLOAD_ASSET="$URL_ASSET"
+  else
+    echo "✗ latest.json URL이 가리키는 파일이 번들에 없습니다"
+    echo "    url:    $JSON_URL"
+    echo "    찾은 곳: $BUNDLE_DIR/$URL_ASSET"
+    echo "    ./scripts/make-latest-json.sh를 다시 실행하세요."
+    fail=1
+  fi
+
+  # URL에 태그 버전이 들어 있는가. v를 빼먹으면 404다.
+  if [[ -n "$CONF_VER" && "$JSON_URL" != *"/v${CONF_VER}/"* ]]; then
+    echo "✗ latest.json URL의 태그가 v${CONF_VER}가 아닙니다 — 릴리즈 태그와 어긋납니다"
+    fail=1
+  fi
+fi
+
 echo
 if [[ $fail -eq 0 ]]; then
   echo "통과. 배포해도 됩니다."
   echo "받는 사람에게 **첫 실행은 우클릭 → 열기**라고 알려주세요 (자체 서명)."
+  echo
+  echo "릴리즈 에셋 넷을 모두 올리세요 (경로는 $BUNDLE_DIR):"
+  echo "  - $(basename "$DMG")"
+  if [[ -n "${UPLOAD_ASSET:-}" ]]; then
+    echo "  - $UPLOAD_ASSET"
+    echo "  - ${UPLOAD_ASSET}.sig"
+  fi
+  echo "  - latest.json"
+  echo "**--prerelease를 붙이지 마세요.** GitHub의 /releases/latest가 건너뜁니다."
 else
   echo "실패. 위 항목을 고치기 전에 배포하지 마세요." >&2
   exit 1
