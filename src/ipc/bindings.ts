@@ -353,6 +353,64 @@ async todoReorder(id: string, toIndex: number) : Promise<Result<TodoItem[], stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 폴더를 고른다. 다이얼로그를 취소하면 `None`.
+ * 
+ * `async`인 이유: `blocking_pick_folder`는 메인 스레드에서 부르면 교착한다.
+ * Tauri는 `async` 커맨드를 별도 스레드에서 돌리므로 여기서는 안전하다
+ * (플러그인 문서의 예시가 정확히 이 형태다).
+ */
+async albumPickFolder(widgetId: string) : Promise<Result<AlbumScan | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("album_pick_folder", { widgetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 사진 파일들을 고른다. **다중 선택**이다.
+ */
+async albumPickFiles(widgetId: string) : Promise<Result<AlbumScan | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("album_pick_files", { widgetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 저장된 소스를 다시 훑는다. 새로고침 버튼과 설정 저장 직후에 부른다.
+ * 
+ * **스코프도 여기서 다시 허용한다.** 재시작 복원(`lib.rs`)이 이미 했더라도
+ * 한 번 더 하는 것은 무해하고, 빠뜨리는 경로가 하나 줄어든다.
+ * 
+ * 실패하면 에러 문자열을 준다. **캐시된 사진은 프론트가 계속 들고 있다** —
+ * 위젯이 목록을 비우지 않는 것은 이 앱의 공통 약속이다.
+ */
+async albumRescan(widgetId: string, source: AlbumSource) : Promise<Result<AlbumScan, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("album_rescan", { widgetId, source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 디스크 캐시만 읽는다. 네트워크도 파일시스템도 건드리지 않으므로 즉시 반환된다.
+ * 
+ * **앱 시작 시 이것을 먼저 부른다.** 0ms에 첫 장을 그리는 것이 이 앱의
+ * 존재 이유다(DECISIONS 17). 외장 디스크가 잠들어 있으면 재스캔이 수 초
+ * 걸리는데, 그동안 지난 사진이 보여야 배경으로서 고장나지 않는다.
+ */
+async albumCached(widgetId: string) : Promise<Result<AlbumWidgetData | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("album_cached", { widgetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async boardLoad() : Promise<Result<BoardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_load") };
@@ -381,6 +439,65 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
+/**
+ * 사진 한 장.
+ * 
+ * **파일명·촬영일·EXIF를 담지 않는다.** 이 위젯은 기분 전환용 배경이고,
+ * 사진을 제대로 보려면 미리보기 앱이 낫다 (DECISIONS 24). 프론트에 필요한
+ * 것은 절대 경로 하나뿐이다 — `convertFileSrc()`가 그것으로 `asset:` URL을
+ * 만든다.
+ */
+export type AlbumPhoto = { 
+/**
+ * 절대 경로. 프론트는 이걸 `convertFileSrc()`에 넣는다.
+ */
+path: string }
+/**
+ * 스캔 결과.
+ */
+export type AlbumScan = { photos: AlbumPhoto[]; 
+/**
+ * 상한(1000장)을 넘겨 **버린** 장수.
+ * 
+ * 0이 아니면 위젯이 "N장은 표시하지 않음"을 그린다. 조용히 자르면
+ * 사용자는 없는 사진을 계속 기다린다 (CLAUDE.md 대전제 2).
+ */
+skipped: number; 
+/**
+ * 스캔한 소스. 프론트가 에러 화면에 경로를 적는 데 쓴다.
+ */
+source: AlbumSource }
+/**
+ * 사진을 어디서 가져오나.
+ * 
+ * 폴더 하나 또는 파일 목록, 둘뿐이다. **"고정 한 장" 모드를 따로 만들지 않는다** —
+ * `Files`에 하나만 담으면 자연히 그게 된다. 모드를 늘리면 설정 UI가 늘고
+ * 사용자가 "지금 어느 모드지"를 기억해야 한다.
+ */
+export type AlbumSource = 
+/**
+ * 폴더 하나. 비재귀로 훑는다.
+ */
+{ kind: "folder"; path: string } | 
+/**
+ * 사용자가 직접 고른 파일들. 순서는 스캔이 파일명순으로 다시 정한다.
+ */
+{ kind: "files"; paths: string[] }
+/**
+ * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
+ * 
+ * GitHub/Jira의 봉투와 달리 `total`이 없다 — 사진 장수는 `photos.len()`이
+ * 곧 전부이고, 상한을 넘긴 몫은 `skipped`가 말한다.
+ */
+export type AlbumWidgetData = { photos: AlbumPhoto[]; 
+/**
+ * 상한을 넘겨 버린 장수. 0이 아니면 위젯이 화면에 적는다.
+ */
+skipped: number; fetchedAt: string; 
+/**
+ * 디스크 캐시에서 왔는가. NAS가 잠들어 있는 동안 이게 true다.
+ */
+fromCache: boolean }
 /**
  * `allowedValues` 항목. Jira는 필드 종류마다 다른 모양을 주므로
  * 공통분모(id/value/name)만 뽑고 원본은 `raw`로 남긴다.
@@ -1019,7 +1136,11 @@ export type WidgetType = "jira" | "github" | "todo" |
  * Spike: iframe widget. Without this variant `board_save` rejects the whole
  * board file, so a web widget would vanish on restart.
  */
-"web"
+"web" | 
+/**
+ * Local photo album — a mood background, not a viewer (DECISIONS 24).
+ */
+"album"
 
 /** tauri-specta globals **/
 

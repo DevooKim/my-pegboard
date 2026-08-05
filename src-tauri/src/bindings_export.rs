@@ -44,6 +44,10 @@ mod tests {
             commands::todo::todo_remove,
             commands::todo::todo_carry_over,
             commands::todo::todo_reorder,
+            commands::album::album_pick_folder,
+            commands::album::album_pick_files,
+            commands::album::album_rescan,
+            commands::album::album_cached,
             commands::board::board_load,
             commands::board::board_save,
         ]);

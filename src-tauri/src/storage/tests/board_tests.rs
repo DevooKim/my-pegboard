@@ -89,12 +89,53 @@ fn widget_serializes_with_type_and_camel_case_layout() {
 
 // -------------------------------------------------------------------- caps
 
-/// DECISIONS 3: Jira 4 / GitHub 4 / Todo 8.
+/// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4 / Album 4.
 #[test]
 fn instance_limits_match_decisions() {
     assert_eq!(WidgetType::Jira.instance_limit(), 4);
     assert_eq!(WidgetType::Github.instance_limit(), 4);
     assert_eq!(WidgetType::Todo.instance_limit(), 1);
+    assert_eq!(WidgetType::Web.instance_limit(), 4);
+    // 앨범은 Todo와 다르다. 폴더가 다르면 다른 내용이므로 여러 개가 의미 있다.
+    assert_eq!(WidgetType::Album.instance_limit(), 4);
+}
+
+/// `as_str`은 프론트의 문자열 리터럴과 정확히 일치해야 한다. 어긋나면
+/// serde가 board.json 전체를 거부하고 **위젯이 재시작 때 사라진다.**
+#[test]
+fn type_strings_match_the_frontend_literals() {
+    assert_eq!(WidgetType::Jira.as_str(), "jira");
+    assert_eq!(WidgetType::Github.as_str(), "github");
+    assert_eq!(WidgetType::Todo.as_str(), "todo");
+    assert_eq!(WidgetType::Web.as_str(), "web");
+    assert_eq!(WidgetType::Album.as_str(), "album");
+}
+
+/// 앨범 위젯이 든 board.json이 왕복하는지. 등록 1번(Rust enum)의 회귀 테스트다 —
+/// enum에 변형이 없으면 파일 **전체**가 거부되어 다른 위젯까지 같이 날아간다.
+#[test]
+fn an_album_widget_survives_a_disk_round_trip() {
+    let dir = TempDir::new().unwrap();
+
+    {
+        let mut s = store(&dir);
+        let mut w = widget("a1", WidgetType::Album);
+        w.config = json!({
+            "source": { "kind": "folder", "path": "/Users/me/Pictures" },
+            "intervalSecs": 10,
+        });
+        s.add_widget_to_active(w).unwrap();
+        // 다른 타입이 섞여 있어도 함께 살아남아야 한다.
+        s.add_widget_to_active(widget("j1", WidgetType::Jira))
+            .unwrap();
+        s.save().unwrap();
+    }
+
+    let s = store(&dir);
+    assert_eq!(s.data().boards[0].widgets.len(), 2);
+    let w = s.widget("a1").expect("앨범 위젯이 사라졌다");
+    assert_eq!(w.widget_type, WidgetType::Album);
+    assert_eq!(w.config["source"]["kind"], "folder");
 }
 
 #[test]

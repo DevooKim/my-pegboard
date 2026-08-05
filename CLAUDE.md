@@ -87,7 +87,9 @@ src/
 │  ├─ shell/       WidgetShell — 헤더·새로고침·상태·에러·설정·삭제 공통 처리
 │  ├─ jira/        ← 위젯 하나 = 폴더 하나
 │  ├─ github/
-│  └─ todo/
+│  ├─ todo/
+│  ├─ web/
+│  └─ album/
 ├─ settings/       통합 설정 모달
 ├─ ipc/            Rust 커맨드 래퍼 (specta 생성물 포함)
 ├─ store/          zustand
@@ -95,7 +97,7 @@ src/
 
 src-tauri/src/
 ├─ commands/       IPC 커맨드
-├─ providers/      jira/ github/ — API 클라이언트·타입·캐시
+├─ providers/      jira/ github/ album/ — API 클라이언트·타입·캐시 (album은 로컬 스캔)
 ├─ scheduler/      위젯별 폴링 타이머
 ├─ storage/        파일 IO, 원자적 쓰기, 마이그레이션
 ├─ secrets/        키체인
@@ -220,6 +222,54 @@ src-tauri/src/
 
 ---
 
+## 앨범
+
+**기분 전환용 배경이다. 사진 뷰어가 아니다.**
+파일명·촬영일·EXIF·썸네일 그리드·확대보기를 **만들지 않는다** — 사진을 제대로
+보려면 미리보기 앱이 낫다 (GitHub 상세를 안 만든 것과 같은 논리, DECISIONS 24.1).
+
+- 소스는 **폴더 하나 또는 파일 목록** 둘뿐. 파일 하나만 고르면 자연히 "고정 배경"
+- 스캔은 **비재귀 · 상한 1000장 · 확장자만 본다**(jpg jpeg png gif webp heic, 대소문자 무시)
+- 상한 초과분은 **"N장은 표시하지 않음"으로 화면에 드러낸다.** 조용한 절단 금지
+- **셔플 재생** — 목록을 한 번 섞어 그 순서로 돌고, 끝에 닿으면 다시 섞는다.
+  매번 독립 무작위 추출이 아니다(같은 사진이 연달아 나와 고장난 것처럼 느껴진다).
+  셔플은 **React가** 한다. Rust에 `rand`를 넣지 않는다
+- 기본 순환 주기 10초, **0이면 자동 순환 없음**. **`prefers-reduced-motion`이면
+  즉시 교체 + 자동 순환 정지**
+- **위젯 면적 전체 클릭 = 다음 장.** `object-fit: cover`
+- 폴링 없음. 새로고침 버튼은 재스캔
+
+### ⚠️ `asset:` 프로토콜 — 조용히 깨지는 곳
+
+이미지는 `convertFileSrc()`로 `asset://localhost/...`를 만들어 넣는다
+(네이티브 스트리밍, IPC 페이로드 0, 원본 화질). **base64로 내리지 않는다** —
+"필요한 필드만 남긴다"는 원칙 위반이다.
+
+**CSP만 보고 판단하면 틀린다.** CSP에 `img-src ... asset:`이 있어도
+`app.security.assetProtocol.enable`이 꺼져 있으면 `convertFileSrc()`는
+**에러 없이** URL을 만들고 `<img>`는 **에러 없이** 깨진다. 셋이 다 필요하다:
+
+1. `Cargo.toml`의 `tauri`에 **`protocol-asset` feature** (`tauri-plugin-fs`는 불필요 — 코어다)
+2. `tauri.conf.json`의 `assetProtocol = { enable: true, scope: [] }` —
+   **정적 scope는 빈 배열.** `$HOME/**` 같은 걸 넣지 마라
+3. 사용자가 고른 경로만 런타임 허용 (`allow_directory(path, false)` / `allow_file`)
+
+**★ 런타임 스코프는 메모리에만 있다. 재시작하면 사라진다.**
+`lib.rs` setup의 `restore_scopes()`가 board.json의 **모든** 앨범 위젯을 훑어
+다시 허용한다. `Files` 위젯은 **파일을 하나도 빠뜨리면 안 된다.**
+개발 중에는 런타임 허용이 살아 있어 **절대 재현되지 않는다** —
+"어제는 됐는데 오늘 아침에 안 된다"로만 나타난다.
+`providers/album/tests/mod.rs`의 `restore_covers_every_path…`가 이걸 막는다.
+
+**앨범을 만진 뒤에는 반드시 앱을 껐다 켜서 사진이 여전히 뜨는지 본다.**
+브라우저 dev 서버에는 `asset:`이 없어 원리적으로 확인할 수 없다.
+
+**폴더 선택은 Rust 커맨드가 한다** (`tauri-plugin-dialog`, npm 패키지 없음).
+커맨드 하나가 다이얼로그 → 스코프 허용 → 스캔 → 캐시를 전부 한다.
+프론트에 JS 플러그인을 붙이면 "경로는 골랐는데 스코프가 아직 없는" 상태가 생긴다.
+
+---
+
 ## 제약 (지금은 하지 않는 것)
 
 의도적으로 뺀 것들이다. 추가하려면 DECISIONS.md의 근거를 먼저 확인할 것.
@@ -233,13 +283,15 @@ src-tauri/src/
 | 정보 탭의 메모리·폴링 소요 시간 | 성능 계측은 별개 작업. `app_info`가 자리만 잡아둠 |
 | Jira 상태 변경(transition) | 워크플로우가 프로젝트마다 달라 보류 |
 | 이미지 첨부 렌더링 | 인증 URL 재요청 필요, 보류 |
+| 앨범 재귀 스캔·EXIF·썸네일 | **의도적으로 없음** (DECISIONS 24.1 / 24.5) |
 | PWA | **폐기됨** (Tauri로 대체) |
 | i18n | 한국어 단일 |
 | 자동 업데이트 | **있음** — GitHub Release 기반 (DECISIONS 23) |
 
-**위젯 개수 제한:** Jira 4 / GitHub 4 / **Todo 1** / Web 4 (타입별)
+**위젯 개수 제한:** Jira 4 / GitHub 4 / **Todo 1** / Web 4 / **앨범 4** (타입별)
 Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 두 번째는
 같은 목록을 한 번 더 그릴 뿐이면서 위젯 간 동기화 비용만 만든다.
+앨범이 4개인 이유: 폴더가 다르면 다른 내용이다. 같은 기준을 반대로 적용한 것.
 
 ---
 

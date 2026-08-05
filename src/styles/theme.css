@@ -715,4 +715,14 @@
     0%   { transform: translateX(-100%); }
     100% { transform: translateX(350%); }
   }
+
+  /* 앨범 위젯의 크로스페이드.
+     새 <img>가 마운트될 때 투명에서 시작한다 — 이전 사진 위에 겹쳐 나타나는
+     것처럼 보인다. 위 @media (prefers-reduced-motion)가 이것도 0.01ms로
+     줄이므로 즉시 교체가 된다. 자동 순환 정지는 별개로 View가 JS에서 한다
+     (10초마다 사진이 바뀌는 것 자체가 움직임이므로). */
+  @keyframes album-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
 }

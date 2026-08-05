@@ -5,6 +5,8 @@ import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { dateKey, useTodoStore } from '#/store/todos'
 import { ConfirmDialog } from '#/ui/ConfirmDialog'
+import type { AlbumWidgetConfig } from '#/widgets/album'
+import { useAlbumData } from '#/widgets/album/useAlbumData'
 import { useGithubData } from '#/widgets/github/useGithubData'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
@@ -78,6 +80,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         />
       ) : widget.type === 'github' ? (
         <GithubHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
+      ) : widget.type === 'album' ? (
+        <AlbumHost
           widget={widget}
           width={width}
           onRemove={() => setConfirmingRemove(true)}
@@ -158,6 +167,51 @@ function WebHost({
         envelope={{ status: 'ready', data: null, fetchedAt: null, error: null }}
         width={width}
       />
+    </WidgetShell>
+  )
+}
+
+/**
+ * 앨범 위젯 호스트.
+ *
+ * `refreshMs`를 계산하지 않는다 — **주기 폴링이 없다.** 사진 폴더는 5분마다
+ * 바뀌지 않으므로 `useAlbumData`에 `setInterval`이 없고, 설정의 `intervalSecs`는
+ * 데이터 갱신이 아니라 **사진을 넘기는 주기**라서 View가 소유한다.
+ *
+ * `actions` 슬롯이 비어 있다. GitHub과 같은 이유로 읽기 전용이고, 유일한
+ * 상호작용("다음 장")은 위젯 면적 전체에 걸려 있어서 헤더에 버튼이 필요 없다.
+ */
+function AlbumHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('album')
+  const config = widget.config as unknown as AlbumWidgetConfig
+  // 소스만 넘긴다 — 순환 주기를 바꿨다고 폴더를 다시 훑지 않는다.
+  const { envelope, refresh } = useAlbumData(widget.id, config.source ?? null)
+
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(config)}
+      status={envelope.status}
+      fetchedAt={envelope.fetchedAt}
+      // 새로고침 = 폴더 재스캔. 사진을 추가한 뒤 누를 일이 있다.
+      pollable
+      onRefresh={refresh}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
     </WidgetShell>
   )
 }
