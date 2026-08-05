@@ -16,9 +16,9 @@ use std::time::Duration;
 
 use super::error::{parse_retry_after, JiraError};
 use super::types::{
-    CommentPage, CreateIssueInput, CreateMeta, CreatedIssue, JiraIdentity, JiraIssueDetail,
-    JiraProject, JiraProjectWithTypes, ProjectSearchPage, ProjectWithTypesSearchPage, SearchPage,
-    DETAIL_FIELDS, LIST_FIELDS,
+    CommentPage, CreateIssueInput, CreateMeta, CreatedIssue, FilterSearchPage, JiraFilter,
+    JiraIdentity, JiraIssueDetail, JiraProject, JiraProjectWithTypes, ProjectSearchPage,
+    ProjectWithTypesSearchPage, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
 };
 
 /// 요청 타임아웃. 위젯 체감 목표가 1초(CLAUDE.md 성능표)이므로
@@ -422,6 +422,48 @@ impl JiraClient {
             start_at += fetched;
         }
         Ok(all)
+    }
+
+    /// 내가 쓸 수 있는 저장된 필터 목록 (DECISIONS 11.1).
+    ///
+    /// `/filter/favourite`가 아니라 `/filter/search`를 쓰는 이유: 즐겨찾기만이
+    /// 아니라 **내가 만든 필터**도 필요하다. favourite는 별을 눌러둔 것만 준다.
+    ///
+    /// `expand=jql`을 붙여 설정창이 "이 필터가 무엇을 보는지"를 보여줄 수 있게 한다.
+    /// 위젯은 이 JQL을 저장하지 않는다 — 저장하면 Jira에서 필터를 고쳐도 따라가지 못한다.
+    ///
+    /// 페이지를 따라가지 않고 **50건에서 끊는다.** 설정창 셀렉트 하나를 채우는
+    /// 용도이고, 50개를 넘겨 스크롤하는 드롭다운은 이미 고를 수 없는 UI다.
+    /// 프로젝트 목록과 달리 여기서 몇 건이 빠지는 것은 기능을 깨지 않는다.
+    pub async fn list_filters(&self, max_results: u32) -> Result<Vec<JiraFilter>, JiraError> {
+        // 소유자 판정에 쓸 내 accountId. 실패하면 판정을 포기하고 목록은 살린다 —
+        // "내가 만든 필터" 그룹이 안 갈리는 것보다 목록 자체가 안 뜨는 게 나쁘다.
+        let my_account_id = match self.verify_credentials().await {
+            Ok(identity) => Some(identity.account_id),
+            Err(e) => {
+                tracing::warn!(error = %e, "필터 소유자 판정용 /myself 실패 — 그룹 구분 없이 진행");
+                None
+            }
+        };
+
+        let response = self
+            .get("/rest/api/3/filter/search")
+            .query(&[
+                ("expand", "jql".to_string()),
+                ("maxResults", max_results.to_string()),
+                // 이름순. 셀렉트에서 눈으로 찾는 목록이라 정렬이 안정적이어야 한다.
+                ("orderBy", "name".to_string()),
+            ])
+            .send()
+            .await
+            .map_err(JiraError::from)?;
+        let page: FilterSearchPage = Self::handle(response, "filter/search").await?;
+
+        Ok(page
+            .values
+            .into_iter()
+            .map(|item| item.into_filter(my_account_id.as_deref()))
+            .collect())
     }
 
     /// 생성 폼 스키마 조회 (DECISIONS 11.3).

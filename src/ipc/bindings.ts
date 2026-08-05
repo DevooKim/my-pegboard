@@ -16,6 +16,23 @@ async jiraPresets() : Promise<Preset[]> {
     return await TAURI_INVOKE("jira_presets");
 },
 /**
+ * 저장된 필터 목록. 설정창 쿼리 셀렉트를 열 때 **1회** 부른다 (DECISIONS 11.1).
+ * 
+ * **앱 시작 경로에 넣지 않는다.** 위젯을 그리는 데 필요 없는 호출이고
+ * (config에 name이 캐시돼 있다), 시작 1초 목표를 이런 것들이 깎는다.
+ * 
+ * [`JiraCallError`]를 쓰는 이유: 설정창의 단발 호출이라 `stale`(직전 성공 데이터)이
+ * 늘 `None`이 되는 [`JiraWidgetError`]는 맞지 않는다.
+ */
+async jiraFilters() : Promise<Result<JiraFilter[], JiraCallError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("jira_filters") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * 프로젝트 목록. 위젯 설정의 범위 선택을 채운다.
  */
 async jiraProjects() : Promise<Result<JiraProject[], string>> {
@@ -732,6 +749,29 @@ fetchedAt: string | null;
  */
 fromCache: boolean }
 /**
+ * 설정창 쿼리 셀렉트의 "저장된 필터" 항목.
+ * 
+ * `/rest/api/3/filter/search?expand=jql` 응답에서 우리가 쓰는 부분만 남긴다.
+ * (Rust가 파싱하고 필요한 필드만 IPC로 넘긴다 — CLAUDE.md 아키텍처)
+ */
+export type JiraFilter = { 
+/**
+ * Jira의 숫자 필터 id. `filter = <id>`로 JQL에 들어간다.
+ */
+id: string; name: string; 
+/**
+ * 필터의 JQL. **위젯이 이 값을 저장하지 않는다** — 설정창에서
+ * "이 필터가 무엇을 보는지" 미리보기로만 쓴다. 위젯이 굳혀 저장하면
+ * Jira에서 필터를 고쳤을 때 따라가지 못한다.
+ * 
+ * `expand=jql`을 안 붙이면 오지 않으므로 없을 수 있다.
+ */
+jql?: string | null; 
+/**
+ * 내가 만든 필터인가. 남이 공유해준 필터와 구분해 보여주기 위한 값이다.
+ */
+ownerIsMe?: boolean }
+/**
  * 설정창 "연결 테스트" 결과. `/myself` 응답에서 뽑는다.
  * 
  * `Deserialize`는 아래에 손으로 구현했다 (`avatarUrls` 맵 접기).
@@ -833,7 +873,7 @@ key: string; name: string }
  */
 export type JiraProjectWithTypes = { key: string; name: string; issueTypes?: JiraIssueTypeOption[] }
 /**
- * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 JQL이거나 둘 중 하나.
+ * 위젯 config에 저장되는 쿼리. 프리셋·저장된 필터·생 JQL 셋 중 하나.
  * 
  * 프리셋을 JQL 문자열로 굳혀 저장하지 않는 이유: 나중에 프리셋 정의를 고치면
  * 이미 배치된 위젯들도 같이 고쳐져야 한다. id로 저장하면 그게 공짜다.
@@ -843,6 +883,14 @@ export type JiraQuery =
  * 프리셋 id. 알 수 없는 id면 [`JiraQuery::to_jql`]가 `None`을 준다.
  */
 { kind: "preset"; id: string } | 
+/**
+ * Jira에 저장된 필터 (DECISIONS 11.1 — 후속 후보였던 것).
+ * 
+ * **JQL을 복사해 굳히지 않는다.** 프리셋과 같은 이유다 — Jira에서 필터를
+ * 고치면 위젯도 따라 고쳐지는 것이 "저장된 필터를 쓴다"의 의미다.
+ * 대신 `filter = <id>`를 보낸다 ([`JiraQuery::to_jql`] 참고).
+ */
+{ kind: "savedFilter"; id: string; name: string } | 
 /**
  * 탈출구. 사용자가 직접 쓴 JQL을 **그대로** 보낸다.
  * 

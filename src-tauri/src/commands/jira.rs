@@ -8,8 +8,8 @@ use tauri::State;
 
 use crate::providers::jira::{
     apply_sort, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue, JiraClient, JiraComment,
-    JiraError, JiraIdentity, JiraIssue, JiraIssueDetail, JiraProject, JiraProjectWithTypes,
-    JiraQuery, Preset, SortDirection, SortField, LIST_FIELDS,
+    JiraError, JiraFilter, JiraIdentity, JiraIssue, JiraIssueDetail, JiraProject,
+    JiraProjectWithTypes, JiraQuery, Preset, SortDirection, SortField, LIST_FIELDS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::{AppState, JiraSessionCache};
@@ -212,15 +212,31 @@ pub async fn jira_fetch(
         })?;
 
     let Some(jql) = config.query.to_jql() else {
-        return Err(permanent_error(
-            "알 수 없는 프리셋입니다. 위젯 설정에서 쿼리를 다시 선택하세요.",
-            None,
-        ));
+        // 프리셋 id가 미지이거나, 저장된 필터 id가 숫자가 아닌 경우.
+        // 후자는 손으로 고친 board.json 말고는 생길 수 없다.
+        let message = match &config.query {
+            JiraQuery::SavedFilter { name, .. } if !name.is_empty() => format!(
+                "저장된 필터 '{name}'의 id가 올바르지 않습니다. \
+                 위젯 설정에서 필터를 다시 선택하세요."
+            ),
+            _ => "알 수 없는 프리셋입니다. 위젯 설정에서 쿼리를 다시 선택하세요.".to_owned(),
+        };
+        return Err(permanent_error(&message, None));
     };
-    // 정렬과 프로젝트 범위는 **프리셋에만** 적용한다.
-    // 사용자가 쓴 JQL은 그 자체로 완결이므로 우리가 손대면 의도를 덮어쓴다.
-    let is_preset = matches!(config.query, JiraQuery::Preset { .. });
-    let jql = if is_preset {
+    // 정렬과 프로젝트 범위는 **프리셋과 저장된 필터에** 적용한다.
+    //
+    // 저장된 필터를 프리셋과 같이 묶는 근거: 우리가 만드는 JQL이
+    // `filter = <id> ORDER BY updated DESC`로 완결돼 있어서 `apply_sort`가
+    // ORDER BY를 잘라 붙이는 것이 안전하고, `scope_to_projects`도 조건 전체를
+    // 괄호로 감싸므로 `project IN (...) AND (filter = 123)`이 된다.
+    //
+    // 사용자가 쓴 생 JQL만 손대지 않는다 — 그 자체로 완결이므로 우리가
+    // 덧붙이면 의도를 덮어쓴다.
+    let is_generated = matches!(
+        config.query,
+        JiraQuery::Preset { .. } | JiraQuery::SavedFilter { .. }
+    );
+    let jql = if is_generated {
         let sorted = match (config.sort_field, config.sort_direction) {
             (Some(f), dir) => apply_sort(&jql, f, dir.unwrap_or(SortDirection::Desc)),
             _ => jql,
@@ -250,10 +266,39 @@ pub async fn jira_fetch(
         }
         Err(e) => {
             tracing::warn!(widget_id = %widget_id, error = %e, "Jira 조회 실패");
-            Err(to_widget_error(&state, &widget_id, e))
+            let mut err = to_widget_error(&state, &widget_id, e);
+            // 필터가 지워졌으면 Jira는 "filter not found" 같은 400을 준다. 그 원문에는
+            // 필터 **id**만 있어서 사용자가 어느 필터인지 알 수 없다. 이름을 붙여준다
+            // (name을 config에 저장해둔 두 번째 이유).
+            if let JiraQuery::SavedFilter { name, .. } = &config.query {
+                if !name.is_empty() && err.kind == "permanent" {
+                    err.message = format!("저장된 필터 '{name}': {}", err.message);
+                }
+            }
+            Err(err)
         }
     }
 }
+
+/// 저장된 필터 목록. 설정창 쿼리 셀렉트를 열 때 **1회** 부른다 (DECISIONS 11.1).
+///
+/// **앱 시작 경로에 넣지 않는다.** 위젯을 그리는 데 필요 없는 호출이고
+/// (config에 name이 캐시돼 있다), 시작 1초 목표를 이런 것들이 깎는다.
+///
+/// [`JiraCallError`]를 쓰는 이유: 설정창의 단발 호출이라 `stale`(직전 성공 데이터)이
+/// 늘 `None`이 되는 [`JiraWidgetError`]는 맞지 않는다.
+#[tauri::command]
+#[specta::specta]
+pub async fn jira_filters(state: State<'_, AppState>) -> Result<Vec<JiraFilter>, JiraCallError> {
+    let client = client_for(&state)?;
+    client.list_filters(FILTER_PAGE_SIZE).await.map_err(|e| {
+        tracing::warn!(error = %e, "저장된 필터 목록 조회 실패");
+        e.into()
+    })
+}
+
+/// 설정창 셀렉트 하나를 채우는 상한. 넘겨서 스크롤하는 드롭다운은 이미 못 고른다.
+const FILTER_PAGE_SIZE: u32 = 50;
 
 /// 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
 ///
@@ -968,6 +1013,31 @@ mod scope_tests {
         let out = scope_to_projects("x = 1 order by created", &["ABC".into()]);
         assert!(out.starts_with("project IN (\"ABC\") AND (x = 1)"));
         assert!(out.ends_with(" order by created"));
+    }
+
+    /// 저장된 필터도 프로젝트 범위 적용 대상이다 (프리셋과 같게).
+    ///
+    /// `filter = 123`은 조건 하나이므로 괄호로 감싸 AND로 이으면 된다.
+    /// 결과는 "그 필터의 결과 중 이 프로젝트인 것"이다.
+    #[test]
+    fn saved_filter_jql_gets_project_scope_anded_on() {
+        let out = scope_to_projects("filter = 123 ORDER BY updated DESC", &["ABC".into()]);
+        assert_eq!(
+            out,
+            "project IN (\"ABC\") AND (filter = 123) ORDER BY updated DESC"
+        );
+    }
+
+    #[test]
+    fn saved_filter_jql_survives_multiple_project_scope() {
+        let out = scope_to_projects(
+            "filter = 10001 ORDER BY created ASC",
+            &["ABC".into(), "XYZ".into()],
+        );
+        assert_eq!(
+            out,
+            "project IN (\"ABC\", \"XYZ\") AND (filter = 10001) ORDER BY created ASC"
+        );
     }
 
     #[test]
