@@ -145,18 +145,32 @@ export function BoardTabs() {
                   </span>
                 </button>
               )}
-              {/* 이름 변경도 활성 탭에만. 더블클릭·F2가 이미 있지만 둘 다
-                  보이지 않는 조작이라 "이름을 바꿀 수 있다"는 사실 자체를
-                  모른다. 연필이 그 사실을 화면에 드러내는 유일한 장치다. */}
-              {active && !editing && (
+              {/*
+                연필도 ✕와 같다 — 활성 탭에는 상시, 나머지 탭에는 호버·포커스했을 때.
+                더블클릭·F2가 이미 있지만 둘 다 보이지 않는 조작이라 "이름을 바꿀 수
+                있다"는 사실 자체를 모른다. 연필이 그것을 화면에 드러낸다.
+
+                이름 변경은 되돌릴 수 있으므로(다시 바꾸면 된다) ✕보다 오조작
+                위험이 낮다. 그래도 같은 규칙을 쓰는 이유는 두 버튼이 나란히
+                있어서다 — 하나는 상시, 하나는 호버로 나오면 탭 폭이 두 단계로
+                변하고, 그 사이에서 커서가 노리던 버튼이 밀린다.
+              */}
+              {!editing && (
                 <button
                   type="button"
                   onClick={() => setEditingId(board.id)}
+                  // 호버로 드러나는 버튼은 탭 순서에서 뺀다(✕와 같은 이유).
+                  tabIndex={active ? 0 : -1}
                   aria-label={`${board.name} 보드 이름 변경`}
                   title="보드 이름 변경 (F2)"
-                  className="ml-0.5 grid size-5 shrink-0 place-items-center rounded-sm
-                             text-text-quaternary transition-colors duration-fast
-                             hover:bg-surface-hover hover:text-text-primary"
+                  className={`ml-0.5 grid size-5 shrink-0 place-items-center rounded-sm
+                              text-text-quaternary transition-colors duration-fast
+                              hover:bg-surface-hover hover:text-text-primary
+                              focus-visible:outline-2 focus-visible:outline-accent ${
+                                active
+                                  ? 'visible'
+                                  : 'invisible group-hover:visible group-focus-within:visible'
+                              }`}
                 >
                   <Pencil size={11} />
                 </button>

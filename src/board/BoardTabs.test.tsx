@@ -201,6 +201,37 @@ describe('BoardTabs', () => {
     expect(screen.getByRole('button', { name: /보드 2 보드 삭제/ })).toHaveClass('visible')
   })
 
+  /** 연필도 ✕와 같은 규칙이다. 두 버튼이 나란히 있어 규칙이 다르면 폭이 두 단계로 변한다. */
+  it('비활성 탭의 연필도 호버할 때만 보인다', () => {
+    const base = useBoardStore.getState().boards[0]
+    if (base) useBoardStore.getState().renameBoard(base.id, '왼쪽')
+    useBoardStore.getState().addBoard()
+    render(<BoardTabs />)
+
+    const inactive = screen.getByRole('button', { name: /왼쪽 보드 이름 변경/ })
+    expect(inactive).toHaveClass('invisible')
+    expect(inactive).toHaveClass('group-hover:visible')
+
+    expect(screen.getByRole('button', { name: /보드 2 보드 이름 변경/ })).toHaveClass('visible')
+  })
+
+  /** 비활성 탭의 연필을 눌러도 그 탭으로 전환되지 않는다 — 이름만 고친다. */
+  it('비활성 탭의 이름을 바꿔도 활성 보드가 바뀌지 않는다', () => {
+    const base = useBoardStore.getState().boards[0]
+    if (base) useBoardStore.getState().renameBoard(base.id, '왼쪽')
+    useBoardStore.getState().addBoard()
+    const activeBefore = useBoardStore.getState().activeBoardId
+    render(<BoardTabs />)
+
+    fireEvent.click(screen.getByRole('button', { name: /왼쪽 보드 이름 변경/ }))
+    const input = screen.getByRole('textbox', { name: '보드 이름' })
+    fireEvent.change(input, { target: { value: '정리됨' } })
+    fireEvent.blur(input)
+
+    expect(useBoardStore.getState().boards[0]?.name).toBe('정리됨')
+    expect(useBoardStore.getState().activeBoardId).toBe(activeBefore)
+  })
+
   /** 비활성 탭의 ✕를 눌러도 그 탭으로 전환되지 않는다 — 지우려던 것만 지운다. */
   it('비활성 탭을 지워도 활성 보드가 바뀌지 않는다', () => {
     const base = useBoardStore.getState().boards[0]
