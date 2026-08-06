@@ -178,6 +178,43 @@ describe('BoardTabs', () => {
     render(<BoardTabs />)
     expect(screen.queryByRole('button', { name: /보드 삭제/ })).not.toBeInTheDocument()
   })
+
+  /**
+   * 탭에 들어가지 않고도 지울 수 있어야 한다.
+   *
+   * `invisible`은 DOM에서 사라지지 않으므로 존재 여부만 보면 **숨겨져 있어도
+   * 테스트가 통과한다.** 클래스를 직접 확인해야 실제로 보이는지 알 수 있다.
+   */
+  it('비활성 탭의 ✕는 호버할 때만 보인다', () => {
+    // 앞 테스트가 기본 보드 이름을 바꿔놨을 수 있어 직접 정한다.
+    const base = useBoardStore.getState().boards[0]
+    if (base) useBoardStore.getState().renameBoard(base.id, '왼쪽')
+    useBoardStore.getState().addBoard() // 보드 2가 활성이 된다
+    render(<BoardTabs />)
+
+    // 비활성 탭(왼쪽) — 자리는 있지만 숨어 있고, 호버하면 드러난다.
+    const inactive = screen.getByRole('button', { name: /왼쪽 보드 삭제/ })
+    expect(inactive).toHaveClass('invisible')
+    expect(inactive).toHaveClass('group-hover:visible')
+
+    // 활성 탭(보드 2) — 늘 보인다.
+    expect(screen.getByRole('button', { name: /보드 2 보드 삭제/ })).toHaveClass('visible')
+  })
+
+  /** 비활성 탭의 ✕를 눌러도 그 탭으로 전환되지 않는다 — 지우려던 것만 지운다. */
+  it('비활성 탭을 지워도 활성 보드가 바뀌지 않는다', () => {
+    const base = useBoardStore.getState().boards[0]
+    if (base) useBoardStore.getState().renameBoard(base.id, '왼쪽')
+    useBoardStore.getState().addBoard() // 보드 2 활성
+    const activeBefore = useBoardStore.getState().activeBoardId
+    render(<BoardTabs />)
+
+    fireEvent.click(screen.getByRole('button', { name: /왼쪽 보드 삭제/ }))
+    fireEvent.click(screen.getByRole('button', { name: '삭제' }))
+
+    expect(useBoardStore.getState().boards).toHaveLength(1)
+    expect(useBoardStore.getState().activeBoardId).toBe(activeBefore)
+  })
 })
 
 /**

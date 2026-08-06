@@ -82,7 +82,7 @@ export function BoardTabs() {
           const active = board.id === activeBoardId
           const editing = board.id === editingId
           return (
-            <div key={board.id} className="flex min-w-0 shrink items-center">
+            <div key={board.id} className="group flex min-w-0 shrink items-center">
               {editing ? (
                 <input
                   // biome-ignore lint/a11y/noAutofocus: 더블클릭으로 편집을 시작했으니 바로 타이핑할 수 있어야 한다
@@ -161,17 +161,39 @@ export function BoardTabs() {
                   <Pencil size={11} />
                 </button>
               )}
-              {/* 삭제는 활성 탭에만 둔다. 모든 탭에 ✕가 상시로 보이면 누르려던
-                  탭 옆의 ✕를 누르게 된다 — 되돌릴 수 없는 동작이다. */}
-              {active && !editing && (
+              {/*
+                ✕는 활성 탭에는 상시, 나머지 탭에는 **호버·포커스했을 때** 보인다.
+                탭에 들어가지 않고도 지울 수 있어야 한다.
+
+                원래 활성 탭에만 둔 이유는 "누르려던 탭 옆의 ✕를 누르게 된다"였고
+                그 우려는 유효하다. 두 가지로 막았다:
+
+                1. **자리를 늘 차지한다.** `invisible`로 숨기고 `visible`로 드러낸다
+                   (조건부 렌더가 아니다). ✕가 나타나며 탭들이 밀리면 누르려던
+                   탭이 커서 밑에서 움직인다 — 오클릭의 가장 큰 원인이다
+                2. ✕는 탭 버튼 **바깥**의 형제라 탭의 클릭 영역을 덮지 않는다.
+                   탭 가운데를 누르면 늘 전환이고, ✕는 자기 20px만 갖는다
+
+                되돌릴 수 없는 동작이므로 확인 다이얼로그는 그대로 둔다.
+              */}
+              {!editing && (
                 <button
                   type="button"
                   onClick={() => setPendingDeleteId(board.id)}
+                  // 호버로 드러나는 버튼은 키보드에서 존재하지 않는 것과 같다.
+                  // 활성 탭이 아니면 탭 순서에서 빼고, ← →로 탭을 옮겨 활성으로
+                  // 만든 뒤 도달하게 한다(tablist 관례와 같은 모델).
+                  tabIndex={active ? 0 : -1}
                   aria-label={`${board.name} 보드 삭제`}
                   title="보드 삭제"
-                  className="ml-0.5 grid size-5 shrink-0 place-items-center rounded-sm
-                             text-text-quaternary transition-colors duration-fast
-                             hover:bg-surface-hover hover:text-danger"
+                  className={`ml-0.5 grid size-5 shrink-0 place-items-center rounded-sm
+                              text-text-quaternary transition-colors duration-fast
+                              hover:bg-surface-hover hover:text-danger
+                              focus-visible:outline-2 focus-visible:outline-accent ${
+                                active
+                                  ? 'visible'
+                                  : 'invisible group-hover:visible group-focus-within:visible'
+                              }`}
                 >
                   <X size={11} />
                 </button>
