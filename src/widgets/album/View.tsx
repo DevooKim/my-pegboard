@@ -1,13 +1,30 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { FolderOpen, ImageOff, Images } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { commands } from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import type { WidgetViewProps } from '#/widgets/types'
 import { DEFAULT_INTERVAL_SECS } from './defaults'
 import type { AlbumWidgetConfig } from './index'
-import { advance, currentIndex, newPlayback } from './shuffle'
+import { advance, currentIndex, newPlayback, type Playback } from './shuffle'
 import type { AlbumData } from './useAlbumData'
+
+/**
+ * 위젯 id → 마지막 재생 상태(순서 + 위치).
+ *
+ * 보드 탭을 오가면 View가 언마운트·리마운트되는데, 그때마다 새로 섞으면
+ * "셔플 순서는 세션 동안 고정"이라는 약속이 깨진다. 사진 인덱스 배열이라
+ * 위젯당 수백 바이트 수준이고, 세션이 끝나면 같이 사라진다.
+ */
+const lastPlaybacks = new Map<string, Playback>()
+
+/**
+ * 테스트 전용. 모듈 스코프 상태는 테스트 사이에 남으므로 비워줘야 한다
+ * (`registry.ts`의 `__resetRegistry`와 같은 이유).
+ */
+export function __resetPlaybacks(): void {
+  lastPlaybacks.clear()
+}
 
 /** 크로스페이드 길이. 이보다 길면 "느리게 반응한다"로 읽힌다. */
 const FADE_MS = 300
@@ -51,13 +68,32 @@ export function AlbumView({
   // 자동 순환이 조용히 꺼지므로 기본값을 명시한다 (defaults.ts의 주석 참조).
   const intervalSecs = config.intervalSecs ?? DEFAULT_INTERVAL_SECS
 
-  const [playback, setPlayback] = useState(() => newPlayback(photos.length))
+  // 재생 순서와 위치는 **보드 탭을 오가도 유지된다.**
+  //
+  // 비활성 보드는 언마운트되므로(폴링을 멈추는 방식이다) 탭을 돌아올 때마다
+  // 여기가 새로 마운트된다. 매번 새로 섞으면 "순서는 세션 동안 고정"이라는
+  // 약속이 깨지고, 무엇보다 방금 보던 사진이 다른 사진으로 바뀐다 —
+  // 돌아왔을 때 화면이 튀는 것으로 보인다.
+  const photoCount = photos.length
+  const [playback, setPlayback] = useState(
+    () => lastPlaybacks.get(widgetId) ?? newPlayback(photoCount),
+  )
   /** 표시할 수 없었던 경로. 개수를 화면에 드러내려고 센다. */
   const [broken, setBroken] = useState<Set<string>>(() => new Set())
 
-  // 사진 목록이 바뀌면(첫 스캔, 재스캔) 순서를 새로 만든다.
-  const photoCount = photos.length
   useEffect(() => {
+    lastPlaybacks.set(widgetId, playback)
+  }, [widgetId, playback])
+
+  // 사진 목록이 **바뀌었을 때만** 순서를 새로 만든다(첫 스캔, 재스캔).
+  //
+  // 장수를 기억해 두고 비교하는 이유: 이 효과는 리마운트에서도 돌기 때문에
+  // 그냥 두면 탭을 돌아올 때마다 다시 섞인다. 위에서 playback을 살려둔 것이
+  // 무의미해진다.
+  const knownCount = useRef<number | null>(playback.order.length || null)
+  useEffect(() => {
+    if (knownCount.current === photoCount) return
+    knownCount.current = photoCount
     setPlayback(newPlayback(photoCount))
     setBroken(new Set())
   }, [photoCount])

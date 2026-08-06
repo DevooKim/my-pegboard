@@ -1,4 +1,4 @@
-import { Plus, X } from 'lucide-react'
+import { Pencil, Plus, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useBoardStore } from '#/store/board'
 import { ConfirmDialog } from '#/ui/ConfirmDialog'
@@ -41,8 +41,19 @@ export function BoardTabs() {
 
   const pendingDelete = boards.find((b) => b.id === pendingDeleteId) ?? null
 
-  // ← → 로 탭 이동. tablist 관례이고, 화살표는 앱의 다른 곳에서 쓰지 않는다.
+  // ← → 로 탭 이동, F2로 이름 변경.
+  //
+  // F2가 있는 이유: 더블클릭만 두면 **키보드로는 이름을 바꿀 방법이 아예 없다.**
+  // 툴팁에 적어둬도 마우스를 올려야 보이므로 발견도 안 된다. F2는 파일 이름
+  // 변경의 관례이고 앱의 다른 단축키와 겹치지 않는다.
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'F2') {
+      e.preventDefault()
+      const focused = (e.target as HTMLElement).closest('[data-board-id]')
+      const id = focused?.getAttribute('data-board-id') ?? activeBoardId
+      setEditingId(id)
+      return
+    }
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
     e.preventDefault()
     const index = boards.findIndex((b) => b.id === activeBoardId)
@@ -112,7 +123,7 @@ export function BoardTabs() {
                   }}
                   onClick={() => setActiveBoard(board.id)}
                   onDoubleClick={() => setEditingId(board.id)}
-                  title={`${board.name} — 위젯 ${board.widgets.length}개 (⌘${index + 1}, 더블클릭으로 이름 변경)`}
+                  title={`${board.name} — 위젯 ${board.widgets.length}개 (⌘${index + 1}, 더블클릭 또는 F2로 이름 변경)`}
                   className={`flex min-w-0 items-center gap-1.5 rounded-sm px-2 py-1 text-caption
                               transition-colors duration-fast ${
                                 active
@@ -132,6 +143,22 @@ export function BoardTabs() {
                     {board.widgets.length}
                     <span className="sr-only">개 위젯</span>
                   </span>
+                </button>
+              )}
+              {/* 이름 변경도 활성 탭에만. 더블클릭·F2가 이미 있지만 둘 다
+                  보이지 않는 조작이라 "이름을 바꿀 수 있다"는 사실 자체를
+                  모른다. 연필이 그 사실을 화면에 드러내는 유일한 장치다. */}
+              {active && !editing && (
+                <button
+                  type="button"
+                  onClick={() => setEditingId(board.id)}
+                  aria-label={`${board.name} 보드 이름 변경`}
+                  title="보드 이름 변경 (F2)"
+                  className="ml-0.5 grid size-5 shrink-0 place-items-center rounded-sm
+                             text-text-quaternary transition-colors duration-fast
+                             hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <Pencil size={11} />
                 </button>
               )}
               {/* 삭제는 활성 탭에만 둔다. 모든 탭에 ✕가 상시로 보이면 누르려던

@@ -27,7 +27,7 @@ vi.mock('#/store/board', () => ({
 }))
 
 // View는 위 mock에 의존하므로 mock 선언 뒤에 가져온다.
-const { AlbumView } = await import('./View')
+const { AlbumView, __resetPlaybacks } = await import('./View')
 const { sourceLabel } = await import('./index')
 
 // ─────────────────────────────── 셔플 ───────────────────────────────
@@ -182,6 +182,9 @@ function setReducedMotion(reduce: boolean) {
 describe('AlbumView', () => {
   beforeEach(() => {
     setReducedMotion(false)
+    // 재생 상태는 탭을 오가도 유지되도록 모듈 스코프에 남는다.
+    // 테스트 사이에는 비워야 앞 테스트의 위치가 새어들지 않는다.
+    __resetPlaybacks()
     vi.useFakeTimers()
   })
 
@@ -300,6 +303,34 @@ describe('AlbumView', () => {
     fireEvent.error(screen.getByRole('presentation', { hidden: true }))
 
     expect(screen.getByText(/2장을 표시할 수 없습니다/)).toBeInTheDocument()
+  })
+
+  /**
+   * 보드 탭을 오가면 이 View는 언마운트·리마운트된다(비활성 보드를 렌더하지
+   * 않는 것이 폴링을 멈추는 방식이다). 그때 새로 섞으면 방금 보던 사진이
+   * 다른 사진으로 바뀐다 — 돌아왔을 때 화면이 튀는 것으로 보인다.
+   */
+  it('탭을 오가도 같은 사진에서 이어진다', () => {
+    const paths = ['/p/a.jpg', '/p/b.jpg', '/p/c.jpg', '/p/d.jpg', '/p/e.jpg']
+    const first = renderView(paths)
+    const before = screen.getByRole('presentation', { hidden: true }).getAttribute('src')
+
+    // 탭을 떠났다가 돌아온다.
+    first.unmount()
+    renderView(paths)
+
+    const after = screen.getByRole('presentation', { hidden: true }).getAttribute('src')
+    expect(after).toBe(before)
+  })
+
+  /** 사진이 추가·삭제되면 순서를 새로 만드는 것이 맞다. */
+  it('사진 목록이 바뀌면 순서를 새로 만든다', () => {
+    const first = renderView(['/p/a.jpg', '/p/b.jpg'])
+    first.unmount()
+
+    // 장수가 달라졌다 = 재스캔에서 목록이 바뀌었다.
+    renderView(['/p/a.jpg', '/p/b.jpg', '/p/c.jpg'])
+    expect(screen.getByRole('presentation', { hidden: true })).toBeInTheDocument()
   })
 
   /** 같은 장에서 onError가 두 번 와도 두 장으로 세지 않는다. */

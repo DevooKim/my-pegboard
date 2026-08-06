@@ -204,7 +204,11 @@ function AlbumHost({
     <WidgetShell
       title={definition.deriveTitle(config)}
       status={envelope.status}
-      fetchedAt={envelope.fetchedAt}
+      // 스캔 시각을 표시하지 않는다. Jira·GitHub에서 "N분 전"이 의미가 있는 것은
+      // 원본이 남의 서버에 있어서 내 화면이 얼마나 뒤처졌는지가 정보이기 때문이다.
+      // 로컬 폴더는 원본이 이 기기에 있고 사진은 저절로 바뀌지 않는다 —
+      // 배경으로 쓰는 위젯에 시각을 띄우면 알 필요 없는 숫자만 늘어난다.
+      fetchedAt={null}
       // 새로고침 = 폴더 재스캔. 사진을 추가한 뒤 누를 일이 있다.
       pollable
       onRefresh={refresh}
