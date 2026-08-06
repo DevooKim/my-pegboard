@@ -1,0 +1,135 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "할 일",
+      "to": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/status/10004",
+        "description": "",
+        "iconUrl": "https://your-team.atlassian.net/images/icons/statuses/generic.png",
+        "name": "할 일",
+        "id": "10004",
+        "statusCategory": {
+          "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "해야 할 일"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "21",
+      "name": "진행 중",
+      "to": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/status/10005",
+        "description": "",
+        "iconUrl": "https://your-team.atlassian.net/images/icons/statuses/generic.png",
+        "name": "진행 중",
+        "id": "10005",
+        "statusCategory": {
+          "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "진행 중"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "41",
+      "name": "완료 처리",
+      "to": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/status/10006",
+        "description": "",
+        "iconUrl": "https://your-team.atlassian.net/images/icons/statuses/generic.png",
+        "name": "완료",
+        "id": "10006",
+        "statusCategory": {
+          "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "완료"
+        }
+      },
+      "hasScreen": true,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {
+        "resolution": {
+          "required": true,
+          "schema": { "type": "resolution", "system": "resolution" },
+          "name": "해결책",
+          "key": "resolution",
+          "hasDefaultValue": false,
+          "operations": ["set"],
+          "allowedValues": [
+            { "self": "https://your-team.atlassian.net/rest/api/3/resolution/10000", "id": "10000", "name": "완료" },
+            { "self": "https://your-team.atlassian.net/rest/api/3/resolution/10001", "id": "10001", "name": "재현 불가" }
+          ]
+        },
+        "assignee": {
+          "required": false,
+          "schema": { "type": "user", "system": "assignee" },
+          "name": "담당자",
+          "key": "assignee",
+          "hasDefaultValue": false,
+          "operations": ["set"]
+        }
+      },
+      "isLooped": false
+    },
+    {
+      "id": "61",
+      "name": "백로그",
+      "to": {
+        "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/status/10146",
+        "description": "이 상태는 Jira 내부에서 관리됩니다.",
+        "iconUrl": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/",
+        "name": "백로그",
+        "id": "10146",
+        "statusCategory": {
+          "self": "https://api.atlassian.com/ex/jira/00000000-0000-0000-0000-000000000000/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "해야 할 일"
+        }
+      },
+      "hasScreen": true,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {
+        "reporter": {
+          "required": true,
+          "schema": { "type": "user", "system": "reporter" },
+          "name": "보고자",
+          "key": "reporter",
+          "hasDefaultValue": true,
+          "operations": ["set"]
+        }
+      },
+      "isLooped": false
+    }
+  ]
+}

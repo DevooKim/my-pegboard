@@ -2,11 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { commands, type JiraIssue, type JiraWidgetConfig } from '#/ipc/bindings'
 import { IN_TAURI } from '#/ipc/env'
 import { useConnectionStore } from '#/store/connection'
+import { JIRA_TRANSITIONED_EVENT } from '#/widgets/jira/StatusTransitionPopover'
 import type { WidgetEnvelope } from '#/widgets/types'
 
 type Data = { issues: JiraIssue[] }
 
 const IDLE: WidgetEnvelope<Data> = { status: 'idle', data: null, fetchedAt: null, error: null }
+
+/**
+ * 위젯 id → 마지막 envelope. **보드 탭을 오갈 때의 깜빡임을 없앤다.**
+ *
+ * 비활성 보드는 렌더하지 않으므로(그게 폴링을 멈추는 방식이다) 탭을 돌아오면
+ * 이 훅이 새로 마운트되고 `useState(IDLE)`부터 시작한다. 캐시 읽기는 비동기라
+ * 그 사이 한 프레임 이상 "불러오는 중…"이 그려지고, 데이터가 도착하면 목록이
+ * 튀어 들어온다 — 방금 보고 있던 탭으로 돌아왔는데도 그렇다.
+ *
+ * 모듈 스코프에 마지막 결과를 남겨두면 리마운트가 **데이터를 든 상태로**
+ * 시작한다. 디스크 캐시를 대신하는 게 아니라 그 앞단이다(디스크는 앱을 새로
+ * 켤 때, 이건 세션 안에서 탭을 오갈 때).
+ *
+ * 위젯을 지우면 항목이 남지만 위젯 id는 재사용되지 않으므로 다시 읽히지 않는다.
+ */
+const lastEnvelopes = new Map<string, WidgetEnvelope<Data>>()
 
 /**
  * 티켓을 만든 뒤 다시 조회하기까지 기다리는 시간.
@@ -37,8 +54,16 @@ export function useJiraData(
   config: JiraWidgetConfig,
   refreshMs: number,
 ): { envelope: WidgetEnvelope<Data>; refresh: () => void } {
-  const [envelope, setEnvelope] = useState<WidgetEnvelope<Data>>(IDLE)
+  // 리마운트(탭 복귀)면 마지막 결과에서 이어 시작한다. 위 주석 참조.
+  const [envelope, setEnvelope] = useState<WidgetEnvelope<Data>>(
+    () => lastEnvelopes.get(widgetId) ?? IDLE,
+  )
   const setAuthFailed = useConnectionStore((s) => s.setJiraAuthFailed)
+
+  // 화면에 그려진 마지막 상태를 기억해 둔다.
+  useEffect(() => {
+    if (envelope.data) lastEnvelopes.set(widgetId, envelope)
+  }, [widgetId, envelope])
 
   // 설정 객체는 매 렌더 새로 만들어질 수 있으므로 값으로 비교한다.
   const configKey = JSON.stringify(config)
@@ -158,6 +183,20 @@ export function useJiraData(
     }
     window.addEventListener('pegboard:jira-created', onCreated)
     return () => window.removeEventListener('pegboard:jira-created', onCreated)
+  }, [fetchNow])
+
+  // 상태 전이 직후의 갱신 (DECISIONS 11.5 개정).
+  //
+  // 생성과 달리 **즉시 한 번만** 조회한다. 전이는 이슈를 새로 만드는 것이 아니라
+  // 이미 인덱스에 있는 문서를 갱신하는 것이라, 검색 인덱스 지연을 기다릴 이유가
+  // 적다. 갱신이 늦어 옛 상태가 한 번 더 보여도 다음 폴링이 잡는다.
+  //
+  // **낙관적 업데이트를 하지 않는다.** 도달 상태는 Rust가 알려주지만
+  // 워크플로우 후처리(자동 담당자 변경 등)는 예측할 수 없다.
+  useEffect(() => {
+    const onTransitioned = () => void fetchNow()
+    window.addEventListener(JIRA_TRANSITIONED_EVENT, onTransitioned)
+    return () => window.removeEventListener(JIRA_TRANSITIONED_EVENT, onTransitioned)
   }, [fetchNow])
 
   // 언마운트될 때 예약된 재조회를 정리한다. 안 하면 위젯을 지운 뒤에도

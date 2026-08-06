@@ -1,6 +1,6 @@
 [package]
 name = "my-pegboard"
-version = "0.4.0-alpha"
+version = "0.5.0-beta"
 description = "페그보드처럼 위젯을 배치하는 개인용 데스크톱 대시보드"
 authors = ["Hyunwoo Kim"]
 edition = "2021"
@@ -14,8 +14,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# protocol-asset: 앨범 위젯이 로컬 사진을 `asset:`으로 스트리밍한다.
+# 이 feature가 없으면 `asset_protocol_scope()`가 컴파일되지 않고, CSP만 보고
+# 켜져 있다고 착각하면 `convertFileSrc()`가 **에러 없이 깨진 이미지**를 만든다.
+# tauri-plugin-fs는 필요 없다 — 코어 기능이다 (DECISIONS 24.2).
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
+# 사진 폴더/파일 선택. **JS 쪽 npm 패키지는 쓰지 않는다** — Rust 커맨드가
+# 다이얼로그·스코프 허용·스캔을 한 번에 한다 (commands/album.rs 주석).
+tauri-plugin-dialog = "2.7.1"
 
 # HTTP — rustls로 OpenSSL 빌드 의존을 피한다
 reqwest = { version = "0.12", default-features = false, features = [

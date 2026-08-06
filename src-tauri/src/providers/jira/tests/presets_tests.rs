@@ -207,6 +207,101 @@ fn default_query_is_assigned_to_me() {
 }
 
 // ---------------------------------------------------------------------------
+// 저장된 필터 (DECISIONS 11.1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn saved_filter_delegates_resolution_to_jira() {
+    // `filter = <id>`는 JQL 문법 자체다. 필터 id를 JQL로 풀기 위해 우리가
+    // 네트워크를 타지 않는다는 것이 이 설계의 핵심 — 추가 조회 0회.
+    let query = JiraQuery::SavedFilter {
+        id: "10001".into(),
+        name: "우리 팀 스프린트".into(),
+    };
+    assert_eq!(
+        query.to_jql().as_deref(),
+        Some("filter = 10001 ORDER BY updated DESC")
+    );
+}
+
+#[test]
+fn saved_filter_does_not_inline_the_filters_jql() {
+    // 프리셋과 같은 이유(위 `preset_stores_id_not_expanded_jql`): JQL을 굳혀
+    // 저장하면 Jira에서 필터를 고쳐도 위젯이 따라가지 못한다.
+    let jql = JiraQuery::SavedFilter {
+        id: "10001".into(),
+        name: "x".into(),
+    }
+    .to_jql()
+    .unwrap();
+    assert!(
+        jql.starts_with("filter = 10001"),
+        "필터 id를 그대로 넘겨야 한다: {jql}"
+    );
+}
+
+#[test]
+fn non_numeric_filter_id_yields_none_rather_than_injectable_jql() {
+    // **인젝션 방지.** 이 값은 JQL에 그대로 들어가므로 숫자만 허용한다.
+    // 손으로 고친 board.json 말고는 이런 값이 올 수 없지만, 오면 막아야 한다.
+    for bad in [
+        "10001 OR project = SECRET",
+        "10001; DROP",
+        "abc",
+        "",
+        " 10001",
+        "10001 ",
+        "1e5",
+        "-1",
+        "10_001",
+        "١٠٠٠١", // 아라비아-인도 숫자. `is_numeric`이면 통과한다 — ascii여야 한다.
+    ] {
+        let query = JiraQuery::SavedFilter {
+            id: bad.into(),
+            name: "필터".into(),
+        };
+        assert!(
+            query.to_jql().is_none(),
+            "숫자가 아닌 필터 id가 JQL을 만들었다: {bad:?}"
+        );
+    }
+}
+
+#[test]
+fn numeric_filter_ids_are_accepted() {
+    for good in ["1", "10001", "99999999"] {
+        assert!(
+            is_numeric_filter_id(good),
+            "숫자 id가 거부됐다: {good:?}"
+        );
+    }
+}
+
+#[test]
+fn saved_filter_title_comes_from_the_stored_name() {
+    // name은 표시용 캐시다. 여기서 서버에 물어보면 위젯 제목 하나에 네트워크가 붙고,
+    // 앱 시작 0ms 시점에 제목이 "Jira"로 떨어졌다가 바뀌는 깜빡임이 생긴다.
+    let query = JiraQuery::SavedFilter {
+        id: "10001".into(),
+        name: "우리 팀 스프린트".into(),
+    };
+    assert_eq!(query.default_title(), "우리 팀 스프린트");
+}
+
+#[test]
+fn saved_filter_without_a_name_falls_back_to_generic_title() {
+    // 옛 config나 손으로 고친 파일에서 올 수 있다. 빈 제목을 그리지 않는다.
+    assert_eq!(
+        JiraQuery::SavedFilter {
+            id: "10001".into(),
+            name: String::new(),
+        }
+        .default_title(),
+        "Jira"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // 직렬화 — 위젯 config에 저장되는 모양
 // ---------------------------------------------------------------------------
 
@@ -227,6 +322,17 @@ fn query_serializes_as_tagged_union() {
         serde_json::to_value(&raw).unwrap(),
         serde_json::json!({ "kind": "raw", "jql": "project = ABC" })
     );
+
+    // 저장된 필터는 id와 name **둘 다** 저장된다. name이 빠지면 시작 시점에
+    // 제목을 풀 방법이 없어진다.
+    let saved = JiraQuery::SavedFilter {
+        id: "10001".into(),
+        name: "우리 팀 스프린트".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&saved).unwrap(),
+        serde_json::json!({ "kind": "savedFilter", "id": "10001", "name": "우리 팀 스프린트" })
+    );
 }
 
 #[test]
@@ -234,6 +340,10 @@ fn query_roundtrips_through_config_json() {
     for query in [
         JiraQuery::Preset {
             id: "watched-by-me".into(),
+        },
+        JiraQuery::SavedFilter {
+            id: "10001".into(),
+            name: "우리 팀 스프린트".into(),
         },
         JiraQuery::Raw {
             jql: "text ~ \"배포\"".into(),

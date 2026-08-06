@@ -15,6 +15,7 @@ mod tests {
         let builder = Builder::<tauri::Wry>::new().commands(collect_commands![
             commands::app_info,
             commands::jira::jira_presets,
+            commands::jira::jira_filters,
             commands::jira::jira_projects,
             commands::jira::jira_is_configured,
             commands::jira::jira_connection,
@@ -28,6 +29,8 @@ mod tests {
             commands::jira::jira_createmeta,
             commands::jira::jira_myself,
             commands::jira::jira_create_issue,
+            commands::jira::jira_transitions,
+            commands::jira::jira_transition,
             commands::github::github_presets,
             commands::github::github_is_configured,
             commands::github::github_save_token,
@@ -44,6 +47,10 @@ mod tests {
             commands::todo::todo_remove,
             commands::todo::todo_carry_over,
             commands::todo::todo_reorder,
+            commands::album::album_pick_folder,
+            commands::album::album_pick_files,
+            commands::album::album_rescan,
+            commands::album::album_cached,
             commands::board::board_load,
             commands::board::board_save,
         ]);

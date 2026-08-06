@@ -59,10 +59,12 @@ pub enum WidgetType {
     /// Spike: iframe widget. Without this variant `board_save` rejects the whole
     /// board file, so a web widget would vanish on restart.
     Web,
+    /// Local photo album — a mood background, not a viewer (DECISIONS 24).
+    Album,
 }
 
 impl WidgetType {
-    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4.
+    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4 / Album 4.
     ///
     /// Todo was 8 until 2026-08-01. Every Todo widget reads the same
     /// `todos.json`, so a second one shows the same list twice while adding
@@ -73,6 +75,9 @@ impl WidgetType {
             WidgetType::Github => 4,
             WidgetType::Todo => 1,
             WidgetType::Web => 4,
+            // Todo와 다르다. 앨범 위젯은 각자 다른 폴더를 보므로 두 번째가
+            // 같은 것을 두 번 그리는 상황이 아니다.
+            WidgetType::Album => 4,
         }
     }
 
@@ -82,6 +87,7 @@ impl WidgetType {
             WidgetType::Github => "github",
             WidgetType::Todo => "todo",
             WidgetType::Web => "web",
+            WidgetType::Album => "album",
         }
     }
 }

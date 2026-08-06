@@ -9,6 +9,13 @@ type Data = { items: GithubItem[]; total: number }
 const IDLE: WidgetEnvelope<Data> = { status: 'idle', data: null, fetchedAt: null, error: null }
 
 /**
+ * 위젯 id → 마지막 envelope. 보드 탭을 오갈 때의 깜빡임을 없앤다.
+ * 근거는 `useJiraData`의 같은 맵에 적어 뒀다 — 비활성 보드는 언마운트되므로
+ * 탭을 돌아오면 `IDLE`부터 시작해 "불러오는 중…"이 한 번 그려진다.
+ */
+const lastEnvelopes = new Map<string, WidgetEnvelope<Data>>()
+
+/**
  * 위젯 하나의 데이터 수명주기.
  *
  * `useJiraData`와 같은 순서다 — **캐시 먼저, 네트워크 나중** (DECISIONS 17장):
@@ -24,8 +31,15 @@ export function useGithubData(
   config: GithubWidgetConfig,
   refreshMs: number,
 ): { envelope: WidgetEnvelope<Data>; refresh: () => void } {
-  const [envelope, setEnvelope] = useState<WidgetEnvelope<Data>>(IDLE)
+  // 리마운트(탭 복귀)면 마지막 결과에서 이어 시작한다.
+  const [envelope, setEnvelope] = useState<WidgetEnvelope<Data>>(
+    () => lastEnvelopes.get(widgetId) ?? IDLE,
+  )
   const setAuthFailed = useConnectionStore((s) => s.setGithubAuthFailed)
+
+  useEffect(() => {
+    if (envelope.data) lastEnvelopes.set(widgetId, envelope)
+  }, [widgetId, envelope])
 
   // 설정 객체는 매 렌더 새로 만들어질 수 있으므로 값으로 비교한다.
   const configKey = JSON.stringify(config)

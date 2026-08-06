@@ -776,6 +776,127 @@ pub const DETAIL_FIELDS: &[&str] = &[
     "customfield_10020",
 ];
 
+// ---------------------------------------------------------------------------
+// 상태 전이 (transition)
+// ---------------------------------------------------------------------------
+
+/// 이 티켓에서 지금 실행할 수 있는 상태 전이 하나 (DECISIONS 11.5 개정).
+///
+/// **워크플로우는 프로젝트마다 다르므로 목록을 하드코딩하지 않는다.**
+/// 실측(2026-08-06): EDU 5개 / DTH 7개로 개수도 이름도 다르다.
+///
+/// Jira 응답에는 `hasScreen`·`isGlobal`·`isConditional`·`isLooped` 등이 더 있지만
+/// 우리가 그리는 UI(팝오버 목록 한 줄)에 필요한 것만 남긴다. IPC 페이로드를
+/// 줄이는 것이 이 앱의 기본 규칙이다(CLAUDE.md "필요한 필드만 남겨서").
+#[derive(Debug, Clone, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraTransition {
+    /// 전이 실행 시 POST 본문에 넣는 id. **상태 id가 아니다.**
+    pub id: String,
+    /// 전이 버튼 이름. Jira 웹에서 보이는 그 문구다.
+    pub name: String,
+    /// 이 전이를 실행하면 도달하는 상태 이름.
+    ///
+    /// `name`과 다를 수 있다 — Jira에서 전이 이름과 목표 상태 이름은 별개다
+    /// (실측한 두 프로젝트에서는 우연히 같았다). 화면에는 도달 상태를 우선해
+    /// 보여준다. 사용자가 알고 싶은 것은 "누르면 무엇이 되는가"이기 때문.
+    pub to_status_name: Option<String>,
+    /// `new` | `indeterminate` | `done`. 배지 색의 근거.
+    ///
+    /// `Option`인 이유: 워크플로우가 이상하게 설정된 프로젝트에서 `to.statusCategory`가
+    /// 누락될 수 있다. [`JiraStatus`]가 같은 이유로 이미 `Option`이다.
+    pub to_status_category: Option<String>,
+    /// **사용자가 채워야 하는 필수 필드가 이 전이에 걸려 있는가.**
+    ///
+    /// `true`면 앱에서 실행하지 않고 브라우저 링크로 바꾼다 (DECISIONS 11.5 개정).
+    /// 판정은 생성 폼과 같은 규칙이다 — `required: true`이면서
+    /// `hasDefaultValue != true`인 필드가 하나라도 있으면 참.
+    /// `hasDefaultValue: true`는 서버가 채우므로 폼이 필요 없다(EDU reporter 사례).
+    ///
+    /// 계산을 Rust에서 하는 이유: 프론트가 Jira의 필드 스키마를 알 필요가 없다.
+    /// 이 축 하나만 알면 UI를 고를 수 있다.
+    pub has_required_fields: bool,
+}
+
+/// `/rest/api/3/issue/{key}/transitions?expand=transitions.fields` 응답.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RawTransitionsResponse {
+    /// 권한이 없거나 실행할 수 있는 전이가 없으면 **빈 배열**이 온다.
+    /// 그건 에러가 아니다 — 빈 Vec으로 흘려보내고 화면이 그 사실을 말한다.
+    #[serde(default)]
+    pub transitions: Vec<RawTransition>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawTransition {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub to: Option<RawTransitionTo>,
+    /// `expand=transitions.fields`를 붙였을 때만 온다. 안 붙이면 아예 없다.
+    ///
+    /// **없는 것과 빈 맵을 같게 취급한다** — 둘 다 "필수 필드를 찾지 못했다"이고,
+    /// 그때 링크로 바꾸면 필드가 없는 전이까지 브라우저로 내보낸다.
+    /// expand를 항상 붙이는 것이 이 판정의 전제다(client.rs에서 고정).
+    #[serde(default)]
+    pub fields: std::collections::BTreeMap<String, RawTransitionField>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawTransitionTo {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub status_category: Option<JiraStatusCategory>,
+}
+
+/// 전이 화면의 필드 하나. 우리가 보는 것은 두 축뿐이다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RawTransitionField {
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub has_default_value: bool,
+}
+
+impl RawTransition {
+    /// 사용자가 채워야 하는 필수 필드가 있는가.
+    ///
+    /// 순수 함수로 뽑아 둔 이유는 네트워크 없이 테스트하기 위해서다. 이 판정이
+    /// 틀리면 두 방향으로 나쁘다 — 느슨하면 버튼을 눌러 400을 맞고,
+    /// 과하면 앱에서 할 수 있는 전이를 브라우저로 떠넘긴다.
+    pub fn requires_user_input(&self) -> bool {
+        self.fields
+            .values()
+            .any(|f| f.required && !f.has_default_value)
+    }
+}
+
+impl From<RawTransition> for JiraTransition {
+    fn from(raw: RawTransition) -> Self {
+        let has_required_fields = raw.requires_user_input();
+        let to = raw.to;
+        Self {
+            id: raw.id.clone(),
+            // 이름 없는 전이는 실제로는 없지만, 없으면 빈 버튼이 되므로
+            // 도달 상태 이름으로 대신한다. 그것도 없으면 id를 쓴다 —
+            // 무엇을 누르는지 모르는 버튼보다는 낫다.
+            name: raw
+                .name
+                .filter(|n| !n.trim().is_empty())
+                .or_else(|| to.as_ref().and_then(|t| t.name.clone()))
+                .unwrap_or(raw.id),
+            to_status_name: to.as_ref().and_then(|t| t.name.clone()),
+            to_status_category: to.and_then(|t| t.status_category).map(|c| c.key),
+            has_required_fields,
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "tests/types_tests.rs"]
 mod types_tests;
@@ -805,6 +926,81 @@ pub(crate) struct ProjectSearchPage {
     pub values: Vec<JiraProject>,
     #[serde(default)]
     pub is_last: bool,
+}
+
+// ---------------------------------------------------------------------------
+// 저장된 필터 (DECISIONS 11.1)
+// ---------------------------------------------------------------------------
+
+/// 설정창 쿼리 셀렉트의 "저장된 필터" 항목.
+///
+/// `/rest/api/3/filter/search?expand=jql` 응답에서 우리가 쓰는 부분만 남긴다.
+/// (Rust가 파싱하고 필요한 필드만 IPC로 넘긴다 — CLAUDE.md 아키텍처)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraFilter {
+    /// Jira의 숫자 필터 id. `filter = <id>`로 JQL에 들어간다.
+    pub id: String,
+    pub name: String,
+    /// 필터의 JQL. **위젯이 이 값을 저장하지 않는다** — 설정창에서
+    /// "이 필터가 무엇을 보는지" 미리보기로만 쓴다. 위젯이 굳혀 저장하면
+    /// Jira에서 필터를 고쳤을 때 따라가지 못한다.
+    ///
+    /// `expand=jql`을 안 붙이면 오지 않으므로 없을 수 있다.
+    #[serde(default)]
+    pub jql: Option<String>,
+    /// 내가 만든 필터인가. 남이 공유해준 필터와 구분해 보여주기 위한 값이다.
+    #[serde(default)]
+    pub owner_is_me: bool,
+}
+
+/// `/rest/api/3/filter/search` 응답.
+///
+/// 필드마다 `default`를 붙인 이유: 이 응답 모양을 실측으로 확인하지 못했다
+/// (구현 시점에 자격증명 접근이 막혀 있었다). 문서와 다른 필드가 오더라도
+/// 파싱이 통째로 실패해 "필터 목록이 안 뜬다"가 되는 것보다,
+/// 아는 필드만 채우고 나머지를 비우는 편이 낫다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FilterSearchPage {
+    #[serde(default)]
+    pub values: Vec<FilterSearchItem>,
+}
+
+/// 응답 항목. `owner`를 계정 비교용으로 들고 있다가 [`JiraFilter`]로 좁힌다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FilterSearchItem {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub jql: Option<String>,
+    /// 필터 소유자. 공유받은 필터면 내가 아니다.
+    ///
+    /// `de_user`를 쓰는 이유: Jira는 `avatarUrls`를 **맵**으로 보내는데
+    /// [`JiraUser`]의 파생 구현은 단일 `avatarUrl`을 기대한다. 이 헬퍼가
+    /// 그 맵을 접어준다 (다른 사용자 필드들도 전부 이 경로를 쓴다).
+    #[serde(default, deserialize_with = "de_user")]
+    pub owner: Option<JiraUser>,
+}
+
+impl FilterSearchItem {
+    /// `my_account_id`와 소유자를 비교해 IPC용 타입으로 좁힌다.
+    pub fn into_filter(self, my_account_id: Option<&str>) -> JiraFilter {
+        let owner_is_me = match (&self.owner, my_account_id) {
+            (Some(owner), Some(me)) => owner.account_id == me,
+            // 내 계정을 모르면 판정하지 않는다. false는 "내 것이 아니다"가 아니라
+            // "모른다"에 가깝지만, UI가 이 값으로 그룹을 나눌 뿐이라 해가 없다.
+            _ => false,
+        };
+        JiraFilter {
+            id: self.id,
+            name: self.name,
+            jql: self.jql,
+            owner_is_me,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

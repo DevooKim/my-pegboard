@@ -16,6 +16,7 @@ import { absoluteDate, absoluteTime, relativeTime, useNow } from '#/ui/relativeT
 import { AdfDoc } from '#/widgets/jira/adf/AdfDoc'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { childTypesFor, levelOf, projectKeyOf } from '#/widgets/jira/childTypes'
+import { notifyTransitioned, StatusTransitionPopover } from '#/widgets/jira/StatusTransitionPopover'
 
 /**
  * 티켓 상세 모달.
@@ -223,15 +224,29 @@ export function IssueDetailModal({
 
             <div className="flex flex-wrap items-center gap-2 text-caption">
               {status && (
-                <span
-                  className="rounded px-1.5 py-0.5"
-                  style={{
-                    color: statusColor(status.statusCategory?.key ?? 'new'),
-                    backgroundColor: statusMuted(status.statusCategory?.key ?? 'new'),
+                // 목록 행과 **같은 컴포넌트**를 쓴다 (DECISIONS 11.5 개정).
+                // 두 곳에 같은 팝오버를 따로 두면 한쪽만 고치는 일이 생긴다.
+                <StatusTransitionPopover
+                  issueKey={current}
+                  browseUrl={browse}
+                  disabled={!browse}
+                  onTransitioned={() => {
+                    // 열려 있는 이 모달을 먼저 갱신한다 — 배지가 그대로면
+                    // 전이가 됐는지 알 수 없다. 목록 위젯은 이벤트로 따라온다.
+                    void load(current)
+                    notifyTransitioned()
                   }}
                 >
-                  {status.name}
-                </span>
+                  <span
+                    className="block rounded px-1.5 py-0.5"
+                    style={{
+                      color: statusColor(status.statusCategory?.key ?? 'new'),
+                      backgroundColor: statusMuted(status.statusCategory?.key ?? 'new'),
+                    }}
+                  >
+                    {status.name}
+                  </span>
+                </StatusTransitionPopover>
               )}
               {issueType?.name && <span className="text-text-tertiary">{issueType.name}</span>}
               {priority?.name && (

@@ -50,16 +50,18 @@ pub mod types;
 mod tests;
 
 pub use client::{
-    auth_header, build_search_body, fields_param, join_url, JiraClient, JiraCredentials,
-    DEFAULT_MAX_RESULTS, DEFAULT_TIMEOUT, MAX_RESULTS_LIMIT,
+    auth_header, build_search_body, build_transition_body, fields_param, join_url, JiraClient,
+    JiraCredentials, DEFAULT_MAX_RESULTS, DEFAULT_TIMEOUT, MAX_RESULTS_LIMIT,
 };
 pub use error::{parse_retry_after, ErrorKind, JiraError};
 pub use presets::{
-    apply_sort, default_query, JiraQuery, Preset, SortDirection, SortField, PRESETS,
+    apply_sort, default_query, is_numeric_filter_id, JiraQuery, Preset, SortDirection, SortField,
+    PRESETS,
 };
 pub use types::{
     Adf, AllowedValue, CommentPage, CreateIssueInput, CreateMeta, CreateMetaField, CreatedIssue,
-    JiraComment, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType, JiraIssueTypeOption,
-    JiraPriority, JiraStatus, JiraParent, JiraProject, JiraProjectWithTypes, JiraSprint,
-    JiraStatusCategory, JiraUser, SearchPage, DETAIL_FIELDS, LIST_FIELDS,
+    JiraComment, JiraFilter, JiraIdentity, JiraIssue, JiraIssueDetail, JiraIssueType,
+    JiraIssueTypeOption, JiraPriority, JiraStatus, JiraParent, JiraProject, JiraProjectWithTypes,
+    JiraSprint, JiraStatusCategory, JiraTransition, JiraUser, SearchPage, DETAIL_FIELDS,
+    LIST_FIELDS,
 };
