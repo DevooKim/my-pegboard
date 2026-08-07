@@ -60,6 +60,7 @@ pub type SecretResult<T> = Result<T, SecretError>;
 pub enum Service {
     Jira,
     Github,
+    Linear,
 }
 
 impl Service {
@@ -67,6 +68,7 @@ impl Service {
         match self {
             Service::Jira => "jira",
             Service::Github => "github",
+            Service::Linear => "linear",
         }
     }
 }
@@ -157,6 +159,13 @@ impl SecretKey {
 
     pub fn github_token() -> Self {
         Self::default_connection(Service::Github, Credential::Token)
+    }
+
+    /// Linear API key. `github_token()`과 같은 모양이다 — Linear도 URL이
+    /// 없고(`api.linear.app` 고정) 사용자 식별을 키가 하므로(`viewer`)
+    /// 저장할 것이 하나뿐이다.
+    pub fn linear_token() -> Self {
+        Self::default_connection(Service::Linear, Credential::Token)
     }
 
     /// The wire form: `jira.default.token`.
@@ -512,6 +521,10 @@ mod tests {
         assert_eq!(
             SecretKey::github_token().as_string(),
             "github.default.token"
+        );
+        assert_eq!(
+            SecretKey::linear_token().as_string(),
+            "linear.default.token"
         );
     }
 

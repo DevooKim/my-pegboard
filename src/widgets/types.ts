@@ -8,7 +8,7 @@ import type { ComponentType } from 'react'
  * 다른 위젯 코드를 열 필요가 없어야 한다.
  */
 
-export type WidgetType = 'jira' | 'github' | 'todo' | 'web' | 'album'
+export type WidgetType = 'jira' | 'github' | 'todo' | 'web' | 'album' | 'linear'
 
 /** 위젯의 표시 상태. WidgetShell이 이 값으로 무엇을 그릴지 결정한다. */
 export type WidgetStatus =

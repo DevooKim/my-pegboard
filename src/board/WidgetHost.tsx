@@ -1,6 +1,11 @@
 import { ArrowDownToLine, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GithubWidgetConfig, JiraWidgetConfig, TodoItem } from '#/ipc/bindings'
+import type {
+  GithubWidgetConfig,
+  JiraWidgetConfig,
+  LinearWidgetConfig,
+  TodoItem,
+} from '#/ipc/bindings'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { dateKey, useTodoStore } from '#/store/todos'
@@ -11,6 +16,7 @@ import { useGithubData } from '#/widgets/github/useGithubData'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
 import { useJiraData } from '#/widgets/jira/useJiraData'
+import { useLinearData } from '#/widgets/linear/useLinearData'
 import { tryGetWidget } from '#/widgets/registry'
 import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
 import { IconButton, WidgetShell } from '#/widgets/shell/WidgetShell'
@@ -87,6 +93,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         />
       ) : widget.type === 'album' ? (
         <AlbumHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
+      ) : widget.type === 'linear' ? (
+        <LinearHost
           widget={widget}
           width={width}
           onRemove={() => setConfirmingRemove(true)}
@@ -324,6 +337,49 @@ function GithubHost({
   const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
   const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
   const { envelope, refresh } = useGithubData(widget.id, config, refreshMs)
+
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(config)}
+      status={envelope.status}
+      fetchedAt={envelope.fetchedAt}
+      pollable
+      onRefresh={refresh}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
+    </WidgetShell>
+  )
+}
+
+/**
+ * Linear 위젯 호스트.
+ *
+ * GitHub과 달리 **읽기 전용이 아니다** — 상태 변경과 상세 모달이 있다
+ * (DECISIONS 25.1, 사용자 결정). 다만 `actions` 슬롯은 비어 있다: 상태 변경은
+ * 목록 행의 배지에서 일어나고, 생성 기능이 없어서 헤더에 놓을 버튼이 없다.
+ */
+function LinearHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('linear')
+  const config = widget.config as unknown as LinearWidgetConfig
+  // 0이면 자동 갱신하지 않는다. 그 외에는 1분이 하한.
+  const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
+  const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
+  const { envelope, refresh } = useLinearData(widget.id, config, refreshMs)
 
   if (!definition) return null
   const View = definition.View

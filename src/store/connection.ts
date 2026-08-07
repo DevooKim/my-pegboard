@@ -15,9 +15,14 @@ interface ConnectionState {
   /** GitHub 401. Jira와 따로 둔다 — 한쪽이 죽었다고 다른 쪽 배너를 띄우면 안 된다. */
   githubAuthFailed: boolean
 
+  linearConfigured: boolean
+  /** Linear 401. 서비스마다 따로 두는 이유는 위와 같다. */
+  linearAuthFailed: boolean
+
   refresh: () => Promise<void>
   setJiraAuthFailed: (failed: boolean) => void
   setGithubAuthFailed: (failed: boolean) => void
+  setLinearAuthFailed: (failed: boolean) => void
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({
@@ -26,6 +31,8 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   jiraAuthFailed: false,
   githubConfigured: false,
   githubAuthFailed: false,
+  linearConfigured: false,
+  linearAuthFailed: false,
 
   refresh: async () => {
     // baseUrl까지 함께 받는다. 예전에는 configured만 읽어서 jiraBaseUrl이
@@ -41,8 +48,13 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
     // GitHub은 base URL이 없다(github.com 고정). 설정 여부만 본다.
     const github = await commands.githubIsConfigured()
     if (github.status === 'ok') set({ githubConfigured: github.data })
+
+    // Linear도 base URL이 없다(api.linear.app 고정).
+    const linear = await commands.linearIsConfigured()
+    if (linear.status === 'ok') set({ linearConfigured: linear.data })
   },
 
   setJiraAuthFailed: (failed) => set({ jiraAuthFailed: failed }),
   setGithubAuthFailed: (failed) => set({ githubAuthFailed: failed }),
+  setLinearAuthFailed: (failed) => set({ linearAuthFailed: failed }),
 }))

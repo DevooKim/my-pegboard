@@ -61,10 +61,12 @@ pub enum WidgetType {
     Web,
     /// Local photo album — a mood background, not a viewer (DECISIONS 24).
     Album,
+    /// Linear issues — read + status change + detail modal (DECISIONS 25).
+    Linear,
 }
 
 impl WidgetType {
-    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4 / Album 4.
+    /// DECISIONS 3: Jira 4 / GitHub 4 / Todo 1 / Web 4 / Album 4 / Linear 4.
     ///
     /// Todo was 8 until 2026-08-01. Every Todo widget reads the same
     /// `todos.json`, so a second one shows the same list twice while adding
@@ -78,6 +80,9 @@ impl WidgetType {
             // Todo와 다르다. 앨범 위젯은 각자 다른 폴더를 보므로 두 번째가
             // 같은 것을 두 번 그리는 상황이 아니다.
             WidgetType::Album => 4,
+            // Jira·GitHub과 같은 이유로 4다. 위젯마다 다른 쿼리를 본다
+            // ("내게 할당된 것" / "팀에서 최근 움직인 것").
+            WidgetType::Linear => 4,
         }
     }
 
@@ -88,6 +93,7 @@ impl WidgetType {
             WidgetType::Todo => "todo",
             WidgetType::Web => "web",
             WidgetType::Album => "album",
+            WidgetType::Linear => "linear",
         }
     }
 }
