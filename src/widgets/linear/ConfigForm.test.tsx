@@ -125,6 +125,25 @@ beforeEach(() => {
 })
 
 describe('LinearConfigForm', () => {
+  it('shows a retryable error when the preset loader rejects instead of loading forever', async () => {
+    linearPresets.mockRejectedValueOnce(new Error('프리셋 IPC 중단')).mockResolvedValueOnce([
+      {
+        id: 'assigned-to-me',
+        name: '내게 할당된 이슈',
+        description: '내게 할당된 이슈',
+        scope: 'assignedToViewer',
+        openOnly: true,
+      },
+    ])
+    render(<LinearConfigForm config={config()} onChange={vi.fn()} />)
+
+    expect(
+      await screen.findByText(/Linear 쿼리 목록을 불러오지 못했습니다: 프리셋 IPC 중단/),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '쿼리 목록 다시 시도' }))
+    expect(await screen.findByRole('option', { name: '내게 할당된 이슈' })).toBeInTheDocument()
+  })
+
   it('copies persisted team scope into custom filter once, then edits the filter', async () => {
     const onChange = vi.fn()
     function Harness() {
@@ -293,6 +312,164 @@ describe('LinearConfigForm', () => {
       await screen.findByText(/Linear 메타데이터를 불러오지 못했습니다: IPC 중단/),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '전역 메타데이터 새로고침' })).not.toBeDisabled()
+  })
+
+  it('does not let a late initial metadata response clear an explicit refresh', async () => {
+    let resolveInitial!: (value: ReturnType<typeof response>) => void
+    let resolveRefresh!: (value: ReturnType<typeof response>) => void
+    const initial = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveInitial = resolve
+    })
+    const refresh = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveRefresh = resolve
+    })
+    linearMetadata.mockImplementation((_teamId: string | null, force: boolean) =>
+      force ? refresh : initial,
+    )
+
+    render(
+      <ControlledForm initial={config({ query: { kind: 'custom', filter: {} }, teams: [] })} />,
+    )
+    const refreshButton = await screen.findByRole('button', { name: '전역 메타데이터 새로고침' })
+    fireEvent.click(refreshButton)
+
+    resolveInitial(response(globalMetadata()))
+    await waitFor(() => expect(refreshButton).toBeDisabled())
+
+    resolveRefresh(response(globalMetadata()))
+    await waitFor(() => expect(refreshButton).not.toBeDisabled())
+  })
+
+  it('keeps explicit metadata after an initial cache response arrives late', async () => {
+    let resolveInitial!: (value: ReturnType<typeof response>) => void
+    let resolveRefresh!: (value: ReturnType<typeof response>) => void
+    const initial = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveInitial = resolve
+    })
+    const refresh = new Promise<ReturnType<typeof response>>((resolve) => {
+      resolveRefresh = resolve
+    })
+    linearMetadata.mockImplementation((_teamId: string | null, force: boolean) =>
+      force ? refresh : initial,
+    )
+
+    render(
+      <ControlledForm initial={config({ query: { kind: 'custom', filter: {} }, teams: [] })} />,
+    )
+    const refreshButton = await screen.findByRole('button', { name: '전역 메타데이터 새로고침' })
+    fireEvent.click(refreshButton)
+    resolveRefresh(
+      response({
+        ...globalMetadata(),
+        teams: {
+          ...globalMetadata().teams,
+          items: [{ id: 'team-design', key: 'DES', name: 'Design' }],
+        },
+      }),
+    )
+    await waitFor(() => expect(screen.getByLabelText('Design')).toBeInTheDocument())
+
+    resolveInitial(response(globalMetadata()))
+    await waitFor(() => expect(screen.queryByLabelText('Engineering')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Design')).toBeInTheDocument()
+  })
+
+  it('prunes stale teams, labels, and team-dependent selections after a successful global refresh', async () => {
+    const onChange = vi.fn()
+    const initialFilter = {
+      teamIds: ['team-eng', 'team-gone'],
+      stateTypes: ['started', 'completed'],
+      projectIds: ['project-team-eng', 'project-team-gone'],
+      labelIds: ['label-bug', 'label-gone'],
+    }
+    linearMetadata.mockImplementation((teamId: string | null, force: boolean) => {
+      if (teamId === null && force) {
+        return Promise.resolve(
+          response({
+            ...globalMetadata(),
+            teams: {
+              ...globalMetadata().teams,
+              items: [{ id: 'team-eng', key: 'ENG', name: 'Engineering' }],
+            },
+            labels: {
+              ...globalMetadata().labels,
+              items: [{ id: 'label-bug', name: 'Bug', color: '#ff0000' }],
+            },
+          }),
+        )
+      }
+      return Promise.resolve(response(globalMetadata(), teamId ? teamMetadata(teamId) : null))
+    })
+
+    render(
+      <LinearConfigForm
+        config={config({ query: { kind: 'custom', filter: initialFilter }, teams: [] })}
+        onChange={onChange}
+      />,
+    )
+    expect(await screen.findByLabelText('Engineering')).toBeInTheDocument()
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '전역 메타데이터 새로고침' }))
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: {
+            kind: 'custom',
+            filter: expect.objectContaining({
+              teamIds: ['team-eng'],
+              stateTypes: ['started'],
+              projectIds: ['project-team-eng'],
+              labelIds: ['label-bug'],
+            }),
+          },
+        }),
+      )
+    })
+  })
+
+  it('preserves selected IDs when the global metadata refresh fails', async () => {
+    const onChange = vi.fn()
+    const selectedFilter = {
+      teamIds: ['team-eng'],
+      stateTypes: ['started'],
+      projectIds: ['project-team-eng'],
+      labelIds: ['label-bug'],
+    }
+    linearMetadata.mockImplementation((teamId: string | null, force: boolean) => {
+      if (teamId === null && force) {
+        return Promise.resolve(
+          response(
+            {
+              ...globalMetadata(),
+              teams: { ...globalMetadata().teams, items: [] },
+              labels: { ...globalMetadata().labels, items: [] },
+            },
+            null,
+            {
+              kind: 'transient',
+              message: '갱신 실패',
+              isAuthFailure: false,
+              retryAfterSecs: null,
+            },
+          ),
+        )
+      }
+      return Promise.resolve(response(globalMetadata(), teamId ? teamMetadata(teamId) : null))
+    })
+    render(
+      <LinearConfigForm
+        config={config({ query: { kind: 'custom', filter: selectedFilter }, teams: [] })}
+        onChange={onChange}
+      />,
+    )
+    expect(await screen.findByLabelText('Engineering')).toBeInTheDocument()
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '전역 메타데이터 새로고침' }))
+    expect(await screen.findByText('갱신 실패')).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Engineering')).toBeChecked()
+    expect(screen.getByLabelText('라벨: Bug')).toBeChecked()
   })
 
   it('prunes project and state selections when a custom team is removed', async () => {

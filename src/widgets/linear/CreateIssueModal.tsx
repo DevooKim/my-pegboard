@@ -40,31 +40,53 @@ export function LinearCreateIssueModal({
   const [submitting, setSubmitting] = useState(false)
   const [failure, setFailure] = useState<LinearCreateFailure | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
+  const metadataRequestRef = useRef(new Map<string, number>())
+  const activeRefreshRef = useRef<{ key: string; requestId: number } | null>(null)
 
   const loadMetadata = useCallback(async (selectedTeamId: string | null, refresh: boolean) => {
-    setRefreshing(refresh)
+    const key = selectedTeamId ?? '__global__'
+    const requestId = (metadataRequestRef.current.get(key) ?? 0) + 1
+    metadataRequestRef.current.set(key, requestId)
+    if (refresh) {
+      activeRefreshRef.current = { key, requestId }
+      setRefreshing(true)
+    } else if (activeRefreshRef.current === null) {
+      setRefreshing(false)
+    }
     try {
       const result = await commands.linearMetadata(selectedTeamId, refresh)
+      if (metadataRequestRef.current.get(key) !== requestId) return
       if (result.status !== 'ok') {
         setMetadataError(result.error)
         setMetadataErrorTeamId(selectedTeamId)
         return
       }
-      setMetadata(result.data.global)
+      const error = result.data.refreshError?.message ?? null
+      if (selectedTeamId === null && (!refresh || !error)) setMetadata(result.data.global)
       const team = result.data.team
       if (team) {
         setTeamMetadata((current) => ({ ...current, [team.teamId]: team }))
       }
-      const error = result.data.refreshError?.message ?? null
       setMetadataError(error)
       setMetadataErrorTeamId(error ? selectedTeamId : null)
     } catch (error) {
+      if (metadataRequestRef.current.get(key) !== requestId) return
       setMetadataError(
         `Linear 메타데이터를 불러오지 못했습니다: ${transportErrorMessage(error)}. 새로고침하세요.`,
       )
       setMetadataErrorTeamId(selectedTeamId)
     } finally {
-      setRefreshing(false)
+      if (metadataRequestRef.current.get(key) === requestId) {
+        if (
+          activeRefreshRef.current?.key === key &&
+          activeRefreshRef.current.requestId === requestId
+        ) {
+          activeRefreshRef.current = null
+          setRefreshing(false)
+        } else if (activeRefreshRef.current === null) {
+          setRefreshing(false)
+        }
+      }
     }
   }, [])
 

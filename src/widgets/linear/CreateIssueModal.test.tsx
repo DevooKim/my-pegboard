@@ -117,6 +117,62 @@ beforeEach(() => {
 })
 
 describe('LinearCreateIssueModal', () => {
+  it('does not let a late initial metadata response clear an explicit refresh', async () => {
+    let resolveInitial!: (value: ReturnType<typeof metadataResponse>) => void
+    let resolveRefresh!: (value: ReturnType<typeof metadataResponse>) => void
+    const initial = new Promise<ReturnType<typeof metadataResponse>>((resolve) => {
+      resolveInitial = resolve
+    })
+    const refresh = new Promise<ReturnType<typeof metadataResponse>>((resolve) => {
+      resolveRefresh = resolve
+    })
+    linearMetadata.mockImplementation((_teamId: string | null, force: boolean) =>
+      force ? refresh : initial,
+    )
+
+    render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+    const refreshButton = await screen.findByRole('button', { name: '전역 메타데이터 새로고침' })
+    fireEvent.click(refreshButton)
+    resolveInitial(metadataResponse(null))
+    await waitFor(() => expect(refreshButton).toBeDisabled())
+    resolveRefresh(metadataResponse(null))
+    await waitFor(() => expect(refreshButton).not.toBeDisabled())
+  })
+
+  it('keeps explicit metadata after an initial cache response arrives late', async () => {
+    let resolveInitial!: (value: ReturnType<typeof metadataResponse>) => void
+    let resolveRefresh!: (value: ReturnType<typeof metadataResponse>) => void
+    const initial = new Promise<ReturnType<typeof metadataResponse>>((resolve) => {
+      resolveInitial = resolve
+    })
+    const refresh = new Promise<ReturnType<typeof metadataResponse>>((resolve) => {
+      resolveRefresh = resolve
+    })
+    linearMetadata.mockImplementation((_teamId: string | null, force: boolean) =>
+      force ? refresh : initial,
+    )
+
+    render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+    const refreshButton = await screen.findByRole('button', { name: '전역 메타데이터 새로고침' })
+    fireEvent.click(refreshButton)
+    resolveRefresh(
+      metadataResponse(null, {
+        global: {
+          ...globalMetadata(),
+          teams: {
+            ...globalMetadata().teams,
+            items: [{ id: 'team-design', key: 'DES', name: 'Design' }],
+          },
+        },
+      }),
+    )
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Design' })).toBeInTheDocument())
+    resolveInitial(metadataResponse(null))
+    await waitFor(() =>
+      expect(screen.queryByRole('option', { name: 'Engineering' })).not.toBeInTheDocument(),
+    )
+  })
+
   it('requires a team and a trimmed title before submitting', async () => {
     render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
 

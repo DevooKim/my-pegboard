@@ -12,6 +12,8 @@ vi.mock('#/ipc/bindings', () => ({
     boardExport: vi.fn(),
     boardImportPreview: vi.fn(),
     boardImportApply: vi.fn(),
+    linearSaveToken: vi.fn(),
+    linearVerify: vi.fn(),
   },
 }))
 
@@ -23,6 +25,15 @@ vi.mock('#/store/update', () => ({
   RELEASES_PAGE: 'https://example.com/releases',
   useUpdateStore: (selector: (state: { restart: typeof relaunchMock }) => unknown) =>
     selector({ restart: relaunchMock }),
+}))
+
+vi.mock('#/ipc/env', () => ({ IN_TAURI: true }))
+
+const refreshConnection = vi.fn()
+vi.mock('#/store/connection', () => ({
+  useConnectionStore: (
+    selector: (state: { linearConfigured: boolean; refresh: typeof refreshConnection }) => unknown,
+  ) => selector({ linearConfigured: false, refresh: refreshConnection }),
 }))
 
 const boardFile: BoardFile = {
@@ -226,5 +237,42 @@ describe('SettingsModal board transfer', () => {
     expect(
       await screen.findByText('보드는 저장됐지만 고아 캐시 정리에 실패했습니다'),
     ).toBeInTheDocument()
+  })
+})
+
+describe('SettingsModal Linear connection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    refreshConnection.mockResolvedValue(undefined)
+  })
+
+  it('shows a save IPC rejection and clears the working state', async () => {
+    vi.mocked(commands.linearSaveToken).mockRejectedValueOnce(new Error('저장 IPC 중단'))
+    render(<SettingsModal open onClose={vi.fn()} onSaved={vi.fn()} initialTab="connections" />)
+
+    fireEvent.change(screen.getByPlaceholderText('lin_api_...'), {
+      target: { value: 'lin_api_test' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: '저장' }).at(-1) as HTMLElement)
+
+    expect(await screen.findByText('저장 IPC 중단')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '저장' }).at(-1)).not.toBeDisabled()
+  })
+
+  it('shows a verify IPC rejection and clears the working state', async () => {
+    vi.mocked(commands.linearSaveToken).mockResolvedValue({ status: 'ok', data: null })
+    vi.mocked(commands.linearVerify).mockRejectedValueOnce(new Error('검증 IPC 중단'))
+    render(<SettingsModal open onClose={vi.fn()} onSaved={vi.fn()} initialTab="connections" />)
+
+    fireEvent.change(screen.getByPlaceholderText('lin_api_...'), {
+      target: { value: 'lin_api_test' },
+    })
+    fireEvent.click(screen.getAllByRole('button', { name: '저장' }).at(-1) as HTMLElement)
+
+    expect(await screen.findByText('검증 IPC 중단')).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('lin_api_...'), {
+      target: { value: 'lin_api_retry' },
+    })
+    expect(screen.getAllByRole('button', { name: '저장' }).at(-1)).not.toBeDisabled()
   })
 })

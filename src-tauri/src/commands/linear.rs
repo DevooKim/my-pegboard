@@ -162,26 +162,44 @@ pub fn linear_save_token(state: State<'_, AppState>, token: String) -> Result<()
         return Err("API 키가 비어 있습니다".into());
     }
     let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-    state
-        .secrets
-        .set(&SecretKey::linear_token(), &Secret::new(token))
-        .map_err(|e| format!("키체인에 저장할 수 없습니다: {e}"))?;
-    clear_linear_metadata(&mut meta).map_err(|error| {
-        format!("API 키는 저장됐지만 이전 Linear 계정 메타데이터를 지울 수 없습니다: {error}")
-    })
+    clear_then_keychain_mutation(
+        &mut meta,
+        clear_linear_metadata,
+        || {
+            state
+                .secrets
+                .set(&SecretKey::linear_token(), &Secret::new(token))
+                .map_err(|error| error.to_string())
+        },
+        |error| {
+            format!(
+                "이전 Linear 계정 메타데이터를 지울 수 없어 API 키를 변경하지 않았습니다: {error}"
+            )
+        },
+        |error| format!("키체인에 저장할 수 없습니다: {error}"),
+    )
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn linear_delete_token(state: State<'_, AppState>) -> Result<(), String> {
     let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-    state
-        .secrets
-        .delete(&SecretKey::linear_token())
-        .map_err(|e| format!("키체인에서 지울 수 없습니다: {e}"))?;
-    clear_linear_metadata(&mut meta).map_err(|error| {
-        format!("Linear 연결은 삭제됐지만 이전 계정 메타데이터를 지울 수 없습니다: {error}")
-    })
+    clear_then_keychain_mutation(
+        &mut meta,
+        clear_linear_metadata,
+        || {
+            state
+                .secrets
+                .delete(&SecretKey::linear_token())
+                .map_err(|error| error.to_string())
+        },
+        |error| {
+            format!(
+                "이전 Linear 계정 메타데이터를 지울 수 없어 연결을 삭제하지 않았습니다: {error}"
+            )
+        },
+        |error| format!("키체인에서 지울 수 없습니다: {error}"),
+    )
 }
 
 /// 키가 실제로 동작하는지 확인. 설정창의 [확인] 버튼.
@@ -510,6 +528,23 @@ fn clear_linear_metadata(
     meta.clear();
     meta.save()
         .map_err(|error| format!("Linear 메타데이터를 지울 수 없습니다: {error}"))
+}
+
+fn clear_then_keychain_mutation<Clear, Mutate, MapMetadataError, MapKeychainError>(
+    meta: &mut crate::storage::linear_meta::LinearMetaStore,
+    clear: Clear,
+    mutate: Mutate,
+    map_metadata_error: MapMetadataError,
+    map_keychain_error: MapKeychainError,
+) -> Result<(), String>
+where
+    Clear: FnOnce(&mut crate::storage::linear_meta::LinearMetaStore) -> Result<(), String>,
+    Mutate: FnOnce() -> Result<(), String>,
+    MapMetadataError: FnOnce(String) -> String,
+    MapKeychainError: FnOnce(String) -> String,
+{
+    clear(meta).map_err(map_metadata_error)?;
+    mutate().map_err(map_keychain_error)
 }
 
 fn client_for_call(state: &AppState) -> Result<LinearClient, LinearCallError> {
@@ -885,6 +920,79 @@ mod tests {
         let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
         assert!(reloaded.global().teams.items.is_empty());
         assert!(reloaded.global().viewer.is_none());
+        assert!(reloaded.team("team-eng").is_none());
+    }
+
+    #[test]
+    fn metadata_write_happens_before_credential_mutation() {
+        let (_dir, mut store) = cached_store();
+        let credential = std::rc::Rc::new(std::cell::RefCell::new("old-token"));
+        let new_credential = std::rc::Rc::clone(&credential);
+        let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let clear_order = std::rc::Rc::clone(&order);
+        let mutate_order = std::rc::Rc::clone(&order);
+
+        clear_then_keychain_mutation(
+            &mut store,
+            move |_meta| {
+                clear_order.borrow_mut().push("metadata");
+                Ok(())
+            },
+            move || {
+                mutate_order.borrow_mut().push("keychain");
+                *new_credential.borrow_mut() = "new-token";
+                Ok(())
+            },
+            |error| error,
+            |error| error,
+        )
+        .unwrap();
+
+        assert_eq!(*order.borrow(), ["metadata", "keychain"]);
+        assert_eq!(*credential.borrow(), "new-token");
+    }
+
+    #[test]
+    fn metadata_write_failure_leaves_credential_unchanged() {
+        let (_dir, mut store) = cached_store();
+        let credential = std::cell::RefCell::new("old-token");
+        let mutation_called = std::cell::Cell::new(false);
+
+        let error = clear_then_keychain_mutation(
+            &mut store,
+            |_meta| Err("metadata disk full".to_owned()),
+            || {
+                mutation_called.set(true);
+                *credential.borrow_mut() = "new-token";
+                Ok(())
+            },
+            |error| format!("metadata: {error}"),
+            |error| format!("keychain: {error}"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "metadata: metadata disk full");
+        assert!(!mutation_called.get());
+        assert_eq!(*credential.borrow(), "old-token");
+    }
+
+    #[test]
+    fn keychain_failure_leaves_the_cleared_cache_visible() {
+        let (dir, mut store) = cached_store();
+
+        let error = clear_then_keychain_mutation(
+            &mut store,
+            clear_linear_metadata,
+            || Err("keychain unavailable".to_owned()),
+            |error| format!("metadata: {error}"),
+            |error| format!("keychain: {error}"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "keychain: keychain unavailable");
+        assert!(store.global().teams.items.is_empty());
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert!(reloaded.global().teams.items.is_empty());
         assert!(reloaded.team("team-eng").is_none());
     }
 

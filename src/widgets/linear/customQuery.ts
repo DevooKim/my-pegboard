@@ -1,4 +1,9 @@
-import type { LinearAssigneeFilter, LinearCustomFilter, LinearTeamMetadata } from '#/ipc/bindings'
+import type {
+  LinearAssigneeFilter,
+  LinearCustomFilter,
+  LinearGlobalMetadata,
+  LinearTeamMetadata,
+} from '#/ipc/bindings'
 
 export type CompleteCustomFilter = {
   teamIds: string[]
@@ -47,11 +52,26 @@ export function pruneTeamDependentSelections(
   filter: CompleteCustomFilter,
   teamIds: string[],
   teamMetadata: Record<string, LinearTeamMetadata>,
+  globalMetadata: LinearGlobalMetadata | null = null,
 ): CompleteCustomFilter {
-  const selectedMetadata = teamIds
+  const knownTeamIds = globalMetadata
+    ? new Set(globalMetadata.teams.items.map((team) => team.id))
+    : null
+  const nextTeamIds = knownTeamIds ? teamIds.filter((teamId) => knownTeamIds.has(teamId)) : teamIds
+  const knownLabelIds = globalMetadata
+    ? new Set(globalMetadata.labels.items.map((label) => label.id))
+    : null
+  const selectedMetadata = nextTeamIds
     .map((teamId) => teamMetadata[teamId])
     .filter((metadata): metadata is LinearTeamMetadata => metadata !== undefined)
-  if (selectedMetadata.length !== teamIds.length) return filter
+  const next = {
+    ...filter,
+    teamIds: nextTeamIds,
+    ...(knownLabelIds
+      ? { labelIds: filter.labelIds.filter((labelId) => knownLabelIds.has(labelId)) }
+      : {}),
+  }
+  if (selectedMetadata.length !== nextTeamIds.length) return next
 
   const stateTypes = new Set(
     selectedMetadata.flatMap((metadata) => metadata.states.items.map((state) => state.typeName)),
@@ -61,7 +81,7 @@ export function pruneTeamDependentSelections(
   )
 
   return {
-    ...filter,
+    ...next,
     stateTypes: filter.stateTypes.filter((value) => stateTypes.has(value)),
     projectIds: filter.projectIds.filter((value) => projectIds.has(value)),
   }

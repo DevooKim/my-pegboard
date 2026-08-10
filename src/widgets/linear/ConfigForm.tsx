@@ -1,5 +1,5 @@
 import { RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   commands,
   type LinearGlobalMetadata,
@@ -32,11 +32,15 @@ export function LinearConfigForm({
   onValidityChange,
 }: WidgetConfigFormProps<LinearWidgetConfig>) {
   const [presets, setPresets] = useState<LinearPreset[]>([])
+  const [presetsError, setPresetsError] = useState<string | null>(null)
   const [metadata, setMetadata] = useState<LinearGlobalMetadata | null>(null)
   const [teamMetadata, setTeamMetadata] = useState<Record<string, LinearTeamMetadata>>({})
   const [metadataError, setMetadataError] = useState<string | null>(null)
   const [metadataErrorTeamId, setMetadataErrorTeamId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const metadataRequestRef = useRef(new Map<string, number>())
+  const activeRefreshRef = useRef<{ key: string; requestId: number } | null>(null)
+  const [globalRefreshVersion, setGlobalRefreshVersion] = useState(0)
   const now = useNow()
   const isCustom = config.query.kind === 'custom'
   const filter = useMemo(() => {
@@ -46,16 +50,26 @@ export function LinearConfigForm({
   }, [config.query])
 
   const loadMetadata = useCallback(async (teamId: string | null, refresh: boolean) => {
-    setRefreshing(refresh)
+    const key = teamId ?? '__global__'
+    const requestId = (metadataRequestRef.current.get(key) ?? 0) + 1
+    metadataRequestRef.current.set(key, requestId)
+    if (refresh) {
+      activeRefreshRef.current = { key, requestId }
+      setRefreshing(true)
+    } else if (activeRefreshRef.current === null) {
+      setRefreshing(false)
+    }
     try {
       const result = await commands.linearMetadata(teamId, refresh)
+      if (metadataRequestRef.current.get(key) !== requestId) return
       if (result.status !== 'ok') {
         setMetadataError(result.error)
         setMetadataErrorTeamId(teamId)
         return
       }
 
-      if (teamId === null) setMetadata(result.data.global)
+      const error = result.data.refreshError?.message ?? null
+      if (teamId === null && (!refresh || !error)) setMetadata(result.data.global)
       const team = result.data.team
       if (team) {
         setTeamMetadata((current) => ({
@@ -63,21 +77,44 @@ export function LinearConfigForm({
           [team.teamId]: team,
         }))
       }
-      const error = result.data.refreshError?.message ?? null
       setMetadataError(error)
       setMetadataErrorTeamId(error ? teamId : null)
+      if (teamId === null && refresh && !error) {
+        setGlobalRefreshVersion((version) => version + 1)
+      }
     } catch (error) {
+      if (metadataRequestRef.current.get(key) !== requestId) return
       setMetadataError(transportErrorMessage(error))
       setMetadataErrorTeamId(teamId)
     } finally {
-      setRefreshing(false)
+      if (metadataRequestRef.current.get(key) === requestId) {
+        if (
+          activeRefreshRef.current?.key === key &&
+          activeRefreshRef.current.requestId === requestId
+        ) {
+          activeRefreshRef.current = null
+          setRefreshing(false)
+        } else if (activeRefreshRef.current === null) {
+          setRefreshing(false)
+        }
+      }
+    }
+  }, [])
+
+  const loadPresets = useCallback(async () => {
+    try {
+      setPresets(await commands.linearPresets())
+      setPresetsError(null)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      setPresetsError(`Linear 쿼리 목록을 불러오지 못했습니다: ${detail}. 다시 시도하세요.`)
     }
   }, [])
 
   useEffect(() => {
-    void commands.linearPresets().then(setPresets)
+    void loadPresets()
     void loadMetadata(null, false)
-  }, [loadMetadata])
+  }, [loadMetadata, loadPresets])
 
   const selectedCustomTeams = filter.teamIds ?? []
   useEffect(() => {
@@ -101,15 +138,36 @@ export function LinearConfigForm({
 
   useEffect(() => {
     if (!isCustom) return
-    const next = pruneTeamDependentSelections(filter, selectedCustomTeams, teamMetadata)
+    const next = pruneTeamDependentSelections(
+      filter,
+      selectedCustomTeams,
+      teamMetadata,
+      globalRefreshVersion > 0 ? metadata : null,
+    )
+    const teamIdsChanged =
+      next.teamIds.length !== filter.teamIds.length ||
+      next.teamIds.some((value, index) => value !== filter.teamIds[index])
     const stateTypesChanged =
       next.stateTypes.length !== filter.stateTypes.length ||
       next.stateTypes.some((value, index) => value !== filter.stateTypes[index])
     const projectIdsChanged =
       next.projectIds.length !== filter.projectIds.length ||
       next.projectIds.some((value, index) => value !== filter.projectIds[index])
-    if (stateTypesChanged || projectIdsChanged) updateFilter(next)
-  }, [filter, isCustom, selectedCustomTeams, teamMetadata, updateFilter])
+    const labelIdsChanged =
+      next.labelIds.length !== filter.labelIds.length ||
+      next.labelIds.some((value, index) => value !== filter.labelIds[index])
+    if (teamIdsChanged || stateTypesChanged || projectIdsChanged || labelIdsChanged) {
+      updateFilter(next)
+    }
+  }, [
+    filter,
+    globalRefreshVersion,
+    isCustom,
+    metadata,
+    selectedCustomTeams,
+    teamMetadata,
+    updateFilter,
+  ])
 
   const chooseQuery = (value: string) => {
     if (value === '__custom__') {
@@ -160,7 +218,9 @@ export function LinearConfigForm({
           >
             <option value="__custom__">직접 구성</option>
             {presets.length === 0 && !isCustom && (
-              <option value={presetQuery?.id ?? ''}>불러오는 중…</option>
+              <option value={presetQuery?.id ?? ''}>
+                {presetsError ? '불러오지 못했습니다' : '불러오는 중…'}
+              </option>
             )}
             {presets.map((p) => (
               <option key={p.id} value={p.id}>
@@ -169,6 +229,18 @@ export function LinearConfigForm({
             ))}
           </select>
           {preset && <span className="text-caption text-text-tertiary">{preset.description}</span>}
+          {presetsError && (
+            <div className="flex flex-wrap items-center gap-2 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+              <span>{presetsError}</span>
+              <button
+                type="button"
+                onClick={() => void loadPresets()}
+                className="rounded border border-danger-muted px-1.5 py-0.5 text-text-primary"
+              >
+                쿼리 목록 다시 시도
+              </button>
+            </div>
+          )}
         </label>
 
         <div className="grid grid-cols-2 gap-2">

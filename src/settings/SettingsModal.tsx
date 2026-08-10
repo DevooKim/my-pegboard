@@ -738,26 +738,32 @@ function LinearSection({ onSaved }: { onSaved: () => void }) {
   const save = useCallback(async () => {
     if (!token.trim() || !IN_TAURI) return
     setState({ kind: 'working' })
-    const saved = await commands.linearSaveToken(token.trim())
-    if (saved.status !== 'ok') {
-      setState({ kind: 'failed', message: saved.error })
-      return
-    }
-    setToken('') // 저장 후 폼에 남기지 않는다
+    try {
+      const saved = await commands.linearSaveToken(token.trim())
+      if (saved.status !== 'ok') {
+        setState({ kind: 'failed', message: saved.error })
+        return
+      }
+      setToken('') // 저장 후 폼에 남기지 않는다
 
-    // 저장과 확인을 붙여둔다. 저장만 하고 끝내면 틀린 키를 넣어도
-    // 위젯이 401을 낼 때까지 모른다. 확인은 `viewer` 한 방이다.
-    const verified = await commands.linearVerify()
-    if (verified.status === 'ok') {
-      setState({ kind: 'ok', message: verified.data })
-      // 새 키로 성공했으므로 전역 배너를 내린다. 안 내리면 고친 뒤에도
-      // "인증 실패"가 남아 있어 뭘 더 해야 하는지 모른다.
-      setAuthFailed(false)
-    } else {
-      setState({ kind: 'failed', message: verified.error })
+      // 저장과 확인을 붙여둔다. 저장만 하고 끝내면 틀린 키를 넣어도
+      // 위젯이 401을 낼 때까지 모른다. 확인은 `viewer` 한 방이다.
+      const verified = await commands.linearVerify()
+      if (verified.status === 'ok') {
+        setState({ kind: 'ok', message: verified.data })
+        // 새 키로 성공했으므로 전역 배너를 내린다. 안 내리면 고친 뒤에도
+        // "인증 실패"가 남아 있어 뭘 더 해야 하는지 모른다.
+        setAuthFailed(false)
+      } else {
+        setState({ kind: 'failed', message: verified.error })
+      }
+      await refreshConnection()
+      onSaved()
+    } catch (error) {
+      setState({ kind: 'failed', message: errorMessage(error) })
+    } finally {
+      setState((current) => (current.kind === 'working' ? { kind: 'idle' } : current))
     }
-    await refreshConnection()
-    onSaved()
   }, [token, refreshConnection, onSaved, setAuthFailed])
 
   return (
