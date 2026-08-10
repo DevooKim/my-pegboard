@@ -155,6 +155,11 @@ impl LinearMetaStore {
         self.data.teams.insert(team.team_id.clone(), team);
     }
 
+    /// 자격증명이 바뀌면 이전 Linear 계정의 선택지를 전부 버린다.
+    pub fn clear(&mut self) {
+        self.data = LinearMetaFile::default();
+    }
+
     pub fn save(&self) -> StorageResult<()> {
         write_json_atomic(&self.path, &self.data)
     }

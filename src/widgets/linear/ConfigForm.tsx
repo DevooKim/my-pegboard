@@ -18,7 +18,13 @@ import {
   hasReversedDateRange,
   isEmptyCustomFilter,
   normalizeCustomFilter,
+  pruneTeamDependentSelections,
 } from './customQuery'
+
+function transportErrorMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `Linear 메타데이터를 불러오지 못했습니다: ${detail}. 새로고침하세요.`
+}
 
 export function LinearConfigForm({
   config,
@@ -29,6 +35,7 @@ export function LinearConfigForm({
   const [metadata, setMetadata] = useState<LinearGlobalMetadata | null>(null)
   const [teamMetadata, setTeamMetadata] = useState<Record<string, LinearTeamMetadata>>({})
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [metadataErrorTeamId, setMetadataErrorTeamId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const now = useNow()
   const isCustom = config.query.kind === 'custom'
@@ -40,23 +47,31 @@ export function LinearConfigForm({
 
   const loadMetadata = useCallback(async (teamId: string | null, refresh: boolean) => {
     setRefreshing(refresh)
-    const result = await commands.linearMetadata(teamId, refresh)
-    if (result.status !== 'ok') {
-      setMetadataError(result.error)
-      setRefreshing(false)
-      return
-    }
+    try {
+      const result = await commands.linearMetadata(teamId, refresh)
+      if (result.status !== 'ok') {
+        setMetadataError(result.error)
+        setMetadataErrorTeamId(teamId)
+        return
+      }
 
-    if (teamId === null) setMetadata(result.data.global)
-    const team = result.data.team
-    if (team) {
-      setTeamMetadata((current) => ({
-        ...current,
-        [team.teamId]: team,
-      }))
+      if (teamId === null) setMetadata(result.data.global)
+      const team = result.data.team
+      if (team) {
+        setTeamMetadata((current) => ({
+          ...current,
+          [team.teamId]: team,
+        }))
+      }
+      const error = result.data.refreshError?.message ?? null
+      setMetadataError(error)
+      setMetadataErrorTeamId(error ? teamId : null)
+    } catch (error) {
+      setMetadataError(transportErrorMessage(error))
+      setMetadataErrorTeamId(teamId)
+    } finally {
+      setRefreshing(false)
     }
-    setMetadataError(result.data.refreshError?.message ?? null)
-    setRefreshing(false)
   }, [])
 
   useEffect(() => {
@@ -77,9 +92,24 @@ export function LinearConfigForm({
     onValidityChange?.(valid)
   }, [onValidityChange, valid])
 
-  const updateFilter = (next: typeof filter) => {
-    onChange({ ...config, query: { kind: 'custom', filter: next } })
-  }
+  const updateFilter = useCallback(
+    (next: typeof filter) => {
+      onChange({ ...config, query: { kind: 'custom', filter: next } })
+    },
+    [config, onChange],
+  )
+
+  useEffect(() => {
+    if (!isCustom) return
+    const next = pruneTeamDependentSelections(filter, selectedCustomTeams, teamMetadata)
+    const stateTypesChanged =
+      next.stateTypes.length !== filter.stateTypes.length ||
+      next.stateTypes.some((value, index) => value !== filter.stateTypes[index])
+    const projectIdsChanged =
+      next.projectIds.length !== filter.projectIds.length ||
+      next.projectIds.some((value, index) => value !== filter.projectIds[index])
+    if (stateTypesChanged || projectIdsChanged) updateFilter(next)
+  }, [filter, isCustom, selectedCustomTeams, teamMetadata, updateFilter])
 
   const chooseQuery = (value: string) => {
     if (value === '__custom__') {
@@ -182,11 +212,20 @@ export function LinearConfigForm({
             globalMetadata={metadata}
             teamMetadata={teamMetadata}
             onChange={updateFilter}
+            refreshing={refreshing}
+            onRefreshGlobal={() => void loadMetadata(null, true)}
+            onRefreshTeam={(teamId) => void loadMetadata(teamId, true)}
             onTeamToggle={(id) => {
               const nextTeamIds = selectedCustomTeams.includes(id)
                 ? selectedCustomTeams.filter((teamId) => teamId !== id)
                 : [...selectedCustomTeams, id]
-              updateFilter({ ...filter, teamIds: nextTeamIds })
+              updateFilter(
+                pruneTeamDependentSelections(
+                  { ...filter, teamIds: nextTeamIds },
+                  nextTeamIds,
+                  teamMetadata,
+                ),
+              )
               if (!teamMetadata[id]) void loadMetadata(id, false)
             }}
           />
@@ -211,9 +250,17 @@ export function LinearConfigForm({
       )}
 
       {isCustom && metadataError && (
-        <p className="mx-3 mt-3 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
-          {metadataError}
-        </p>
+        <div className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+          <span>{metadataError}</span>
+          <button
+            type="button"
+            onClick={() => void loadMetadata(metadataErrorTeamId, true)}
+            disabled={refreshing}
+            className="rounded border border-danger-muted px-1.5 py-0.5 text-text-primary disabled:opacity-40"
+          >
+            다시 시도
+          </button>
+        </div>
       )}
       {isCustom && (
         <MetadataWarnings

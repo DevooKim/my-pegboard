@@ -49,7 +49,7 @@ function teamMetadata(teamId: string): LinearTeamMetadata {
           id: `state-${teamId}`,
           name: 'In progress',
           color: '#f2c94c',
-          typeName: 'started',
+          typeName: teamId === 'team-eng' ? 'started' : 'completed',
           position: 1,
         },
       ],
@@ -62,7 +62,7 @@ function teamMetadata(teamId: string): LinearTeamMetadata {
       truncated: false,
     },
     projects: {
-      items: [{ id: 'project-auth', name: 'Auth', teamId }],
+      items: [{ id: `project-${teamId}`, name: 'Auth', teamId }],
       fetchedAt: '2026-08-10T00:00:00Z',
       truncated: false,
     },
@@ -266,5 +266,75 @@ describe('LinearConfigForm', () => {
     expect(
       within(screen.getByText('라벨').parentElement as HTMLElement).getByText('Bug'),
     ).toBeInTheDocument()
+  })
+
+  it('refreshes global and selected-team metadata explicitly for custom queries', async () => {
+    render(
+      <ControlledForm
+        initial={config({ query: { kind: 'custom', filter: { teamIds: ['team-eng'] } } })}
+      />,
+    )
+
+    expect(await screen.findByLabelText('Engineering 메타데이터 새로고침')).toBeInTheDocument()
+    linearMetadata.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '전역 메타데이터 새로고침' }))
+    await waitFor(() => expect(linearMetadata).toHaveBeenCalledWith(null, true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Engineering 메타데이터 새로고침' }))
+    await waitFor(() => expect(linearMetadata).toHaveBeenCalledWith('team-eng', true))
+  })
+
+  it('shows a retryable inline error and clears refresh state when metadata IPC rejects', async () => {
+    linearMetadata.mockRejectedValueOnce(new Error('IPC 중단'))
+    render(<ControlledForm initial={config({ query: { kind: 'custom', filter: {} } })} />)
+
+    expect(
+      await screen.findByText(/Linear 메타데이터를 불러오지 못했습니다: IPC 중단/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전역 메타데이터 새로고침' })).not.toBeDisabled()
+  })
+
+  it('prunes project and state selections when a custom team is removed', async () => {
+    const onChange = vi.fn()
+    function Harness() {
+      const [current, setCurrent] = useState(
+        config({
+          query: {
+            kind: 'custom',
+            filter: {
+              teamIds: ['team-eng', 'team-design'],
+              stateTypes: ['started', 'completed'],
+              projectIds: ['project-team-eng', 'project-team-design'],
+              priorities: [2],
+            },
+          },
+        }),
+      )
+      return (
+        <LinearConfigForm
+          config={current}
+          onChange={(next) => {
+            setCurrent(next)
+            onChange(next)
+          }}
+        />
+      )
+    }
+    render(<Harness />)
+
+    expect(await screen.findByLabelText('Design')).toBeChecked()
+    fireEvent.click(screen.getByLabelText('Design'))
+
+    const next = onChange.mock.calls.at(-1)?.[0] as LinearWidgetConfig
+    expect(next.query).toEqual({
+      kind: 'custom',
+      filter: expect.objectContaining({
+        teamIds: ['team-eng'],
+        stateTypes: ['started'],
+        projectIds: ['project-team-eng'],
+        priorities: [2],
+      }),
+    })
   })
 })

@@ -187,3 +187,29 @@ fn set_teams_replaces_rather_than_appends() {
     assert_eq!(store.teams().len(), 1);
     assert_eq!(store.teams()[0].id, "new");
 }
+
+#[test]
+fn clearing_for_token_rotation_removes_all_metadata_from_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let mut global = global_metadata(vec![team("old-account-team", "OLD")]);
+    global.viewer = Some(LinearUserOption {
+        id: "old-viewer".into(),
+        name: "Old account".into(),
+        avatar_url: None,
+    });
+    store.set_global(global);
+    store.set_team(team_metadata("old-account-team", "Old Todo"));
+    store.save().unwrap();
+
+    store.clear();
+    assert!(store.global().teams.items.is_empty());
+    assert!(store.global().viewer.is_none());
+    assert!(store.team("old-account-team").is_none());
+
+    store.save().unwrap();
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.global().teams.items.is_empty());
+    assert!(reloaded.global().viewer.is_none());
+    assert!(reloaded.team("old-account-team").is_none());
+}

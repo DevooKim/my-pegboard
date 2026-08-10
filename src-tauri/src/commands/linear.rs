@@ -161,19 +161,27 @@ pub fn linear_save_token(state: State<'_, AppState>, token: String) -> Result<()
     if token.is_empty() {
         return Err("API 키가 비어 있습니다".into());
     }
+    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
     state
         .secrets
         .set(&SecretKey::linear_token(), &Secret::new(token))
-        .map_err(|e| format!("키체인에 저장할 수 없습니다: {e}"))
+        .map_err(|e| format!("키체인에 저장할 수 없습니다: {e}"))?;
+    clear_linear_metadata(&mut meta).map_err(|error| {
+        format!("API 키는 저장됐지만 이전 Linear 계정 메타데이터를 지울 수 없습니다: {error}")
+    })
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn linear_delete_token(state: State<'_, AppState>) -> Result<(), String> {
+    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
     state
         .secrets
         .delete(&SecretKey::linear_token())
-        .map_err(|e| format!("키체인에서 지울 수 없습니다: {e}"))
+        .map_err(|e| format!("키체인에서 지울 수 없습니다: {e}"))?;
+    clear_linear_metadata(&mut meta).map_err(|error| {
+        format!("Linear 연결은 삭제됐지만 이전 계정 메타데이터를 지울 수 없습니다: {error}")
+    })
 }
 
 /// 키가 실제로 동작하는지 확인. 설정창의 [확인] 버튼.
@@ -494,6 +502,14 @@ fn client_from_state(state: &AppState) -> Result<LinearClient, String> {
         state.http.clone(),
         LinearCredentials::new(token.expose()),
     ))
+}
+
+fn clear_linear_metadata(
+    meta: &mut crate::storage::linear_meta::LinearMetaStore,
+) -> Result<(), String> {
+    meta.clear();
+    meta.save()
+        .map_err(|error| format!("Linear 메타데이터를 지울 수 없습니다: {error}"))
 }
 
 fn client_for_call(state: &AppState) -> Result<LinearClient, LinearCallError> {
@@ -851,6 +867,25 @@ mod tests {
         let response = metadata_response(&store, None, Some(error)).unwrap();
 
         assert!(response.refresh_error.unwrap().is_auth_failure);
+    }
+
+    #[test]
+    fn token_rotation_clears_cached_linear_account_metadata() {
+        let (dir, mut store) = cached_store();
+        let mut global = store.global().clone();
+        global.viewer = Some(crate::providers::linear::LinearUserOption {
+            id: "old-viewer".into(),
+            name: "Old account".into(),
+            avatar_url: None,
+        });
+        store.set_global(global);
+
+        clear_linear_metadata(&mut store).unwrap();
+
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert!(reloaded.global().teams.items.is_empty());
+        assert!(reloaded.global().viewer.is_none());
+        assert!(reloaded.team("team-eng").is_none());
     }
 
     #[test]

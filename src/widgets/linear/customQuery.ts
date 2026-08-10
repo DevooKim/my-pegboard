@@ -1,4 +1,4 @@
-import type { LinearAssigneeFilter, LinearCustomFilter } from '#/ipc/bindings'
+import type { LinearAssigneeFilter, LinearCustomFilter, LinearTeamMetadata } from '#/ipc/bindings'
 
 export type CompleteCustomFilter = {
   teamIds: string[]
@@ -40,6 +40,30 @@ export function normalizeCustomFilter(filter: LinearCustomFilter): CompleteCusto
     createdTo: filter.createdTo ?? null,
     updatedFrom: filter.updatedFrom ?? null,
     updatedTo: filter.updatedTo ?? null,
+  }
+}
+
+export function pruneTeamDependentSelections(
+  filter: CompleteCustomFilter,
+  teamIds: string[],
+  teamMetadata: Record<string, LinearTeamMetadata>,
+): CompleteCustomFilter {
+  const selectedMetadata = teamIds
+    .map((teamId) => teamMetadata[teamId])
+    .filter((metadata): metadata is LinearTeamMetadata => metadata !== undefined)
+  if (selectedMetadata.length !== teamIds.length) return filter
+
+  const stateTypes = new Set(
+    selectedMetadata.flatMap((metadata) => metadata.states.items.map((state) => state.typeName)),
+  )
+  const projectIds = new Set(
+    selectedMetadata.flatMap((metadata) => metadata.projects.items.map((project) => project.id)),
+  )
+
+  return {
+    ...filter,
+    stateTypes: filter.stateTypes.filter((value) => stateTypes.has(value)),
+    projectIds: filter.projectIds.filter((value) => projectIds.has(value)),
   }
 }
 

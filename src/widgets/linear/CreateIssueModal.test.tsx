@@ -194,6 +194,31 @@ describe('LinearCreateIssueModal', () => {
     expect(screen.getByRole('option', { name: 'Engineering' })).toBeInTheDocument()
   })
 
+  it('offers explicit global and selected-team metadata refresh actions', async () => {
+    render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('팀'), { target: { value: 'team-eng' } })
+    expect(
+      await screen.findByRole('button', { name: '현재 선택 메타데이터 새로고침' }),
+    ).toBeInTheDocument()
+
+    linearMetadata.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '전역 메타데이터 새로고침' }))
+    await waitFor(() => expect(linearMetadata).toHaveBeenCalledWith(null, true))
+
+    fireEvent.click(screen.getByRole('button', { name: '현재 선택 메타데이터 새로고침' }))
+    await waitFor(() => expect(linearMetadata).toHaveBeenCalledWith('team-eng', true))
+  })
+
+  it('shows a retryable error and clears refreshing when metadata IPC rejects', async () => {
+    linearMetadata.mockRejectedValueOnce(new Error('IPC 중단'))
+    render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+
+    expect(
+      await screen.findByText(/Linear 메타데이터를 불러오지 못했습니다: IPC 중단/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전역 메타데이터 새로고침' })).not.toBeDisabled()
+  })
+
   it('passes the created issue through immediately', async () => {
     const onCreated = vi.fn()
     render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={onCreated} />)
@@ -249,5 +274,21 @@ describe('LinearCreateIssueModal', () => {
     expect(screen.getByLabelText('제목')).toHaveValue('재시도 제목')
     fireEvent.click(screen.getByRole('button', { name: '생성' }))
     await waitFor(() => expect(linearCreateIssue).toHaveBeenCalledTimes(2))
+  })
+
+  it('locks duplicate submission when the create IPC transport rejects', async () => {
+    linearCreateIssue.mockRejectedValueOnce(new Error('IPC 중단'))
+    render(<LinearCreateIssueModal open onClose={vi.fn()} onCreated={vi.fn()} />)
+    fireEvent.change(await screen.findByLabelText('팀'), { target: { value: 'team-eng' } })
+    fireEvent.change(screen.getByLabelText('제목'), { target: { value: '입력 유지' } })
+    fireEvent.click(screen.getByRole('button', { name: '생성' }))
+
+    expect(
+      await screen.findByText(/생성 요청 결과를 확인하지 못했습니다: IPC 중단/),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('제목')).toHaveValue('입력 유지')
+    expect(screen.getByRole('button', { name: '생성' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '생성' }))
+    expect(linearCreateIssue).toHaveBeenCalledTimes(1)
   })
 })

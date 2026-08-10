@@ -11,6 +11,10 @@ import {
 import { useConnectionStore } from '#/store/connection'
 import { Modal } from '#/ui/Modal'
 
+function transportErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function LinearCreateIssueModal({
   open,
   onClose,
@@ -24,6 +28,7 @@ export function LinearCreateIssueModal({
   const [metadata, setMetadata] = useState<LinearGlobalMetadata | null>(null)
   const [teamMetadata, setTeamMetadata] = useState<Record<string, LinearTeamMetadata>>({})
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [metadataErrorTeamId, setMetadataErrorTeamId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [teamId, setTeamId] = useState('')
   const [title, setTitle] = useState('')
@@ -38,19 +43,29 @@ export function LinearCreateIssueModal({
 
   const loadMetadata = useCallback(async (selectedTeamId: string | null, refresh: boolean) => {
     setRefreshing(refresh)
-    const result = await commands.linearMetadata(selectedTeamId, refresh)
-    if (result.status !== 'ok') {
-      setMetadataError(result.error)
+    try {
+      const result = await commands.linearMetadata(selectedTeamId, refresh)
+      if (result.status !== 'ok') {
+        setMetadataError(result.error)
+        setMetadataErrorTeamId(selectedTeamId)
+        return
+      }
+      setMetadata(result.data.global)
+      const team = result.data.team
+      if (team) {
+        setTeamMetadata((current) => ({ ...current, [team.teamId]: team }))
+      }
+      const error = result.data.refreshError?.message ?? null
+      setMetadataError(error)
+      setMetadataErrorTeamId(error ? selectedTeamId : null)
+    } catch (error) {
+      setMetadataError(
+        `Linear 메타데이터를 불러오지 못했습니다: ${transportErrorMessage(error)}. 새로고침하세요.`,
+      )
+      setMetadataErrorTeamId(selectedTeamId)
+    } finally {
       setRefreshing(false)
-      return
     }
-    setMetadata(result.data.global)
-    const team = result.data.team
-    if (team) {
-      setTeamMetadata((current) => ({ ...current, [team.teamId]: team }))
-    }
-    setMetadataError(result.data.refreshError?.message ?? null)
-    setRefreshing(false)
   }, [])
 
   useEffect(() => {
@@ -91,22 +106,33 @@ export function LinearCreateIssueModal({
     if (!canSubmit) return
     setSubmitting(true)
     setFailure(null)
-    const result = await commands.linearCreateIssue({
-      teamId,
-      title: title.trim(),
-      description: description.trim() || null,
-      stateId: stateId || null,
-      assigneeId: assigneeId || null,
-      priority: priority === '' ? null : Number(priority),
-      projectId: projectId || null,
-    })
-    if (result.status === 'ok') {
-      onCreated(result.data)
-    } else {
-      setFailure(result.error)
-      if (result.error.isAuthFailure) setLinearAuthFailed(true)
+    try {
+      const result = await commands.linearCreateIssue({
+        teamId,
+        title: title.trim(),
+        description: description.trim() || null,
+        stateId: stateId || null,
+        assigneeId: assigneeId || null,
+        priority: priority === '' ? null : Number(priority),
+        projectId: projectId || null,
+      })
+      if (result.status === 'ok') {
+        onCreated(result.data)
+      } else {
+        setFailure(result.error)
+        if (result.error.isAuthFailure) setLinearAuthFailed(true)
+      }
+    } catch (error) {
+      setFailure({
+        kind: 'transient',
+        message: `생성 요청 결과를 확인하지 못했습니다: ${transportErrorMessage(error)}`,
+        isAuthFailure: false,
+        possiblyCreated: true,
+        checkUrl: 'https://linear.app',
+      })
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   return (
@@ -127,10 +153,31 @@ export function LinearCreateIssueModal({
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {metadataError && (
-          <p className="rounded bg-danger-muted px-2 py-1 text-caption text-danger">
-            {metadataError}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+            <span>{metadataError}</span>
+            <button
+              type="button"
+              onClick={() => void loadMetadata(metadataErrorTeamId, true)}
+              disabled={refreshing}
+              className="rounded border border-danger-muted px-1.5 py-0.5 text-text-primary disabled:opacity-40"
+            >
+              다시 시도
+            </button>
+          </div>
         )}
+        <div className="flex items-center gap-2 text-caption text-text-tertiary">
+          <span>메타데이터</span>
+          <button
+            type="button"
+            aria-label="전역 메타데이터 새로고침"
+            title="전역 메타데이터 새로고침"
+            onClick={() => void loadMetadata(null, true)}
+            disabled={refreshing}
+            className="rounded p-0.5 text-text-quaternary hover:text-text-secondary disabled:opacity-40"
+          >
+            <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+        </div>
         {metadata?.teams.truncated && (
           <p className="text-caption text-stale">API 상한으로 일부만 표시됩니다</p>
         )}
@@ -138,8 +185,22 @@ export function LinearCreateIssueModal({
           <p className="text-caption text-stale">API 상한으로 일부만 표시됩니다</p>
         )}
 
-        <label className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">팀</span>
+        <div className="flex flex-col gap-1">
+          <span className="flex items-center gap-2 text-caption text-text-secondary">
+            <span>팀</span>
+            {teamId && (
+              <button
+                type="button"
+                aria-label="현재 선택 메타데이터 새로고침"
+                title="현재 선택 메타데이터 새로고침"
+                onClick={() => void loadMetadata(teamId, true)}
+                disabled={refreshing}
+                className="rounded p-0.5 text-text-quaternary hover:text-text-secondary disabled:opacity-40"
+              >
+                <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+            )}
+          </span>
           <select
             aria-label="팀"
             value={teamId}
@@ -153,7 +214,7 @@ export function LinearCreateIssueModal({
               </option>
             ))}
           </select>
-        </label>
+        </div>
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">제목</span>

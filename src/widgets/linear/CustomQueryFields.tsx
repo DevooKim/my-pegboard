@@ -1,3 +1,4 @@
+import { RefreshCw } from 'lucide-react'
 import type {
   LinearCustomFilter,
   LinearGlobalMetadata,
@@ -22,6 +23,9 @@ export function CustomQueryFields({
   teamMetadata,
   onChange,
   onTeamToggle,
+  refreshing,
+  onRefreshGlobal,
+  onRefreshTeam,
 }: {
   filter: CompleteCustomFilter
   teams: LinearTeam[]
@@ -29,6 +33,9 @@ export function CustomQueryFields({
   teamMetadata: Record<string, LinearTeamMetadata>
   onChange: (next: CompleteCustomFilter) => void
   onTeamToggle: (teamId: string) => void
+  refreshing: boolean
+  onRefreshGlobal: () => void
+  onRefreshTeam: (teamId: string) => void
 }) {
   const selectedTeamIds = filter.teamIds ?? []
   const selectedTeamMetadata = selectedTeamIds
@@ -75,7 +82,19 @@ export function CustomQueryFields({
       </p>
 
       <fieldset className="flex flex-col gap-1">
-        <legend className="text-caption text-text-secondary">팀</legend>
+        <legend className="flex items-center gap-2 text-caption text-text-secondary">
+          <span>팀</span>
+          <button
+            type="button"
+            aria-label="전역 메타데이터 새로고침"
+            title="전역 메타데이터 새로고침"
+            onClick={onRefreshGlobal}
+            disabled={refreshing}
+            className="rounded p-0.5 text-text-quaternary hover:text-text-secondary disabled:opacity-40"
+          >
+            <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+        </legend>
         {teams.map((team) => (
           <label key={team.id} className="flex items-center gap-2">
             <input
@@ -90,6 +109,29 @@ export function CustomQueryFields({
           </label>
         ))}
       </fieldset>
+
+      {selectedTeamIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-caption text-text-tertiary">선택한 팀 메타데이터</span>
+          {selectedTeamIds.map((teamId) => {
+            const teamName = teams.find((team) => team.id === teamId)?.name ?? teamId
+            return (
+              <button
+                key={teamId}
+                type="button"
+                aria-label={`${teamName} 메타데이터 새로고침`}
+                title={`${teamName} 메타데이터 새로고침`}
+                onClick={() => onRefreshTeam(teamId)}
+                disabled={refreshing}
+                className="flex items-center gap-1 rounded border border-border-subtle px-1.5 py-0.5 text-caption text-text-secondary disabled:opacity-40"
+              >
+                <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+                {teamName} 새로고침
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <label className="flex flex-col gap-1">
         <span className="text-caption text-text-secondary">담당자 관계</span>
