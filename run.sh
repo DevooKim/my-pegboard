@@ -21,7 +21,7 @@ MODE="${1:-}"
 # 이 프로젝트 전용 인증서를 쓴다. 없으면 기기에 있는 아무 codesigning 신원으로
 # 떨어지는데, 그러면 로그에 엉뚱한 앱 이름이 찍혀 헷갈린다(예전에 AltTab용
 # 인증서를 그대로 썼다). 만드는 법은 scripts/make-signing-cert.md 참고.
-IDENTITY="${PEGBOARD_SIGN_IDENTITY:-my-pegboard Dev}"
+IDENTITY="${PEGBOARD_SIGN_IDENTITY:-A6886CFB325F1BDC6839F7F2AF1F3FECC67E480E}"
 
 sign() {
   local target="$1"

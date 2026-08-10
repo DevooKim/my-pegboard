@@ -7,7 +7,7 @@
 # "손상되었기 때문에 열 수 없습니다"가 뜨고 우클릭→열기로도 안 뚫렸다.
 #
 # 원인은 tauri.conf.json에 서명 ID가 없어 Tauri가 번들 서명을 통째로
-# 건너뛴 것이었다(지금은 `signingIdentity: "-"`로 고쳤다). 그런데 **빌드한
+# 건너뛴 것이었다(지금은 안정된 `my-pegboard Dev` 인증서로 서명한다). 그런데 **빌드한
 # 기기에서는 멀쩡해 보였다** — 직접 만든 파일에는 quarantine이 없어
 # Gatekeeper가 검사를 안 하기 때문이다. run.sh가 개발 빌드를 따로 서명해주는
 # 것도 착시에 한몫했다.
@@ -64,7 +64,27 @@ else
   fail=1
 fi
 
-# ── 2. 리소스 봉인이 있는가 ────────────────────────────────────────────
+# ── 2. 업데이트 뒤에도 같은 앱으로 인식되는 서명인가 ─────────────────
+# ad-hoc 서명은 Designated Requirement가 빌드별 cdhash에 묶인다. 바이너리가
+# 바뀔 때마다 macOS가 새 앱으로 취급해 키체인 접근을 다시 묻는다.
+SIGN_INFO=$(codesign -dvv "$APP" 2>&1 || true)
+REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 || true)
+EXPECTED_CERT_SHA1="a6886cfb325f1bdc6839f7f2af1f3fecc67e480e"
+if grep -q "Signature=adhoc" <<<"$SIGN_INFO" \
+  || grep -q "flags=.*adhoc" <<<"$SIGN_INFO" \
+  || ! grep -q '^Authority=my-pegboard Dev$' <<<"$SIGN_INFO" \
+  || grep -Eq 'designated => cdhash ' <<<"$REQUIREMENT" \
+  || ! grep -Eiq "(certificate leaf = |anchor )H\"$EXPECTED_CERT_SHA1\"" <<<"$REQUIREMENT" \
+  || ! grep -q 'identifier "io.mypegboard.app"' <<<"$REQUIREMENT"; then
+  echo "✗ 안정된 코드 서명 신원이 없습니다 — 업데이트마다 키체인을 다시 물을 수 있습니다"
+  echo "$SIGN_INFO" | grep -E "^(Identifier|Signature|Authority|TeamIdentifier|CodeDirectory)=" | sed 's/^/    /'
+  echo "$REQUIREMENT" | sed 's/^/    /'
+  fail=1
+else
+  echo "✓ 안정된 코드 서명 신원: my-pegboard Dev ($EXPECTED_CERT_SHA1) / io.mypegboard.app"
+fi
+
+# ── 3. 리소스 봉인이 있는가 ────────────────────────────────────────────
 # 없으면 1번이 실패한다. 원인을 바로 짚어주려고 따로 본다.
 if [[ -f "$APP/Contents/_CodeSignature/CodeResources" ]]; then
   echo "✓ 리소스 봉인 있음"
@@ -74,7 +94,7 @@ else
   fail=1
 fi
 
-# ── 3. quarantine 상태에서도 서명이 버티는가 ───────────────────────────
+# ── 4. quarantine 상태에서도 서명이 버티는가 ───────────────────────────
 # 다운로드한 파일을 흉내낸다. 실제 사용자가 겪는 조건이다.
 QT=$(mktemp -d)
 cp -R "$APP" "$QT/"
@@ -88,8 +108,8 @@ else
 fi
 rm -rf "$QT"
 
-# ── 4. Gatekeeper 판정 ─────────────────────────────────────────────────
-# adhoc 서명이라 rejected가 정상이다. **거부 사유**가 중요하다:
+# ── 5. Gatekeeper 판정 ─────────────────────────────────────────────────
+# 비공인 자체 서명이라 rejected가 정상이다. **거부 사유**가 중요하다:
 #   - "손상됨"류  → 못 뚫는다. 실패다
 #   - 미공증      → 우클릭→열기로 통과된다. 예상된 결과다
 GK=$(spctl -a -vvv -t exec "$APP" 2>&1 || true)
@@ -101,7 +121,7 @@ else
   echo "✓ Gatekeeper: 미공증 거부(정상) — 우클릭→열기로 실행됩니다"
 fi
 
-# ── 5. 버전이 태그와 맞는가 ────────────────────────────────────────────
+# ── 6. 버전이 태그와 맞는가 ────────────────────────────────────────────
 # dmg 파일명과 Info.plist가 어긋나면 엉뚱한 빌드를 올리는 것이다.
 PLIST_VER=$(defaults read "$APP/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "?")
 if [[ "$DMG" == *"$PLIST_VER"* ]]; then
@@ -112,7 +132,7 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════
-# updater 검사 (6~9)
+# updater 검사 (7~10)
 # ──────────────────────────────────────────────────────────────────────
 # 이 네 검사가 있는 이유는 v0.3.0 서명 사고와 **구조가 같은** 실패가
 # updater에도 있기 때문이다: 개인키가 없는 맥에서 빌드하면 tauri는 에러 없이
@@ -123,7 +143,7 @@ fi
 BUNDLE_DIR="$(dirname "$DMG")/../macos"
 CONF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src-tauri/tauri.conf.json"
 
-# ── 6. updater 번들과 서명이 있는가 ────────────────────────────────────
+# ── 7. updater 번들과 서명이 있는가 ────────────────────────────────────
 TARBALL=$(ls -t "$BUNDLE_DIR"/*.app.tar.gz 2>/dev/null | head -1 || true)
 if [[ -n "$TARBALL" && -f "$TARBALL" && -f "${TARBALL}.sig" ]]; then
   echo "✓ updater 번들 + 서명 있음 ($(basename "$TARBALL"))"
@@ -134,8 +154,8 @@ else
   fail=1
 fi
 
-# ── 7. 서명이 앱에 박힌 공개키로 검증되는가 ────────────────────────────
-# 키를 새로 만들어 빌드하면 6번은 통과한다. 그런데 공개키가 달라서 기존
+# ── 8. 서명이 앱에 박힌 공개키로 검증되는가 ────────────────────────────
+# updater 키를 새로 만들어 빌드하면 7번은 통과한다. 그런데 공개키가 달라서 기존
 # 사용자는 설치 단계에서 검증 실패를 본다 — 그건 **복구 불가**다.
 if [[ -n "$TARBALL" && -f "${TARBALL}.sig" ]]; then
   PUBKEY=$(/usr/bin/python3 -c \
@@ -168,7 +188,7 @@ print(base64.b64decode(raw[1])[2:10].hex())
   fi
 fi
 
-# ── 8. latest.json 버전이 tauri.conf.json과 맞는가 ─────────────────────
+# ── 9. latest.json 버전이 tauri.conf.json과 맞는가 ─────────────────────
 LATEST="$BUNDLE_DIR/latest.json"
 CONF_VER=$(/usr/bin/python3 -c \
   "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$CONF" 2>/dev/null || true)
@@ -186,7 +206,7 @@ else
     fail=1
   fi
 
-  # ── 9. latest.json의 URL이 올릴 파일과 정확히 맞는가 ─────────────────
+  # ── 10. latest.json의 URL이 올릴 파일과 정확히 맞는가 ────────────────
   # 파일명이 어긋나면 updater가 404를 받는다. 앱은 "업데이트 없음"처럼 조용하다.
   # URL이 가리키는 이름의 파일이 **실제로 번들 디렉토리에 있는지**까지 본다 —
   # 이름만 맞춰봐야 올릴 파일이 없으면 릴리즈에서 빠진다.
