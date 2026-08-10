@@ -31,13 +31,13 @@ use tauri::scope::fs::{Pattern, Scope};
 use super::types::AlbumSource;
 use crate::storage::board::{BoardFile, WidgetType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlbumScopePathKind {
     Directory,
     File,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AlbumScopePath {
     pub path: String,
     pub kind: AlbumScopePathKind,
@@ -98,7 +98,9 @@ pub fn album_scope_membership(board: &BoardFile) -> Vec<AlbumScopePath> {
 }
 
 pub fn album_scope_membership_changed(old: &BoardFile, new: &BoardFile) -> bool {
-    album_scope_membership(old) != album_scope_membership(new)
+    let old_membership: HashSet<_> = album_scope_membership(old).into_iter().collect();
+    let new_membership: HashSet<_> = album_scope_membership(new).into_iter().collect();
+    old_membership != new_membership
 }
 
 /// Validate the escaped literal patterns Tauri would build, without

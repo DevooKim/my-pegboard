@@ -40,7 +40,9 @@ export async function bootstrap(): Promise<void> {
 }
 
 /**
- * 디바운스 대기 중인 저장을 즉시 확정한다. 대기 중인 게 없으면 아무 일도 없다.
+ * 디바운스 대기 중인 저장을 즉시 확정하고, 이미 시작된 저장이 있으면
+ * 끝날 때까지 기다린다. 저장 중 최신 변경도 같은 장벽 안에서 끝까지 저장하며,
+ * 어느 저장이든 실패하면 호출자에게 reject한다.
  *
  * 앱을 스스로 재시작하기 전에 반드시 호출한다 (업데이트 설치 후 재시작).
  * 디바운스 타이머가 살아 있는 채로 프로세스가 죽으면 **직전 배치 변경이
@@ -57,19 +59,36 @@ let flushImpl: () => Promise<void> = async () => {}
 
 function subscribeSave(): void {
   let timer: ReturnType<typeof setTimeout> | undefined
-  let pending: (() => Promise<void>) | undefined
+  let pending: ReturnType<typeof serializeBoard> | undefined
+  let drainPromise: Promise<void> | undefined
 
-  const save = async () => {
-    const state = useBoardStore.getState()
-    const r = await commands.boardSave(serializeBoard(state) as never)
-    if (r.status === 'error') console.error('보드 저장 실패:', r.error)
+  const save = async (file: ReturnType<typeof serializeBoard>) => {
+    const r = await commands.boardSave(file as never)
+    if (r.status === 'error') throw new Error(r.error)
   }
 
-  flushImpl = async () => {
-    if (!pending) return
+  const drainPendingSaves = (): Promise<void> => {
+    if (drainPromise) return drainPromise
+
+    const run = (async () => {
+      while (pending) {
+        const file = pending
+        pending = undefined
+        await save(file)
+      }
+    })()
+    drainPromise = run
+    const clearDrain = () => {
+      if (drainPromise === run) drainPromise = undefined
+    }
+    void run.then(clearDrain, clearDrain)
+    return run
+  }
+
+  flushImpl = () => {
     clearTimeout(timer)
-    pending = undefined
-    await save()
+    timer = undefined
+    return drainPendingSaves()
   }
 
   useBoardStore.subscribe((state, prev) => {
@@ -88,10 +107,12 @@ function subscribeSave(): void {
     if (state.boards === prev.boards && state.activeBoardId === prev.activeBoardId) return
 
     clearTimeout(timer)
-    pending = save
+    pending = serializeBoard(state)
     timer = setTimeout(() => {
-      pending = undefined
-      void save()
+      timer = undefined
+      void drainPendingSaves().catch((error) => {
+        console.error('보드 저장 실패:', error)
+      })
     }, SAVE_DEBOUNCE_MS)
   })
 }

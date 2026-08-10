@@ -132,6 +132,7 @@ function BoardSection() {
     setBusy('export')
     setExportState({ kind: 'idle' })
     try {
+      await flushPendingSaves()
       const result = await commands.boardExport()
       if (result.status === 'error') {
         setExportState({ kind: 'error', message: result.error })
@@ -147,9 +148,8 @@ function BoardSection() {
 
   const previewImport = useCallback(async () => {
     setBusy('preview')
+    setPreview(null)
     setImportError(null)
-    setImportWarning(null)
-    setRestartRequired(false)
     setRelaunchError(null)
     try {
       const result = await commands.boardImportPreview()
@@ -168,13 +168,14 @@ function BoardSection() {
 
   const applyImport = useCallback(async () => {
     if (!preview) return
+    const candidate = preview
     setBusy('apply')
+    setPreview(null)
     setImportError(null)
-    setImportWarning(null)
     setRelaunchError(null)
     try {
       await flushPendingSaves()
-      const result = await commands.boardImportApply(preview.file, mode)
+      const result = await commands.boardImportApply(candidate.file, mode)
       if (result.status === 'error') {
         setImportError(result.error)
         return

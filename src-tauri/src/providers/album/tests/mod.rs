@@ -340,6 +340,20 @@ fn file_to_folder_is_a_scope_membership_change() {
 }
 
 #[test]
+fn reordering_album_scope_membership_does_not_require_a_relaunch() {
+    let old = board_with(vec![
+        album_widget("first", json!({ "kind": "folder", "path": "/first" })),
+        album_widget("second", json!({ "kind": "folder", "path": "/second" })),
+    ]);
+    let new = board_with(vec![
+        album_widget("second", json!({ "kind": "folder", "path": "/second" })),
+        album_widget("first", json!({ "kind": "folder", "path": "/first" })),
+    ]);
+
+    assert!(!album_scope_membership_changed(&old, &new));
+}
+
+#[test]
 fn nested_album_paths_are_validated_as_individual_scope_patterns() {
     let board = board_with(vec![
         album_widget(

@@ -36,6 +36,14 @@ vi.mock('#/store/connection', () => ({
   ) => selector({ linearConfigured: false, refresh: refreshConnection }),
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 const boardFile: BoardFile = {
   version: 1,
   activeBoardId: 'imported',
@@ -103,6 +111,46 @@ describe('SettingsModal board transfer', () => {
     expect(await screen.findByText('권한이 없습니다')).toBeInTheDocument()
   })
 
+  it('flushes pending saves before exporting the board', async () => {
+    const order: string[] = []
+    vi.mocked(flushPendingSaves).mockImplementation(async () => {
+      order.push('flush')
+    })
+    vi.mocked(commands.boardExport).mockImplementation(async () => {
+      order.push('export')
+      return { status: 'ok', data: null }
+    })
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }))
+
+    await waitFor(() => expect(commands.boardExport).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['flush', 'export'])
+  })
+
+  it('shows a flush error and does not export the board', async () => {
+    vi.mocked(flushPendingSaves).mockRejectedValueOnce(new Error('보드 저장 실패'))
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '내보내기' }))
+
+    expect(await screen.findByText('보드 저장 실패')).toBeInTheDocument()
+    expect(commands.boardExport).not.toHaveBeenCalled()
+  })
+
+  it('shows a flush error and does not apply the imported board', async () => {
+    vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: candidate })
+    vi.mocked(flushPendingSaves).mockRejectedValueOnce(new Error('보드 저장 실패'))
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+
+    expect(await screen.findByText('보드 저장 실패')).toBeInTheDocument()
+    expect(commands.boardImportApply).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /적용/ })).not.toBeInTheDocument()
+  })
+
   it('does not apply when import is cancelled', async () => {
     vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: null })
     renderBoardTab()
@@ -127,6 +175,53 @@ describe('SettingsModal board transfer', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: '병합' }))
     expect(screen.getByRole('radio', { name: '병합' })).toBeChecked()
+  })
+
+  it('invalidates the old preview immediately but preserves applied warnings during a new preview', async () => {
+    const nextPreview = deferred<
+      { status: 'ok'; data: BoardImportCandidate } | { status: 'error'; error: string }
+    >()
+    vi.mocked(commands.boardImportPreview)
+      .mockResolvedValueOnce({ status: 'ok', data: candidate })
+      .mockImplementationOnce(() => nextPreview.promise)
+    vi.mocked(commands.boardImportApply).mockResolvedValueOnce({
+      status: 'ok',
+      data: {
+        board: boardFile,
+        orphanCacheCleanupWarning: '기존 캐시 경고',
+        signal: 'relaunchRequired',
+      } as never,
+    })
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+    expect(await screen.findByText('기존 캐시 경고')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    expect(screen.queryByRole('button', { name: '교체 적용' })).not.toBeInTheDocument()
+    expect(screen.getByText('기존 캐시 경고')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    nextPreview.resolve({ status: 'error', error: '새 파일을 읽을 수 없습니다' })
+    expect(await screen.findByText('새 파일을 읽을 수 없습니다')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /적용/ })).not.toBeInTheDocument()
+  })
+
+  it('removes the candidate after import apply fails', async () => {
+    vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: candidate })
+    vi.mocked(commands.boardImportApply).mockResolvedValue({
+      status: 'error',
+      error: '가져오기 저장 실패',
+    })
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+
+    expect(await screen.findByText('가져오기 저장 실패')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /적용/ })).not.toBeInTheDocument()
   })
 
   it('confirms apply and hydrates the returned board exactly once', async () => {
