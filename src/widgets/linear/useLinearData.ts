@@ -8,6 +8,9 @@ import { LINEAR_STATE_CHANGED_EVENT } from './StatePopover'
 type Data = { issues: LinearIssue[]; hasMore: boolean }
 
 const IDLE: WidgetEnvelope<Data> = { status: 'idle', data: null, fetchedAt: null, error: null }
+const MAX_TRANSIENT_RETRIES = 3
+const RETRY_BASE_MS = 1_000
+type FetchReason = 'regular' | 'retry' | 'state-change'
 
 /**
  * 위젯 id → 마지막 envelope. **보드 탭을 오갈 때의 깜빡임을 없앤다.**
@@ -63,66 +66,129 @@ export function useLinearData(
   // 설정 객체는 매 렌더 새로 만들어질 수 있으므로 값으로 비교한다.
   const configKey = JSON.stringify(config)
   const inFlight = useRef(false)
+  const retryAttempt = useRef(0)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const fetchNowRef = useRef<(reason?: FetchReason) => Promise<void>>(async () => {})
+  const pendingStateRefresh = useRef(false)
+  const active = useRef(true)
 
-  const fetchNow = useCallback(async () => {
-    if (inFlight.current) return
-    // Tauri 밖(브라우저 dev)에서는 IPC가 없다. 영원한 로딩 대신 이유를 말한다.
-    if (!IN_TAURI) {
-      setEnvelope({
-        status: 'error-permanent',
-        data: null,
-        fetchedAt: null,
-        error: {
-          status: 'error-permanent',
-          message: '브라우저에서는 Linear를 불러올 수 없습니다. 앱으로 실행하세요.',
-        },
-      })
-      return
-    }
-    inFlight.current = true
+  const cancelRetry = useCallback(() => {
+    if (retryTimer.current !== null) clearTimeout(retryTimer.current)
+    retryTimer.current = null
+    retryAttempt.current = 0
+  }, [])
 
-    // 데이터가 이미 있으면 status만 바꾸고 목록은 유지한다.
-    setEnvelope((prev) => ({
-      ...prev,
-      status: prev.data ? prev.status : 'loading',
-    }))
-
-    try {
-      const result = await commands.linearFetch(widgetId, JSON.parse(configKey))
-      if (result.status === 'ok') {
-        setAuthFailed(false)
-        setEnvelope({
-          status: result.data.issues.length === 0 ? 'empty' : 'ready',
-          data: { issues: result.data.issues, hasMore: result.data.hasMore ?? false },
-          fetchedAt: result.data.fetchedAt,
-          error: null,
-        })
-      } else {
-        const e = result.error
-        if (e.isAuthFailure) setAuthFailed(true)
-        setEnvelope((prev) => {
-          // Rust가 직전 성공 데이터를 함께 줬으면 그것을, 없으면 지금 것을 유지.
-          const kept = e.stale
-            ? { issues: e.stale.issues, hasMore: e.stale.hasMore ?? false }
-            : prev.data
-          return {
-            status: e.kind === 'transient' ? 'error-transient' : 'error-permanent',
-            data: kept,
-            fetchedAt: e.stale?.fetchedAt ?? prev.fetchedAt,
-            error: {
-              status: e.kind === 'transient' ? 'error-transient' : 'error-permanent',
-              message: e.message,
-              ...(e.isAuthFailure
-                ? { action: { label: '설정 열기', kind: 'open-settings' as const } }
-                : {}),
-            },
-          }
-        })
+  const fetchNow = useCallback(
+    async (reason: FetchReason = 'regular') => {
+      if (inFlight.current) {
+        if (reason === 'state-change') pendingStateRefresh.current = true
+        return
       }
-    } finally {
-      inFlight.current = false
+      const retrying = reason === 'retry'
+      // rate-limit 리셋을 기다리는 중이면 정기 폴링도 그 시각을 앞당기지 않는다.
+      if (!retrying && retryTimer.current !== null) {
+        if (reason === 'state-change') pendingStateRefresh.current = true
+        return
+      }
+      // 지금 시작하는 조회가 그 전에 밀린 상태 변경까지 함께 반영한다.
+      pendingStateRefresh.current = false
+      // 사용자가 누른 새로고침·정기 폴링·상태 변경은 새 시도 묶음이다.
+      if (!retrying) cancelRetry()
+      // Tauri 밖(브라우저 dev)에서는 IPC가 없다. 영원한 로딩 대신 이유를 말한다.
+      if (!IN_TAURI) {
+        setEnvelope({
+          status: 'error-permanent',
+          data: null,
+          fetchedAt: null,
+          error: {
+            status: 'error-permanent',
+            message: '브라우저에서는 Linear를 불러올 수 없습니다. 앱으로 실행하세요.',
+          },
+        })
+        return
+      }
+      inFlight.current = true
+
+      // 데이터가 이미 있으면 status만 바꾸고 목록은 유지한다.
+      setEnvelope((prev) => ({
+        ...prev,
+        status: prev.data ? prev.status : 'loading',
+      }))
+
+      try {
+        const result = await commands.linearFetch(widgetId, JSON.parse(configKey))
+        if (!active.current) return
+        if (result.status === 'ok') {
+          cancelRetry()
+          setAuthFailed(false)
+          setEnvelope({
+            status: result.data.issues.length === 0 ? 'empty' : 'ready',
+            data: { issues: result.data.issues, hasMore: result.data.hasMore ?? false },
+            fetchedAt: result.data.fetchedAt,
+            error: null,
+          })
+        } else {
+          const e = result.error
+          if (e.isAuthFailure) setAuthFailed(true)
+          const shouldRetry = e.kind === 'transient' && retryAttempt.current < MAX_TRANSIENT_RETRIES
+          if (shouldRetry) {
+            const attempt = retryAttempt.current + 1
+            retryAttempt.current = attempt
+            const backoffMs = RETRY_BASE_MS * 2 ** (attempt - 1)
+            const serverDelayMs = (e.retryAfterSecs ?? 0) * 1_000
+            retryTimer.current = setTimeout(
+              () => {
+                retryTimer.current = null
+                void fetchNowRef.current('retry')
+              },
+              Math.max(backoffMs, serverDelayMs),
+            )
+          } else {
+            cancelRetry()
+          }
+          setEnvelope((prev) => {
+            // Rust가 직전 성공 데이터를 함께 줬으면 그것을, 없으면 지금 것을 유지.
+            const kept = e.stale
+              ? { issues: e.stale.issues, hasMore: e.stale.hasMore ?? false }
+              : prev.data
+            return {
+              status: e.kind === 'transient' ? 'error-transient' : 'error-permanent',
+              data: kept,
+              fetchedAt: e.stale?.fetchedAt ?? prev.fetchedAt,
+              error: {
+                status: e.kind === 'transient' ? 'error-transient' : 'error-permanent',
+                message: e.message,
+                retrying: shouldRetry,
+                ...(e.isAuthFailure
+                  ? { action: { label: '설정 열기', kind: 'open-settings' as const } }
+                  : {}),
+              },
+            }
+          })
+        }
+      } finally {
+        inFlight.current = false
+        // 상태 변경 직후의 전용 조회는 버리지 않는다. 다만 rate limit 대기
+        // 중이면 예약된 재시도가 곧 최신 상태를 읽으므로 그때 함께 처리한다.
+        if (active.current && pendingStateRefresh.current && retryTimer.current === null) {
+          pendingStateRefresh.current = false
+          void fetchNowRef.current()
+        }
+      }
+    },
+    [widgetId, configKey, setAuthFailed, cancelRetry],
+  )
+
+  fetchNowRef.current = fetchNow
+
+  // 위젯이 사라진 뒤 예약 재시도와 늦게 끝난 IPC 응답을 모두 버린다.
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+      cancelRetry()
     }
-  }, [widgetId, configKey, setAuthFailed])
+  }, [cancelRetry])
 
   // 1단계: 캐시를 먼저 그린다.
   useEffect(() => {
@@ -170,7 +236,7 @@ export function useLinearData(
   // `refresh-all`을 쓰지 않는 이유: 그쪽은 Jira·GitHub·Web 위젯까지 전부 다시
   // 부른다. 이슈 하나의 상태가 바뀐 것으로 보드 전체를 두들길 이유가 없다.
   useEffect(() => {
-    const onChanged = () => void fetchNow()
+    const onChanged = () => void fetchNow('state-change')
     window.addEventListener(LINEAR_STATE_CHANGED_EVENT, onChanged)
     return () => window.removeEventListener(LINEAR_STATE_CHANGED_EVENT, onChanged)
   }, [fetchNow])

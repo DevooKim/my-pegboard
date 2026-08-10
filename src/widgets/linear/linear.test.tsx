@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LinearIssue, LinearWidgetConfig, LinearWorkflowState } from '#/ipc/bindings'
 
@@ -31,6 +31,7 @@ vi.mock('#/ipc/bindings', () => ({
 
 const { groupByTeam } = await import('./grouping')
 const { parseDue } = await import('./IssueRow')
+const { IssueDetailModal } = await import('./IssueDetailModal')
 const { LinearView } = await import('./View')
 const { StatePopover, __clearStateCache } = await import('./StatePopover')
 const { useLinearData, __resetLinearEnvelopes } = await import('./useLinearData')
@@ -307,6 +308,97 @@ describe('LinearView', () => {
     // 그런데 모달은 안 열린다.
     expect(screen.queryByRole('dialog')).toBeNull()
   })
+
+  it('목록을 다시 받은 뒤 열린 모달도 새 상태를 보여준다', async () => {
+    const view = render(
+      <LinearView widgetId="l1" config={config()} envelope={ready([issue()])} width={500} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /리다이렉트/ }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Todo')).toBeInTheDocument()
+
+    view.rerender(
+      <LinearView
+        widgetId="l1"
+        config={config()}
+        envelope={ready([
+          issue({
+            state: {
+              id: 'state-inprogress',
+              name: 'In Progress',
+              color: '#f2c94c',
+              typeName: 'started',
+            },
+          }),
+        ])}
+        width={500}
+      />,
+    )
+
+    expect(within(dialog).getByText('In Progress')).toBeInTheDocument()
+    expect(within(dialog).queryByText('Todo')).toBeNull()
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('IssueDetailModal', () => {
+  it('먼저 연 이슈의 늦은 응답을 다음 이슈에 붙이지 않는다', async () => {
+    const first = deferred<Awaited<ReturnType<typeof linearIssue>>>()
+    const second = deferred<Awaited<ReturnType<typeof linearIssue>>>()
+    linearIssue.mockImplementation((id: string) =>
+      id === 'uuid-1' ? first.promise : second.promise,
+    )
+
+    const modal = render(
+      <IssueDetailModal issue={issue()} onClose={vi.fn()} onStateChanged={vi.fn()} />,
+    )
+    await waitFor(() => expect(linearIssue).toHaveBeenCalledWith('uuid-1'))
+
+    modal.rerender(
+      <IssueDetailModal
+        issue={issue({ id: 'uuid-2', identifier: 'ENG-200', title: '두 번째 이슈' })}
+        onClose={vi.fn()}
+        onStateChanged={vi.fn()}
+      />,
+    )
+    await waitFor(() => expect(linearIssue).toHaveBeenCalledWith('uuid-2'))
+
+    await act(async () => {
+      second.resolve({
+        status: 'ok',
+        data: {
+          id: 'uuid-2',
+          identifier: 'ENG-200',
+          description: '두 번째 설명',
+          branchName: 'feature/second',
+        },
+      })
+    })
+    expect(await screen.findByText('두 번째 설명')).toBeInTheDocument()
+
+    await act(async () => {
+      first.resolve({
+        status: 'ok',
+        data: {
+          id: 'uuid-1',
+          identifier: 'ENG-142',
+          description: '첫 번째 설명',
+          branchName: 'feature/first',
+        },
+      })
+    })
+
+    expect(screen.queryByText('첫 번째 설명')).toBeNull()
+    expect(screen.getByText('두 번째 설명')).toBeInTheDocument()
+  })
 })
 
 // ─────────────────────────── 상태 팝오버 ───────────────────────────
@@ -483,8 +575,8 @@ describe('StatePopover', () => {
 // ─────────────────────────── 데이터 훅 ───────────────────────────
 
 /** 훅을 시험하기 위한 최소 컴포넌트. envelope의 상태와 건수만 찍는다. */
-function HookProbe({ widgetId = 'l1' }: { widgetId?: string }) {
-  const { envelope } = useLinearData(widgetId, config(), 0)
+function HookProbe({ widgetId = 'l1', refreshMs = 0 }: { widgetId?: string; refreshMs?: number }) {
+  const { envelope } = useLinearData(widgetId, config(), refreshMs)
   return (
     <div>
       <span data-testid="status">{envelope.status}</span>
@@ -589,6 +681,110 @@ describe('useLinearData', () => {
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('error-transient'))
   })
 
+  it('일시적 실패를 1초·2초·4초 뒤 세 번 재시도한다', async () => {
+    vi.useFakeTimers()
+    linearFetch.mockResolvedValue({
+      status: 'error',
+      error: {
+        kind: 'transient',
+        message: 'Network unavailable',
+        isAuthFailure: false,
+        retryAfterSecs: null,
+        stale: null,
+      },
+    })
+
+    render(<HookProbe />)
+    await act(async () => {})
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+
+    await act(async () => vi.advanceTimersByTimeAsync(999))
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(linearFetch).toHaveBeenCalledTimes(2)
+
+    await act(async () => vi.advanceTimersByTimeAsync(2_000))
+    expect(linearFetch).toHaveBeenCalledTimes(3)
+    await act(async () => vi.advanceTimersByTimeAsync(4_000))
+    expect(linearFetch).toHaveBeenCalledTimes(4)
+
+    await act(async () => vi.advanceTimersByTimeAsync(8_000))
+    expect(linearFetch).toHaveBeenCalledTimes(4)
+  })
+
+  it('rate limit 재시도는 서버가 준 대기 시간을 지킨다', async () => {
+    vi.useFakeTimers()
+    linearFetch.mockResolvedValue({
+      status: 'error',
+      error: {
+        kind: 'transient',
+        message: 'Rate limit exceeded',
+        isAuthFailure: false,
+        retryAfterSecs: 60,
+        stale: null,
+      },
+    })
+
+    render(<HookProbe />)
+    await act(async () => {})
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+
+    await act(async () => vi.advanceTimersByTimeAsync(59_999))
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(linearFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('정기 폴링도 rate limit 대기 시간을 앞당기지 않는다', async () => {
+    vi.useFakeTimers()
+    linearFetch.mockResolvedValue({
+      status: 'error',
+      error: {
+        kind: 'transient',
+        message: 'Rate limit exceeded',
+        isAuthFailure: false,
+        retryAfterSecs: 60,
+        stale: null,
+      },
+    })
+
+    render(<HookProbe refreshMs={10_000} />)
+    await act(async () => {})
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+
+    await act(async () => vi.advanceTimersByTimeAsync(59_999))
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTimeAsync(1))
+    expect(linearFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('언마운트 뒤 끝난 실패 응답은 재시도를 예약하지 않는다', async () => {
+    vi.useFakeTimers()
+    const pending = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    linearFetch.mockReturnValue(pending.promise)
+
+    const probe = render(<HookProbe />)
+    await act(async () => {})
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+    probe.unmount()
+
+    await act(async () => {
+      pending.resolve({
+        status: 'error',
+        error: {
+          kind: 'transient',
+          message: 'Network unavailable',
+          isAuthFailure: false,
+          retryAfterSecs: null,
+          stale: null,
+        },
+      })
+    })
+    await act(async () => vi.advanceTimersByTimeAsync(10_000))
+
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+  })
+
   /** 실패해도 Rust가 준 직전 데이터로 목록을 유지한다. */
   it('실패 시 stale 데이터를 받아 목록을 유지한다', async () => {
     linearFetch.mockResolvedValue({
@@ -628,5 +824,46 @@ describe('useLinearData', () => {
 
     window.dispatchEvent(new CustomEvent('pegboard:linear-state-changed'))
     await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+  })
+
+  it('상태 변경 이벤트가 진행 중 조회와 겹치면 종료 직후 다시 조회한다', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    linearFetch.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({
+      status: 'ok',
+      data: {
+        issues: [
+          issue({
+            state: {
+              id: 'state-inprogress',
+              name: 'In Progress',
+              color: '#f2c94c',
+              typeName: 'started',
+            },
+          }),
+        ],
+        hasMore: false,
+        fetchedAt: '2026-08-06T09:01:00Z',
+        fromCache: false,
+      },
+    })
+
+    render(<HookProbe />)
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(1))
+    window.dispatchEvent(new CustomEvent('pegboard:linear-state-changed'))
+
+    await act(async () => {
+      pending.resolve({
+        status: 'ok',
+        data: {
+          issues: [issue()],
+          hasMore: false,
+          fetchedAt: '2026-08-06T09:00:00Z',
+          fromCache: false,
+        },
+      })
+    })
+
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('ready'))
   })
 })

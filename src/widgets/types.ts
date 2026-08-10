@@ -31,6 +31,8 @@ export interface WidgetError {
   status: WidgetStatus & (`error-${string}` | never)
   /** 사용자에게 보여줄 메시지. Jira의 JQL 오류 원문 등은 가공하지 않고 그대로. */
   message: string
+  /** 일시적 실패의 자동 재시도가 아직 예약돼 있는가. */
+  retrying?: boolean
   /** 사용자가 취할 수 있는 행동 */
   action?: { label: string; kind: 'open-settings' | 'open-config' | 'retry' }
 }

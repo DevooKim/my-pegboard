@@ -1,6 +1,6 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Check, Copy, ExternalLink, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   commands,
   type LinearCallError,
@@ -54,22 +54,32 @@ export function IssueDetailModal({
   const setLinearAuthFailed = useConnectionStore((s) => s.setLinearAuthFailed)
   const now = useNow()
 
-  const [detail, setDetail] = useState<LinearIssueDetail | null>(null)
-  const [detailError, setDetailError] = useState<LinearCallError | null>(null)
+  const [loaded, setLoaded] = useState<{
+    issueId: string
+    detail: LinearIssueDetail | null
+    error: LinearCallError | null
+  } | null>(null)
+  // 요청 취소 API가 없는 IPC라 순번으로 늦게 끝난 이전 응답을 버린다.
+  const requestSequence = useRef(0)
   /** 상태를 바꾼 뒤 배지를 갱신하기 위한 로컬 상태. */
   const [stateChanged, setStateChanged] = useState(false)
 
   const issueId = issue?.id ?? null
+  // prop이 바뀐 직후 effect가 실행되기 전 한 프레임에도 이전 본문을 그리지 않는다.
+  const visible = loaded?.issueId === issueId ? loaded : null
+  const detail = visible?.detail ?? null
+  const detailError = visible?.error ?? null
 
   const load = useCallback(
     async (id: string) => {
-      setDetail(null)
-      setDetailError(null)
+      const sequence = ++requestSequence.current
+      setLoaded({ issueId: id, detail: null, error: null })
       const result = await commands.linearIssue(id)
+      if (sequence !== requestSequence.current) return
       if (result.status === 'ok') {
-        setDetail(result.data)
+        setLoaded({ issueId: id, detail: result.data, error: null })
       } else {
-        setDetailError(result.error)
+        setLoaded({ issueId: id, detail: null, error: result.error })
         if (result.error.isAuthFailure) setLinearAuthFailed(true)
       }
     },
@@ -77,9 +87,16 @@ export function IssueDetailModal({
   )
 
   useEffect(() => {
-    if (!issueId) return
+    if (!issueId) {
+      requestSequence.current += 1
+      setLoaded(null)
+      return
+    }
     setStateChanged(false)
     void load(issueId)
+    return () => {
+      requestSequence.current += 1
+    }
   }, [issueId, load])
 
   if (!issue) return null

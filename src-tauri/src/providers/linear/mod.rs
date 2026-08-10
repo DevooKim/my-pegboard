@@ -34,9 +34,10 @@
 //!
 //! 1. **`priority` 정수 0~4의 의미.** 그래서 숫자를 해석하지 않고
 //!    `priorityLabel: String!`을 그대로 표시한다. 0을 "없음"으로 가정하지 않았다
-//! 2. **`WorkflowState.type`의 문자열 값들.** Jira의 `statusCategory.key`처럼
-//!    색을 고르는 데 쓰고 싶었지만 값을 모른다 → **`state.color`를 쓴다.**
-//!    `type`은 담아 보내되 분기하지 않는다
+//! 2. **`WorkflowState.type`의 실제 응답.** 공개 스키마는 `triage`·`backlog`·
+//!    `unstarted`·`started`·`completed`·`canceled`·`duplicate`를 정의하지만
+//!    실제 계정 응답은 못 받았다 → 색은 계속 **`state.color`를 쓴다.** `type`은
+//!    완료 제외 필터에만 쓴다
 //! 3. **프리셋 필터가 실제로 의도한 이슈를 주는지.** "완료 제외"를
 //!    `state.type: { nin: [...] }`로 표현했는데, 값이 틀리면 완료된 것이 섞인다.
 //!    `in`이 아니라 `nin`인 이유가 그것이다 — 틀렸을 때 목록이 비는 대신

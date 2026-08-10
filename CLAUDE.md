@@ -243,8 +243,8 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
   GitHub과 다르고 Jira 신규 검색과 같다
 - `priority` 정수 0~4의 의미를 모른다 → **`priorityLabel` 문자열을 그대로 표시.**
   0을 "없음"으로 가정하지 않는다
-- `WorkflowState.type`의 값을 모른다 → **`state.color`로 배지 색을 칠한다.**
-  `type`은 담아 보내되 분기하지 않는다
+- 공개 스키마의 `WorkflowState.type` 7종은 확인했지만 실제 응답은 못 봤다 →
+  **`state.color`로 배지 색을 칠한다.** `type`은 완료 제외 필터에만 쓴다
 
 **상태 변경은 Jira transition과 모델이 다르다:**
 | | Jira | Linear |

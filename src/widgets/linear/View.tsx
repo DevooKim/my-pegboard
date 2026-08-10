@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LinearIssue, LinearWidgetConfig } from '#/ipc/bindings'
 import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
@@ -33,8 +33,18 @@ export function LinearView({
   const issues = envelope.data?.issues ?? []
   const compact = width < COMPACT_WIDTH
 
-  /** 열려 있는 상세 모달. seed는 목록이 이미 가진 값 — 0ms 골격의 재료다. */
-  const [detail, setDetail] = useState<LinearIssue | null>(null)
+  /**
+   * 열려 있는 이슈의 id만 보관한다. 객체를 보관하면 목록 재조회 뒤에도 모달이
+   * 이전 객체를 계속 그려 상태 배지가 낡는다. 골격은 매 렌더 최신 목록에서 찾는다.
+   */
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const detail = detailId ? (issues.find((issue) => issue.id === detailId) ?? null) : null
+
+  // 완료 제외 프리셋에서 상태 변경으로 이슈가 빠지면 모달도 닫는다. id를
+  // 남겨두면 다음 폴링에 같은 이슈가 돌아왔을 때 모달이 저절로 다시 열린다.
+  useEffect(() => {
+    if (detailId && !detail) setDetailId(null)
+  }, [detailId, detail])
 
   // `serde(default)`라 생성 타입에서 optional이다. 이 설정이 생기기 전에 만든
   // 위젯은 값이 없는데, 그대로 두면 그룹핑이 조용히 꺼진다 — 기본은 켬이다.
@@ -80,7 +90,7 @@ export function LinearView({
                       compact={compact}
                       // 헤더가 이미 팀을 보여주므로 행에서는 뺀다.
                       showTeam={false}
-                      onOpen={() => setDetail(issue)}
+                      onOpen={() => setDetailId(issue.id)}
                       onStateChanged={notifyStateChanged}
                     />
                   </li>
@@ -97,7 +107,7 @@ export function LinearView({
                   now={now}
                   compact={compact}
                   showTeam={true}
-                  onOpen={() => setDetail(issue)}
+                  onOpen={() => setDetailId(issue.id)}
                   onStateChanged={notifyStateChanged}
                 />
               </li>
@@ -109,14 +119,16 @@ export function LinearView({
       {/* Modal이 포털이라 위치는 무관하다. 목록 뒤에 두어 읽는 순서를 맞춘다. */}
       <IssueDetailModal
         issue={detail}
-        onClose={() => setDetail(null)}
+        onClose={() => setDetailId(null)}
         onStateChanged={notifyStateChanged}
       />
 
       {/* 목록은 그대로 두고 실패만 아래에 얇게 알린다 */}
       {envelope.status === 'error-transient' && envelope.error && (
         <p className="shrink-0 border-t border-border-subtle px-2 py-1 text-caption text-stale">
-          갱신 실패 — 재시도 중
+          {envelope.error.retrying === false
+            ? '갱신 실패 — 다음 주기에 다시 시도'
+            : '갱신 실패 — 재시도 중'}
         </p>
       )}
       {envelope.status === 'error-permanent' && envelope.error && (

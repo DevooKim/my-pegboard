@@ -79,8 +79,8 @@ pub struct LinearIssue {
 /// # `type`을 색의 근거로 쓰지 않는다
 ///
 /// Jira는 `statusCategory.key`가 `new`/`indeterminate`/`done` 셋으로 고정이라
-/// 색을 그것으로 골랐다. Linear의 `WorkflowState.type`은 **정확한 문자열 값을
-/// 실측하지 못했다**(25.3). 그래서 **`color`를 쓴다** — 스키마가 상태마다
+/// 색을 그것으로 골랐다. Linear의 `WorkflowState.type`은 공개 스키마의 값은
+/// 확인했지만 **실제 응답을 실측하지 못했다**(25.3). 그래서 **`color`를 쓴다** — 스키마가 상태마다
 /// 색을 주므로 우리가 매핑을 발명할 필요가 없고, Linear에서 보던 색과 같아진다.
 ///
 /// `type`은 그래도 담아 보낸다. 완료 여부 같은 판단이 나중에 필요해질 수 있고,

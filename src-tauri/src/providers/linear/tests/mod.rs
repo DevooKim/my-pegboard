@@ -141,7 +141,7 @@ fn survives_missing_nullable_fields() {
     assert!(!bare.id.is_empty());
 }
 
-/// **`WorkflowState.type`의 값을 모른다.** 모르는 문자열이 와도 깨지지 않고,
+/// **`WorkflowState.type`의 실제 응답은 못 봤다.** 모르는 문자열이 와도 깨지지 않고,
 /// 그 값으로 분기하지 않는다 — 색은 `color`가 정한다 (DECISIONS 25.3).
 #[test]
 fn unknown_state_type_does_not_break_anything() {
@@ -533,7 +533,7 @@ fn unknown_preset_yields_none() {
 
 /// **미완료 필터는 `nin`(제외)이어야 한다** (DECISIONS 25.7).
 ///
-/// `WorkflowState.type`의 실제 값을 모르므로, 값이 틀렸을 때
+/// 공개 스키마에 없는 새 `WorkflowState.type`이 생겨도, 값이 달라졌을 때
 /// - `nin`: 아무것도 제외되지 않는다 → 완료된 것이 섞여 **보인다**
 /// - `in`: 아무것도 남지 않는다 → 목록이 통째로 빈다 = **고장과 구별되지 않는다**
 ///
@@ -559,6 +559,14 @@ fn open_only_filter_excludes_rather_than_includes() {
     assert_eq!(
         type_filter.get("nin").unwrap(),
         &json!(completed_state_types())
+    );
+}
+
+#[test]
+fn open_only_filter_excludes_every_terminal_state_type() {
+    assert_eq!(
+        completed_state_types(),
+        vec!["completed", "canceled", "duplicate"]
     );
 }
 

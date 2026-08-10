@@ -1873,8 +1873,9 @@ Jira 위젯에는 우선순위·마감일 정렬이 있는데 Linear에는 만�
 
 **상태 색은 `state.color`를 쓴다.** Jira는 `statusCategory.key`가
 `new`/`indeterminate`/`done` 셋으로 고정이라 색을 그것으로 골랐는데,
-`WorkflowState.type`의 값을 모른다. 스키마가 상태마다 색을 주므로 매핑을 발명할
-필요가 없고, **Linear 웹에서 보던 색과 같아진다**는 이점도 따라온다.
+`WorkflowState.type`은 공개 스키마의 7종을 확인했지만 실제 응답을 못 봤다.
+스키마가 상태마다 색을 주므로 매핑을 발명할 필요가 없고, **Linear 웹에서 보던
+색과 같아진다**는 이점도 따라온다.
 
 `type`은 담아 보내되 **분기하지 않는다** — 모르는 값이 와도 문자열이라
 아무것도 깨지지 않는다.
@@ -2012,11 +2013,12 @@ Jira와 **같게 유지한 것들** (11.5.2의 표가 그대로 적용된다):
 
 1. **`priority` 정수 0~4의 의미.** → 숫자를 해석하지 않고 `priorityLabel`을
    그대로 쓴다(25.3). 이 대비 덕분에 틀려도 화면은 옳다
-2. **`WorkflowState.type`의 문자열 값들.** → 색은 `color`가 정하고 `type`으로
-   분기하지 않는다(25.3). **다만 프리셋의 "완료 제외" 필터가 이 값을 쓴다** →
-   3번
+2. **`WorkflowState.type`의 실제 응답.** 공개 스키마는 `triage`·`backlog`·
+   `unstarted`·`started`·`completed`·`canceled`·`duplicate`를 정의한다. 실제
+   계정 응답은 아직 못 받았다. 색은 `color`가 정하고 `type`으로 분기하지
+   않는다(25.3). **다만 프리셋의 "완료 제외" 필터가 이 값을 쓴다** → 3번
 3. **프리셋 필터가 실제로 의도한 이슈를 주는지.** "완료 제외"를
-   `state.type: { nin: ["completed","canceled"] }`로 표현했다.
+   `state.type: { nin: ["completed","canceled","duplicate"] }`로 표현했다.
    **`in`이 아니라 `nin`인 것이 의도적이다:**
 
    | 방향 | 값이 틀렸을 때 |
@@ -2037,8 +2039,8 @@ Jira와 **같게 유지한 것들** (11.5.2의 표가 그대로 적용된다):
    잘린다
 
 **키가 생기면 가장 먼저 확인할 것:** 프리셋 4종이 각각 의도한 이슈를 주는가,
-`priorityLabel`의 실제 문자열, `WorkflowState.type`의 값들, rate limit 400이
-정말 `RATELIMITED` 코드로 오는가.
+`priorityLabel`의 실제 문자열, `WorkflowState.type`의 실제 응답, rate limit
+400이 정말 `RATELIMITED` 코드로 오는가.
 
 ### 25.8 인스턴스 4개
 
