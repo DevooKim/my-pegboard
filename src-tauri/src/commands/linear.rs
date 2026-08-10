@@ -13,6 +13,7 @@ use crate::providers::linear::{
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
+use crate::storage::{LinearMetaStore, StorageResult};
 
 /// 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -255,13 +256,22 @@ pub async fn linear_fetch(
             .await
             .map_err(|error| to_widget_error(&state, &widget_id, error))?;
         let id = viewer.id.clone();
-        if let Ok(mut meta) = state.linear_meta.lock() {
-            meta.set_viewer(LinearUserOption {
-                id: viewer.id,
-                name: viewer.name,
-                avatar_url: None,
-            });
-            let _ = meta.save();
+        match state.linear_meta.lock() {
+            Ok(mut meta) => {
+                if let Err(error) = cache_viewer(
+                    &mut meta,
+                    LinearUserOption {
+                        id: viewer.id,
+                        name: viewer.name,
+                        avatar_url: None,
+                    },
+                ) {
+                    tracing::warn!(error = %error, "Linear viewer 메타데이터 캐시 저장 실패");
+                }
+            }
+            Err(_) => {
+                tracing::warn!("Linear viewer 메타데이터 캐시 상태 잠금 실패");
+            }
         }
         Some(id)
     } else {
@@ -304,6 +314,16 @@ pub async fn linear_fetch(
     }
 }
 
+fn cache_viewer(meta: &mut LinearMetaStore, viewer: LinearUserOption) -> StorageResult<()> {
+    let mut global = meta.global().clone();
+    global.viewer = Some(viewer);
+    meta.replace_global_and_save(global)
+}
+
+fn team_refresh_allowed(global: &LinearGlobalMetadata, team_id: &str) -> bool {
+    global.teams.truncated || global.teams.items.iter().any(|team| team.id == team_id)
+}
+
 /// 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
 ///
 /// **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
@@ -332,13 +352,7 @@ pub async fn linear_metadata(
 
     if let Some(team_id) = team_id.as_deref() {
         let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-        let known_team = meta
-            .global()
-            .teams
-            .items
-            .iter()
-            .any(|team| team.id == team_id);
-        if !known_team {
+        if !team_refresh_allowed(meta.global(), team_id) {
             return Err(format!(
                 "알 수 없는 팀입니다: {team_id}. 전역 메타데이터를 먼저 새로고침하세요."
             ));
@@ -868,6 +882,40 @@ mod tests {
         assert_eq!(response.global.teams.items[0].id, "team-eng");
         assert_eq!(response.team.unwrap().team_id, "team-eng");
         assert!(response.refresh_error.is_none());
+    }
+
+    #[test]
+    fn viewer_cache_helper_persists_the_viewer_before_returning() {
+        let (dir, mut store) = cached_store();
+        cache_viewer(
+            &mut store,
+            LinearUserOption {
+                id: "viewer-new".into(),
+                name: "New viewer".into(),
+                avatar_url: None,
+            },
+        )
+        .unwrap();
+
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert_eq!(reloaded.global().viewer.as_ref().unwrap().id, "viewer-new");
+    }
+
+    #[test]
+    fn team_refresh_preflight_allows_unknown_teams_in_a_truncated_global_list() {
+        let (_dir, mut store) = cached_store();
+        let mut global = store.global().clone();
+        global.teams.truncated = true;
+        store.set_global(global);
+
+        assert!(team_refresh_allowed(store.global(), "team-unknown"));
+    }
+
+    #[test]
+    fn team_refresh_preflight_rejects_absent_teams_in_a_complete_global_list() {
+        let (_dir, store) = cached_store();
+
+        assert!(!team_refresh_allowed(store.global(), "team-unknown"));
     }
 
     #[test]

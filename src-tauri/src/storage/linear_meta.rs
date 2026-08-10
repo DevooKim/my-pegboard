@@ -154,9 +154,9 @@ impl LinearMetaStore {
 
     /// 전역 메타데이터를 디스크에 먼저 저장하고 성공한 경우에만 메모리를 교체한다.
     ///
-    /// 전역 팀 목록이 줄어들면 더 이상 존재하지 않는 팀의 프로젝트·상태·멤버
-    /// 스코프도 함께 버린다. 그렇지 않으면 `known_ids()`가 삭제된 프로젝트를
-    /// 유효하다고 판정해 이슈 생성 입력을 통과시킨다.
+    /// 전역 팀 목록이 완전하고 줄어들면 더 이상 존재하지 않는 팀의
+    /// 프로젝트·상태·멤버 스코프도 함께 버린다. 잘린 목록에서는 누락이
+    /// 삭제의 증거가 아니므로 기존 스코프를 유지한다.
     pub fn replace_global_and_save(&mut self, global: LinearGlobalMetadata) -> StorageResult<()> {
         let mut next = self.data.clone();
         apply_global(&mut next, global);
@@ -176,7 +176,19 @@ impl LinearMetaStore {
     }
 
     /// 팀 메타데이터를 디스크에 먼저 저장하고 성공한 경우에만 메모리를 교체한다.
+    /// 완전한 전역 팀 목록에 없는 늦은 응답은 조용히 버린다.
     pub fn replace_team_and_save(&mut self, team: LinearTeamMetadata) -> StorageResult<()> {
+        let team_is_known = self
+            .data
+            .global
+            .teams
+            .items
+            .iter()
+            .any(|known| known.id == team.team_id);
+        if !self.data.global.teams.truncated && !team_is_known {
+            return Ok(());
+        }
+
         let mut next = self.data.clone();
         next.version = LINEAR_META_SCHEMA_VERSION;
         next.teams.insert(team.team_id.clone(), team);
@@ -197,14 +209,18 @@ impl LinearMetaStore {
 
 fn apply_global(data: &mut LinearMetaFile, global: LinearGlobalMetadata) {
     data.version = LINEAR_META_SCHEMA_VERSION;
-    let team_ids = global
-        .teams
-        .items
-        .iter()
-        .map(|team| team.id.clone())
-        .collect::<BTreeSet<_>>();
+    let prune_team_scopes = !global.teams.truncated;
     data.global = global;
-    data.teams.retain(|team_id, _| team_ids.contains(team_id));
+    if prune_team_scopes {
+        let team_ids = data
+            .global
+            .teams
+            .items
+            .iter()
+            .map(|team| team.id.clone())
+            .collect::<BTreeSet<_>>();
+        data.teams.retain(|team_id, _| team_ids.contains(team_id));
+    }
 }
 
 fn migrate_v1_to_v2(mut value: serde_json::Value) -> Result<serde_json::Value, String> {

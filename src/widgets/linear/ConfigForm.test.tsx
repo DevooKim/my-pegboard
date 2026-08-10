@@ -428,6 +428,45 @@ describe('LinearConfigForm', () => {
     })
   })
 
+  it('preserves selections that a truncated global refresh cannot disprove', async () => {
+    const onChange = vi.fn()
+    const initialFilter = {
+      teamIds: ['team-eng', 'team-unknown'],
+      stateTypes: ['started', 'completed'],
+      projectIds: ['project-team-eng', 'project-team-unknown'],
+      labelIds: ['label-bug', 'label-unknown'],
+    }
+    linearMetadata.mockImplementation((teamId: string | null, force: boolean) => {
+      if (teamId === null && force) {
+        return Promise.resolve(
+          response({
+            ...globalMetadata(),
+            teams: { ...globalMetadata().teams, truncated: true },
+            labels: { ...globalMetadata().labels, truncated: true },
+          }),
+        )
+      }
+      return Promise.resolve(response(globalMetadata(), teamId ? teamMetadata(teamId) : null))
+    })
+
+    render(
+      <LinearConfigForm
+        config={config({ query: { kind: 'custom', filter: initialFilter }, teams: [] })}
+        onChange={onChange}
+      />,
+    )
+    expect(await screen.findByLabelText('Engineering')).toBeInTheDocument()
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '전역 메타데이터 새로고침' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('API 상한으로 일부만 표시됩니다')).toBeInTheDocument(),
+    )
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Engineering')).toBeChecked()
+    expect(screen.getByLabelText('라벨: Bug')).toBeChecked()
+  })
+
   it('preserves selected IDs when the global metadata refresh fails', async () => {
     const onChange = vi.fn()
     const selectedFilter = {

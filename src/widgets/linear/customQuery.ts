@@ -54,13 +54,15 @@ export function pruneTeamDependentSelections(
   teamMetadata: Record<string, LinearTeamMetadata>,
   globalMetadata: LinearGlobalMetadata | null = null,
 ): CompleteCustomFilter {
-  const knownTeamIds = globalMetadata
-    ? new Set(globalMetadata.teams.items.map((team) => team.id))
-    : null
+  const knownTeamIds =
+    globalMetadata && !globalMetadata.teams.truncated
+      ? new Set(globalMetadata.teams.items.map((team) => team.id))
+      : null
   const nextTeamIds = knownTeamIds ? teamIds.filter((teamId) => knownTeamIds.has(teamId)) : teamIds
-  const knownLabelIds = globalMetadata
-    ? new Set(globalMetadata.labels.items.map((label) => label.id))
-    : null
+  const knownLabelIds =
+    globalMetadata && !globalMetadata.labels.truncated
+      ? new Set(globalMetadata.labels.items.map((label) => label.id))
+      : null
   const selectedMetadata = nextTeamIds
     .map((teamId) => teamMetadata[teamId])
     .filter((metadata): metadata is LinearTeamMetadata => metadata !== undefined)

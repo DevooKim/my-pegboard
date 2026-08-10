@@ -39,6 +39,12 @@ fn global_metadata(teams: Vec<LinearTeam>) -> LinearGlobalMetadata {
     }
 }
 
+fn truncated_global_metadata(teams: Vec<LinearTeam>) -> LinearGlobalMetadata {
+    let mut global = global_metadata(teams);
+    global.teams.truncated = true;
+    global
+}
+
 fn team_metadata(team_id: &str, state_name: &str) -> LinearTeamMetadata {
     LinearTeamMetadata {
         team_id: team_id.into(),
@@ -114,13 +120,105 @@ fn replacing_global_prunes_cached_scopes_for_removed_teams() {
     store.set_team(team_metadata("team-eng", "Engineering Todo"));
     store.set_team(team_metadata("team-design", "Design Todo"));
 
-    store.set_global(global_metadata(vec![team("team-design", "DES")]));
+    store
+        .replace_global_and_save(global_metadata(vec![team("team-design", "DES")]))
+        .unwrap();
 
     assert!(store.team("team-eng").is_none());
     assert!(store.team("team-design").is_some());
     let known = store.known_ids();
     assert!(!known.project_ids.contains("project-team-eng"));
     assert!(known.project_ids.contains("project-team-design"));
+}
+
+#[test]
+fn replacing_truncated_global_preserves_cached_scopes_absent_from_the_page() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+    store.set_team(team_metadata("team-design", "Design Todo"));
+    store.save().unwrap();
+
+    store
+        .replace_global_and_save(truncated_global_metadata(vec![team("team-design", "DES")]))
+        .unwrap();
+
+    assert!(store.team("team-eng").is_some());
+    assert!(store.team("team-design").is_some());
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.team("team-eng").is_some());
+}
+
+#[test]
+fn late_complete_global_refresh_drops_a_team_scope_that_started_before_it() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-orphan", "ORP"),
+    ]));
+    store.set_team(team_metadata("team-orphan", "Old Todo"));
+    store.save().unwrap();
+
+    // The global refresh completes while the team refresh is still in flight.
+    store
+        .replace_global_and_save(global_metadata(vec![team("team-eng", "ENG")]))
+        .unwrap();
+    store
+        .replace_team_and_save(team_metadata("team-orphan", "Late Todo"))
+        .unwrap();
+
+    assert!(store.team("team-orphan").is_none());
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.team("team-orphan").is_none());
+}
+
+#[test]
+fn unknown_team_scope_is_allowed_while_global_teams_are_truncated() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(truncated_global_metadata(vec![team("team-eng", "ENG")]));
+
+    store
+        .replace_team_and_save(team_metadata("team-unknown", "Unknown Todo"))
+        .unwrap();
+
+    assert!(store.team("team-unknown").is_some());
+}
+
+#[test]
+fn failed_viewer_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let mut old = global_metadata(vec![team("team-eng", "ENG")]);
+    old.viewer = Some(LinearUserOption {
+        id: "viewer-old".into(),
+        name: "Old viewer".into(),
+        avatar_url: None,
+    });
+    store.set_global(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("viewer-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let mut next = old.clone();
+    next.viewer = Some(LinearUserOption {
+        id: "viewer-new".into(),
+        name: "New viewer".into(),
+        avatar_url: None,
+    });
+    let error = store.replace_global_and_save(next).unwrap_err();
+
+    assert!(error.to_string().contains("viewer-write-failure"));
+    assert_eq!(store.global(), &old);
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.global(), &old);
 }
 
 #[test]
