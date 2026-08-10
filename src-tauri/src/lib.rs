@@ -78,7 +78,6 @@ pub fn run() {
         commands::linear::linear_metadata,
         commands::linear::linear_create_issue,
         commands::linear::linear_issue,
-        commands::linear::linear_teams,
         commands::linear::linear_team_states,
         commands::linear::linear_set_state,
         commands::todo::todo_list,

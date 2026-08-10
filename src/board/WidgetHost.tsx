@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   GithubWidgetConfig,
   JiraWidgetConfig,
+  LinearIssue,
   LinearWidgetConfig,
   TodoItem,
 } from '#/ipc/bindings'
@@ -16,6 +17,8 @@ import { useGithubData } from '#/widgets/github/useGithubData'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { IssueDetailModal } from '#/widgets/jira/IssueDetailModal'
 import { useJiraData } from '#/widgets/jira/useJiraData'
+import { LinearCreateIssueModal } from '#/widgets/linear/CreateIssueModal'
+import { IssueDetailModal as LinearIssueDetailModal } from '#/widgets/linear/IssueDetailModal'
 import { useLinearData } from '#/widgets/linear/useLinearData'
 import { tryGetWidget } from '#/widgets/registry'
 import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
@@ -359,9 +362,8 @@ function GithubHost({
 /**
  * Linear 위젯 호스트.
  *
- * GitHub과 달리 **읽기 전용이 아니다** — 상태 변경과 상세 모달이 있다
- * (DECISIONS 25.1, 사용자 결정). 다만 `actions` 슬롯은 비어 있다: 상태 변경은
- * 목록 행의 배지에서 일어나고, 생성 기능이 없어서 헤더에 놓을 버튼이 없다.
+ * GitHub과 달리 **읽기 전용이 아니다** — 생성·상태 변경과 상세 모달이 있다
+ * (DECISIONS 25.1). 생성은 연결된 Linear 위젯의 헤더에서만 시작한다.
  */
 function LinearHost({
   widget,
@@ -380,22 +382,45 @@ function LinearHost({
   const secs = config.refreshSecs ?? DEFAULT_REFRESH_SECS
   const refreshMs = secs <= 0 ? 0 : Math.max(MIN_REFRESH_SECS, secs) * 1000
   const { envelope, refresh } = useLinearData(widget.id, config, refreshMs)
+  const linearConfigured = useConnectionStore((s) => s.linearConfigured)
+  const [creating, setCreating] = useState(false)
+  const [createdIssue, setCreatedIssue] = useState<LinearIssue | null>(null)
 
   if (!definition) return null
   const View = definition.View
 
   return (
-    <WidgetShell
-      title={definition.deriveTitle(config)}
-      status={envelope.status}
-      fetchedAt={envelope.fetchedAt}
-      pollable
-      onRefresh={refresh}
-      onConfigure={onConfigure}
-      onRemove={onRemove}
-    >
-      <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
-    </WidgetShell>
+    <>
+      <WidgetShell
+        title={definition.deriveTitle(config)}
+        status={envelope.status}
+        fetchedAt={envelope.fetchedAt}
+        pollable
+        onRefresh={refresh}
+        onConfigure={onConfigure}
+        onRemove={onRemove}
+        actions={
+          linearConfigured ? (
+            <IconButton label="Linear 티켓 생성" onClick={() => setCreating(true)}>
+              <SquarePen size={13} />
+            </IconButton>
+          ) : undefined
+        }
+      >
+        <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
+      </WidgetShell>
+
+      <LinearCreateIssueModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(issue) => {
+          setCreating(false)
+          setCreatedIssue(issue)
+          window.dispatchEvent(new CustomEvent('pegboard:linear-created'))
+        }}
+      />
+      <LinearIssueDetailModal issue={createdIssue} onClose={() => setCreatedIssue(null)} />
+    </>
   )
 }
 

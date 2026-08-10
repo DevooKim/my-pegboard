@@ -438,19 +438,6 @@ async linearIssue(issueId: string) : Promise<Result<LinearIssueDetail, LinearCal
 }
 },
 /**
- * 팀 목록. 설정 폼의 범위 UI를 채운다.
- * 
- * 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
- */
-async linearTeams(refresh: boolean) : Promise<Result<LinearTeamList, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("linear_teams", { refresh }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * 한 팀의 워크플로우 상태 목록. 상태 변경 팝오버를 채운다.
  * 
  * # Jira와 모델이 다르다 (DECISIONS 25.5)
@@ -1586,7 +1573,6 @@ export type LinearTeam = { id: string;
  * `ENG`. 화면이 짧게 보여줄 때 쓴다.
  */
 key: string; name: string }
-export type LinearTeamList = { teams: LinearTeam[]; fetchedAt: string | null }
 export type LinearTeamMetadata = { teamId: string; states: LinearMetadataList<LinearWorkflowState>; members: LinearMetadataList<LinearUserOption>; projects: LinearMetadataList<LinearProjectOption> }
 export type LinearUserOption = { id: string; name: string; avatarUrl: string | null }
 export type LinearWidgetConfig = { 

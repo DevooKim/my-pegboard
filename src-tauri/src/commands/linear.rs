@@ -9,7 +9,7 @@ use tauri::State;
 use crate::providers::linear::{
     LinearClient, LinearCredentials, LinearError, LinearFilterError, LinearGlobalMetadata,
     LinearIssue, LinearIssueDetail, LinearPreset, LinearQuery, LinearSort, LinearSortDirection,
-    LinearTeam, LinearTeamMetadata, LinearUserOption, LinearWorkflowState, PresetScope, PRESETS,
+    LinearTeamMetadata, LinearUserOption, LinearWorkflowState, PresetScope, PRESETS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
@@ -292,40 +292,6 @@ pub fn linear_cached(
     Ok(cached_data(&cache, &widget_id))
 }
 
-/// 팀 목록. 설정 폼의 범위 UI를 채운다.
-///
-/// 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
-#[tauri::command]
-#[specta::specta]
-pub async fn linear_teams(
-    state: State<'_, AppState>,
-    refresh: bool,
-) -> Result<LinearTeamList, String> {
-    if !refresh {
-        let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-        if meta.has_teams() {
-            return Ok(LinearTeamList {
-                teams: meta.teams().to_vec(),
-                fetched_at: meta.fetched_at().map(|t| t.to_rfc3339()),
-            });
-        }
-    }
-
-    let client = client_from_state(&state)?;
-    let teams = client.teams().await.map_err(|e| e.to_string())?;
-    let fetched_at = chrono::Utc::now();
-
-    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-    meta.set_teams(teams, fetched_at);
-    meta.save()
-        .map_err(|e| format!("팀 목록을 저장할 수 없습니다: {e}"))?;
-
-    Ok(LinearTeamList {
-        teams: meta.teams().to_vec(),
-        fetched_at: Some(fetched_at.to_rfc3339()),
-    })
-}
-
 #[tauri::command]
 #[specta::specta]
 pub async fn linear_metadata(
@@ -434,13 +400,6 @@ pub async fn linear_create_issue(
             Err(failure)
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct LinearTeamList {
-    pub teams: Vec<LinearTeam>,
-    pub fetched_at: Option<String>,
 }
 
 /// 이슈 본문(markdown). 상세 모달이 골격을 그린 뒤에 채운다.

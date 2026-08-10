@@ -874,6 +874,23 @@ describe('useLinearData', () => {
     await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
   })
 
+  it('생성 이벤트를 받으면 다시 조회한다', async () => {
+    linearFetch.mockResolvedValue({
+      status: 'ok',
+      data: {
+        issues: [issue()],
+        hasMore: false,
+        fetchedAt: '2026-08-06T09:00:00Z',
+        fromCache: false,
+      },
+    })
+
+    render(<HookProbe />)
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(1))
+    window.dispatchEvent(new CustomEvent('pegboard:linear-created'))
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+  })
+
   it('상태 변경 이벤트가 진행 중 조회와 겹치면 종료 직후 다시 조회한다', async () => {
     const pending = deferred<Awaited<ReturnType<typeof linearFetch>>>()
     linearFetch.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({

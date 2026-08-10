@@ -69,6 +69,7 @@ export interface WidgetViewProps<TConfig, TData> {
 export interface WidgetConfigFormProps<TConfig> {
   config: TConfig
   onChange: (next: TConfig) => void
+  onValidityChange?: (valid: boolean) => void
 }
 
 /**

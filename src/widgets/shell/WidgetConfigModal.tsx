@@ -23,10 +23,12 @@ export function WidgetConfigModal({
 }) {
   const updateConfig = useBoardStore((s) => s.updateWidgetConfig)
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null)
+  const [valid, setValid] = useState(true)
 
   // 모달이 열릴 때마다 현재 설정을 복사해 온다.
   useEffect(() => {
     setDraft(widget ? structuredClone(widget.config) : null)
+    setValid(true)
   }, [widget])
 
   if (!widget || !draft) return null
@@ -57,7 +59,7 @@ export function WidgetConfigModal({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <ConfigForm config={draft} onChange={setDraft} />
+        <ConfigForm config={draft} onChange={setDraft} onValidityChange={setValid} />
       </div>
 
       <footer className="flex shrink-0 justify-end gap-2 border-border-subtle border-t px-4 py-3">
@@ -72,6 +74,7 @@ export function WidgetConfigModal({
         <button
           type="button"
           onClick={apply}
+          disabled={!valid}
           className="rounded bg-accent px-3 py-1.5 text-caption text-surface-base"
         >
           적용

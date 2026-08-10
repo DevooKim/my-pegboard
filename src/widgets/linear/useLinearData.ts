@@ -10,7 +10,7 @@ type Data = { issues: LinearIssue[]; hasMore: boolean }
 const IDLE: WidgetEnvelope<Data> = { status: 'idle', data: null, fetchedAt: null, error: null }
 const MAX_TRANSIENT_RETRIES = 3
 const RETRY_BASE_MS = 1_000
-type FetchReason = 'regular' | 'retry' | 'state-change'
+type FetchReason = 'regular' | 'retry' | 'mutation'
 
 /**
  * 위젯 id → 마지막 envelope. **보드 탭을 오갈 때의 깜빡임을 없앤다.**
@@ -69,7 +69,7 @@ export function useLinearData(
   const retryAttempt = useRef(0)
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fetchNowRef = useRef<(reason?: FetchReason) => Promise<void>>(async () => {})
-  const pendingStateRefresh = useRef(false)
+  const pendingMutationRefresh = useRef(false)
   const active = useRef(true)
 
   const cancelRetry = useCallback(() => {
@@ -81,17 +81,17 @@ export function useLinearData(
   const fetchNow = useCallback(
     async (reason: FetchReason = 'regular') => {
       if (inFlight.current) {
-        if (reason === 'state-change') pendingStateRefresh.current = true
+        if (reason === 'mutation') pendingMutationRefresh.current = true
         return
       }
       const retrying = reason === 'retry'
       // rate-limit 리셋을 기다리는 중이면 정기 폴링도 그 시각을 앞당기지 않는다.
       if (!retrying && retryTimer.current !== null) {
-        if (reason === 'state-change') pendingStateRefresh.current = true
+        if (reason === 'mutation') pendingMutationRefresh.current = true
         return
       }
       // 지금 시작하는 조회가 그 전에 밀린 상태 변경까지 함께 반영한다.
-      pendingStateRefresh.current = false
+      pendingMutationRefresh.current = false
       // 사용자가 누른 새로고침·정기 폴링·상태 변경은 새 시도 묶음이다.
       if (!retrying) cancelRetry()
       // Tauri 밖(브라우저 dev)에서는 IPC가 없다. 영원한 로딩 대신 이유를 말한다.
@@ -170,9 +170,9 @@ export function useLinearData(
         inFlight.current = false
         // 상태 변경 직후의 전용 조회는 버리지 않는다. 다만 rate limit 대기
         // 중이면 예약된 재시도가 곧 최신 상태를 읽으므로 그때 함께 처리한다.
-        if (active.current && pendingStateRefresh.current && retryTimer.current === null) {
-          pendingStateRefresh.current = false
-          void fetchNowRef.current()
+        if (active.current && pendingMutationRefresh.current && retryTimer.current === null) {
+          pendingMutationRefresh.current = false
+          void fetchNowRef.current('mutation')
         }
       }
     },
@@ -227,7 +227,7 @@ export function useLinearData(
     return () => window.removeEventListener('pegboard:refresh-all', onRefreshAll)
   }, [fetchNow])
 
-  // 상태 변경 직후의 갱신.
+  // 상태 변경·생성 직후의 갱신.
   //
   // **낙관적 업데이트를 하지 않는다.** 목표 상태는 알지만 Linear의 자동화
   // (상태가 바뀌면 담당자를 붙이는 등)를 예측할 수 없다. 다시 조회하는 편이
@@ -236,9 +236,13 @@ export function useLinearData(
   // `refresh-all`을 쓰지 않는 이유: 그쪽은 Jira·GitHub·Web 위젯까지 전부 다시
   // 부른다. 이슈 하나의 상태가 바뀐 것으로 보드 전체를 두들길 이유가 없다.
   useEffect(() => {
-    const onChanged = () => void fetchNow('state-change')
-    window.addEventListener(LINEAR_STATE_CHANGED_EVENT, onChanged)
-    return () => window.removeEventListener(LINEAR_STATE_CHANGED_EVENT, onChanged)
+    const onMutation = () => void fetchNow('mutation')
+    window.addEventListener(LINEAR_STATE_CHANGED_EVENT, onMutation)
+    window.addEventListener('pegboard:linear-created', onMutation)
+    return () => {
+      window.removeEventListener(LINEAR_STATE_CHANGED_EVENT, onMutation)
+      window.removeEventListener('pegboard:linear-created', onMutation)
+    }
   }, [fetchNow])
 
   return { envelope, refresh: () => void fetchNow() }

@@ -14,11 +14,10 @@ import { LinearView } from './View'
  * 상태 변경이 있다** — 사용자가 "Jira 위젯과 같은 수준으로"라고 정했다.
  * Jira에 그 둘을 넣은 근거(빈도가 높다, 11.5)가 Linear에도 그대로 적용된다.
  *
- * ## 프리셋만 있고 직접 입력이 없다
+ * ## 프리셋과 타입 기반 직접 구성이 있다
  *
- * Jira는 생 JQL, GitHub은 생 검색 문자열이라는 탈출구가 있는데 Linear는 없다.
- * 필터가 문자열이 아니라 `IssueFilter` **JSON 객체**여서, 사용자에게 그것을
- * 쓰게 하는 것은 탈출구가 아니라 함정이다. 프리셋 × 팀 범위 조합으로 커버한다.
+ * Linear는 생 GraphQL/IssueFilter JSON을 받지 않는다. 대신 검증 가능한 핵심
+ * 조건을 명시 타입으로 저장하고 Rust가 모든 조건을 AND로 결합한다.
  */
 
 /** 프리셋 id → 표시 이름. Rust의 PRESETS와 짝을 이룬다. */
@@ -32,7 +31,7 @@ const PRESET_TITLES: Record<string, string> = {
 export const linearWidget: WidgetDefinition<LinearWidgetConfig> = {
   type: 'linear',
   label: 'Linear',
-  description: '이슈를 프리셋으로 가져오고 상태를 바꿉니다',
+  description: '이슈를 필터로 가져오고 생성·상태 변경을 합니다',
   icon: CircleDashed,
   maxInstances: 4,
 
@@ -45,6 +44,7 @@ export const linearWidget: WidgetDefinition<LinearWidgetConfig> = {
     maxResults: 30,
     teams: [],
     sort: 'updatedAt',
+    sortDirection: 'descending',
     groupByTeam: true,
     refreshSecs: 300,
   },
@@ -57,9 +57,9 @@ export const linearWidget: WidgetDefinition<LinearWidgetConfig> = {
   ConfigForm: LinearConfigForm,
 
   deriveTitle: (config) => {
-    // 사용자가 붙인 이름이 항상 이긴다.
     const custom = config.title?.trim()
     if (custom) return custom
+    if (config.query.kind === 'custom') return '직접 구성한 이슈'
     return PRESET_TITLES[config.query.id] ?? 'Linear'
   },
 }
