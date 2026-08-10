@@ -30,6 +30,10 @@
 //! **포함되는** 쪽으로 기운다. `in`(포함)으로 썼다가 값이 틀리면 목록이 통째로
 //! 비고, 그건 고장과 구별되지 않는다.
 
+use std::collections::HashSet;
+use std::fmt;
+
+use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -44,18 +48,25 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LinearQuery {
-    /// 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 `None`을 준다.
+    /// 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 오류를 준다.
     Preset { id: String },
+    /// 타입화된 AND 조건. GraphQL JSON을 직접 저장하지 않는다.
+    Custom { filter: LinearCustomFilter },
 }
 
 impl LinearQuery {
-    /// 실제로 API에 보낼 `IssueFilter`. 프리셋 id가 미지면 `None`.
+    /// 실제로 API에 보낼 `IssueFilter`.
     ///
-    /// `None`은 **빈 필터가 아니다.** 빈 필터를 보내면 조직 전체 이슈를 긁어오는
-    /// 조용한 오작동이 된다 — 커맨드가 영구 에러로 바꾼다.
-    pub fn to_filter(&self) -> Option<Value> {
+    pub fn to_filter(
+        &self,
+        viewer_id: Option<&str>,
+        known: &LinearKnownIds,
+    ) -> Result<Value, LinearFilterError> {
         match self {
-            LinearQuery::Preset { id } => LinearPreset::by_id(id).map(|p| p.filter()),
+            LinearQuery::Preset { id } => LinearPreset::by_id(id)
+                .map(|p| p.filter())
+                .ok_or_else(|| LinearFilterError::UnknownPreset(id.clone())),
+            LinearQuery::Custom { filter } => filter.to_issue_filter(viewer_id, known),
         }
     }
 
@@ -67,6 +78,7 @@ impl LinearQuery {
     pub fn scope(&self) -> Option<PresetScope> {
         match self {
             LinearQuery::Preset { id } => LinearPreset::by_id(id).map(|p| p.scope),
+            LinearQuery::Custom { .. } => Some(PresetScope::AllIssues),
         }
     }
 
@@ -76,8 +88,285 @@ impl LinearQuery {
             LinearQuery::Preset { id } => LinearPreset::by_id(id)
                 .map(|p| p.name.to_owned())
                 .unwrap_or_else(|| "Linear".to_owned()),
+            LinearQuery::Custom { .. } => "직접 구성한 이슈".to_owned(),
         }
     }
+
+    pub fn needs_viewer(&self) -> bool {
+        matches!(
+            self,
+            LinearQuery::Custom {
+                filter: LinearCustomFilter {
+                    assignee: LinearAssigneeFilter::Viewer,
+                    ..
+                }
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearCustomFilter {
+    #[serde(default)]
+    pub team_ids: Vec<String>,
+    #[serde(default)]
+    pub assignee: LinearAssigneeFilter,
+    #[serde(default)]
+    pub state_types: Vec<String>,
+    #[serde(default)]
+    pub project_ids: Vec<String>,
+    #[serde(default)]
+    pub label_ids: Vec<String>,
+    #[serde(default)]
+    pub priorities: Vec<u8>,
+    #[serde(default)]
+    pub created_from: Option<String>,
+    #[serde(default)]
+    pub created_to: Option<String>,
+    #[serde(default)]
+    pub updated_from: Option<String>,
+    #[serde(default)]
+    pub updated_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum LinearAssigneeFilter {
+    #[default]
+    Any,
+    Viewer,
+    Unassigned,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearKnownIds {
+    pub team_ids: HashSet<String>,
+    pub project_ids: HashSet<String>,
+    pub label_ids: HashSet<String>,
+    pub state_types: HashSet<String>,
+}
+
+impl LinearKnownIds {
+    pub fn new<T, P, L, S>(teams: T, projects: P, labels: L, state_types: S) -> Self
+    where
+        T: IntoIterator,
+        T::Item: Into<String>,
+        P: IntoIterator,
+        P::Item: Into<String>,
+        L: IntoIterator,
+        L::Item: Into<String>,
+        S: IntoIterator,
+        S::Item: Into<String>,
+    {
+        Self {
+            team_ids: teams.into_iter().map(Into::into).collect(),
+            project_ids: projects.into_iter().map(Into::into).collect(),
+            label_ids: labels.into_iter().map(Into::into).collect(),
+            state_types: state_types.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinearFilterError {
+    Empty,
+    UnknownPreset(String),
+    ViewerUnavailable,
+    UnknownTeam(String),
+    UnknownProject(String),
+    UnknownLabel(String),
+    UnknownStateType(String),
+    InvalidPriority(u8),
+    InvalidDate { field: &'static str, value: String },
+    ReversedRange { field: &'static str },
+}
+
+impl fmt::Display for LinearFilterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "조건을 하나 이상 선택하세요."),
+            Self::UnknownPreset(id) => write!(f, "알 수 없는 Linear 프리셋입니다: {id}"),
+            Self::ViewerUnavailable => write!(
+                f,
+                "담당자를 '나에게 할당'으로 필터링하려면 Linear 연결을 새로고침하세요."
+            ),
+            Self::UnknownTeam(id) => write!(
+                f,
+                "팀 메타데이터가 오래됐습니다: {id}. 메타데이터를 새로고침하세요."
+            ),
+            Self::UnknownProject(id) => write!(
+                f,
+                "프로젝트 메타데이터가 오래됐습니다: {id}. 메타데이터를 새로고침하세요."
+            ),
+            Self::UnknownLabel(id) => write!(
+                f,
+                "라벨 메타데이터가 오래됐습니다: {id}. 메타데이터를 새로고침하세요."
+            ),
+            Self::UnknownStateType(kind) => write!(
+                f,
+                "알 수 없는 상태 유형입니다: {kind}. 메타데이터를 새로고침하세요."
+            ),
+            Self::InvalidPriority(priority) => {
+                write!(f, "우선순위는 0부터 4까지만 선택할 수 있습니다: {priority}")
+            }
+            Self::InvalidDate { field, value } => {
+                write!(f, "{field} 날짜가 올바른 ISO 8601 형식이 아닙니다: {value}")
+            }
+            Self::ReversedRange { field } => {
+                write!(f, "{field} 시작 날짜는 종료 날짜보다 늦을 수 없습니다.")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LinearFilterError {}
+
+impl LinearCustomFilter {
+    pub fn is_empty(&self) -> bool {
+        self.team_ids.is_empty()
+            && matches!(self.assignee, LinearAssigneeFilter::Any)
+            && self.state_types.is_empty()
+            && self.project_ids.is_empty()
+            && self.label_ids.is_empty()
+            && self.priorities.is_empty()
+            && self.created_from.is_none()
+            && self.created_to.is_none()
+            && self.updated_from.is_none()
+            && self.updated_to.is_none()
+    }
+
+    pub fn to_issue_filter(
+        &self,
+        viewer_id: Option<&str>,
+        known: &LinearKnownIds,
+    ) -> Result<Value, LinearFilterError> {
+        if self.is_empty() {
+            return Err(LinearFilterError::Empty);
+        }
+
+        for id in &self.team_ids {
+            if !known.team_ids.contains(id) {
+                return Err(LinearFilterError::UnknownTeam(id.clone()));
+            }
+        }
+        for id in &self.project_ids {
+            if !known.project_ids.contains(id) {
+                return Err(LinearFilterError::UnknownProject(id.clone()));
+            }
+        }
+        for id in &self.label_ids {
+            if !known.label_ids.contains(id) {
+                return Err(LinearFilterError::UnknownLabel(id.clone()));
+            }
+        }
+        for state_type in &self.state_types {
+            if !known.state_types.contains(state_type) {
+                return Err(LinearFilterError::UnknownStateType(state_type.clone()));
+            }
+        }
+        for &priority in &self.priorities {
+            if priority > 4 {
+                return Err(LinearFilterError::InvalidPriority(priority));
+            }
+        }
+
+        let created_from = parse_date("createdAt", self.created_from.as_deref())?;
+        let created_to = parse_date("createdAt", self.created_to.as_deref())?;
+        let updated_from = parse_date("updatedAt", self.updated_from.as_deref())?;
+        let updated_to = parse_date("updatedAt", self.updated_to.as_deref())?;
+        validate_range("createdAt", created_from.as_ref(), created_to.as_ref())?;
+        validate_range("updatedAt", updated_from.as_ref(), updated_to.as_ref())?;
+
+        let mut object = serde_json::Map::new();
+        if !self.team_ids.is_empty() {
+            object.insert("team".into(), json!({ "id": { "in": self.team_ids } }));
+        }
+        match self.assignee {
+            LinearAssigneeFilter::Any => {}
+            LinearAssigneeFilter::Viewer => {
+                let id = viewer_id.ok_or(LinearFilterError::ViewerUnavailable)?;
+                object.insert("assignee".into(), json!({ "id": { "eq": id } }));
+            }
+            LinearAssigneeFilter::Unassigned => {
+                object.insert("assignee".into(), json!({ "null": true }));
+            }
+        }
+        if !self.state_types.is_empty() {
+            object.insert(
+                "state".into(),
+                json!({ "type": { "in": self.state_types } }),
+            );
+        }
+        if !self.project_ids.is_empty() {
+            object.insert(
+                "project".into(),
+                json!({ "id": { "in": self.project_ids } }),
+            );
+        }
+        if !self.label_ids.is_empty() {
+            object.insert("labels".into(), json!({ "id": { "in": self.label_ids } }));
+        }
+        if !self.priorities.is_empty() {
+            object.insert("priority".into(), json!({ "in": self.priorities }));
+        }
+        insert_date_range(&mut object, "createdAt", created_from, created_to);
+        insert_date_range(&mut object, "updatedAt", updated_from, updated_to);
+
+        Ok(Value::Object(object))
+    }
+}
+
+fn parse_date(
+    field: &'static str,
+    value: Option<&str>,
+) -> Result<Option<DateTime<FixedOffset>>, LinearFilterError> {
+    value
+        .map(|value| {
+            DateTime::parse_from_rfc3339(value).map_err(|_| LinearFilterError::InvalidDate {
+                field,
+                value: value.to_owned(),
+            })
+        })
+        .transpose()
+}
+
+fn validate_range(
+    field: &'static str,
+    from: Option<&DateTime<FixedOffset>>,
+    to: Option<&DateTime<FixedOffset>>,
+) -> Result<(), LinearFilterError> {
+    if let (Some(from), Some(to)) = (from, to) {
+        if from > to {
+            return Err(LinearFilterError::ReversedRange { field });
+        }
+    }
+    Ok(())
+}
+
+fn insert_date_range(
+    object: &mut serde_json::Map<String, Value>,
+    field: &'static str,
+    from: Option<DateTime<FixedOffset>>,
+    to: Option<DateTime<FixedOffset>>,
+) {
+    if from.is_none() && to.is_none() {
+        return;
+    }
+    let mut range = serde_json::Map::new();
+    if let Some(value) = from {
+        range.insert(
+            "gte".into(),
+            Value::String(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+        );
+    }
+    if let Some(value) = to {
+        range.insert(
+            "lte".into(),
+            Value::String(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+        );
+    }
+    object.insert(field.into(), Value::Object(range));
 }
 
 /// 어느 커넥션에서 이슈를 가져오는가.
@@ -116,6 +405,14 @@ pub enum LinearSort {
     #[default]
     UpdatedAt,
     CreatedAt,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum LinearSortDirection {
+    #[default]
+    Descending,
+    Ascending,
 }
 
 impl LinearSort {

@@ -18,21 +18,28 @@
 //! 손상되거나 미래 버전이면 빈 값으로 시작한다 — 캐시는 재구성 가능하므로
 //! 앱을 실패시킬 이유가 없다.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::providers::linear::LinearTeam;
+use crate::providers::linear::{
+    LinearGlobalMetadata, LinearKnownIds, LinearTeam, LinearTeamMetadata, LinearUserOption,
+};
 use crate::storage::atomic::write_json_atomic;
 use crate::storage::error::StorageResult;
 use crate::storage::migrate::{load_or_default, Loaded, Migration, MigrationSet};
 
 pub const LINEAR_META_FILE: &str = "linear_meta.json";
-pub const LINEAR_META_SCHEMA_VERSION: u32 = 1;
+pub const LINEAR_META_SCHEMA_VERSION: u32 = 2;
 
-static MIGRATIONS: &[Migration] = &[];
+static MIGRATIONS: &[Migration] = &[Migration {
+    from: 1,
+    to: 2,
+    apply: migrate_v1_to_v2,
+}];
 
 static MIGRATION_SET: MigrationSet = MigrationSet {
     current_version: LINEAR_META_SCHEMA_VERSION,
@@ -43,19 +50,18 @@ static MIGRATION_SET: MigrationSet = MigrationSet {
 #[serde(rename_all = "camelCase")]
 pub struct LinearMetaFile {
     pub version: u32,
-    /// 마지막으로 네트워크에서 받아온 시각. ↻ 옆의 "3일 전" 표시에 쓴다.
     #[serde(default)]
-    pub teams_fetched_at: Option<DateTime<Utc>>,
+    pub global: LinearGlobalMetadata,
     #[serde(default)]
-    pub teams: Vec<LinearTeam>,
+    pub teams: BTreeMap<String, LinearTeamMetadata>,
 }
 
 impl Default for LinearMetaFile {
     fn default() -> Self {
         Self {
             version: LINEAR_META_SCHEMA_VERSION,
-            teams_fetched_at: None,
-            teams: Vec::new(),
+            global: LinearGlobalMetadata::default(),
+            teams: BTreeMap::new(),
         }
     }
 }
@@ -73,16 +79,16 @@ impl LinearMetaStore {
     }
 
     pub fn teams(&self) -> &[LinearTeam] {
-        &self.data.teams
+        &self.data.global.teams.items
     }
 
     pub fn fetched_at(&self) -> Option<DateTime<Utc>> {
-        self.data.teams_fetched_at
+        self.data.global.teams.fetched_at
     }
 
     /// 캐시에 쓸 만한 것이 있는가. 빈 목록은 "아직 받은 적 없음"과 같게 본다.
     pub fn has_teams(&self) -> bool {
-        !self.data.teams.is_empty()
+        !self.data.global.teams.items.is_empty()
     }
 
     /// 팀 목록을 갈아끼운다.
@@ -91,13 +97,98 @@ impl LinearMetaStore {
     /// 개념이 팀에 없고, 팀 수는 대개 한 자리다.
     pub fn set_teams(&mut self, teams: Vec<LinearTeam>, fetched_at: DateTime<Utc>) {
         self.data.version = LINEAR_META_SCHEMA_VERSION;
-        self.data.teams = teams;
-        self.data.teams_fetched_at = Some(fetched_at);
+        self.data.global.teams.items = teams;
+        self.data.global.teams.fetched_at = Some(fetched_at);
+        self.data.global.teams.truncated = false;
+    }
+
+    pub fn global(&self) -> &LinearGlobalMetadata {
+        &self.data.global
+    }
+
+    pub fn team(&self, team_id: &str) -> Option<&LinearTeamMetadata> {
+        self.data.teams.get(team_id)
+    }
+
+    pub fn known_ids(&self) -> LinearKnownIds {
+        let team_ids = self
+            .data
+            .global
+            .teams
+            .items
+            .iter()
+            .map(|team| team.id.clone());
+        let project_ids = self
+            .data
+            .teams
+            .values()
+            .flat_map(|team| team.projects.items.iter().map(|project| project.id.clone()));
+        let label_ids = self
+            .data
+            .global
+            .labels
+            .items
+            .iter()
+            .map(|label| label.id.clone());
+        let state_types = self.data.teams.values().flat_map(|team| {
+            team.states
+                .items
+                .iter()
+                .map(|state| state.type_name.clone())
+        });
+
+        LinearKnownIds::new(team_ids, project_ids, label_ids, state_types)
+    }
+
+    pub fn set_global(&mut self, global: LinearGlobalMetadata) {
+        self.data.version = LINEAR_META_SCHEMA_VERSION;
+        self.data.global = global;
+    }
+
+    pub fn set_viewer(&mut self, viewer: LinearUserOption) {
+        self.data.version = LINEAR_META_SCHEMA_VERSION;
+        self.data.global.viewer = Some(viewer);
+    }
+
+    pub fn set_team(&mut self, team: LinearTeamMetadata) {
+        self.data.version = LINEAR_META_SCHEMA_VERSION;
+        self.data.teams.insert(team.team_id.clone(), team);
     }
 
     pub fn save(&self) -> StorageResult<()> {
         write_json_atomic(&self.path, &self.data)
     }
+}
+
+fn migrate_v1_to_v2(mut value: serde_json::Value) -> Result<serde_json::Value, String> {
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| "Linear 메타데이터 v1이 객체가 아닙니다".to_owned())?;
+    let teams = object
+        .remove("teams")
+        .unwrap_or_else(|| serde_json::json!([]));
+    let fetched_at = object
+        .remove("teamsFetchedAt")
+        .unwrap_or(serde_json::Value::Null);
+
+    object.insert(
+        "global".to_owned(),
+        serde_json::json!({
+            "teams": {
+                "items": teams,
+                "fetchedAt": fetched_at,
+                "truncated": false
+            },
+            "viewer": null,
+            "labels": {
+                "items": [],
+                "fetchedAt": null,
+                "truncated": false
+            }
+        }),
+    );
+    object.insert("teams".to_owned(), serde_json::json!({}));
+    Ok(value)
 }
 
 #[cfg(test)]

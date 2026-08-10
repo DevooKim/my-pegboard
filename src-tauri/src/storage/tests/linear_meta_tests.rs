@@ -8,7 +8,10 @@ use std::fs;
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
-use crate::providers::linear::LinearTeam;
+use crate::providers::linear::{
+    LinearGlobalMetadata, LinearKnownIds, LinearMetadataList, LinearProjectOption, LinearTeam,
+    LinearTeamMetadata, LinearUserOption, LinearWorkflowState,
+};
 use crate::storage::linear_meta::{LinearMetaStore, LINEAR_META_FILE};
 use crate::storage::migrate::LoadOutcome;
 
@@ -18,6 +21,114 @@ fn team(id: &str, key: &str) -> LinearTeam {
         key: key.to_string(),
         name: format!("{key} 팀"),
     }
+}
+
+fn list<T>(items: Vec<T>) -> LinearMetadataList<T> {
+    LinearMetadataList {
+        items,
+        fetched_at: Some(Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()),
+        truncated: false,
+    }
+}
+
+fn global_metadata(teams: Vec<LinearTeam>) -> LinearGlobalMetadata {
+    LinearGlobalMetadata {
+        teams: list(teams),
+        viewer: None,
+        labels: list(Vec::new()),
+    }
+}
+
+fn team_metadata(team_id: &str, state_name: &str) -> LinearTeamMetadata {
+    LinearTeamMetadata {
+        team_id: team_id.into(),
+        states: list(vec![LinearWorkflowState {
+            id: format!("state-{team_id}"),
+            name: state_name.into(),
+            color: "#8a8f98".into(),
+            type_name: "unstarted".into(),
+            position: 0.0,
+        }]),
+        members: list(vec![LinearUserOption {
+            id: format!("member-{team_id}"),
+            name: format!("{team_id} member"),
+            avatar_url: None,
+        }]),
+        projects: list(vec![LinearProjectOption {
+            id: format!("project-{team_id}"),
+            name: format!("{team_id} project"),
+            team_id: team_id.into(),
+        }]),
+    }
+}
+
+#[test]
+fn migrates_v1_team_list_into_v2_global_metadata() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(LINEAR_META_FILE),
+        r#"{
+          "version":1,
+          "teamsFetchedAt":"2026-08-07T12:00:00Z",
+          "teams":[{"id":"t1","key":"ENG","name":"Engineering"}]
+        }"#,
+    )
+    .unwrap();
+
+    let (store, outcome) = LinearMetaStore::load(dir.path()).unwrap();
+
+    assert_eq!(outcome, LoadOutcome::Migrated { from: 1, to: 2 });
+    assert_eq!(store.global().teams.items[0].id, "t1");
+    assert_eq!(
+        store.global().teams.fetched_at,
+        Some("2026-08-07T12:00:00Z".parse().unwrap())
+    );
+}
+
+#[test]
+fn replacing_one_team_preserves_global_and_other_teams() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
+    store.set_team(team_metadata("team-design", "Design Todo"));
+    let global_before = store.global().clone();
+    let other_before = store.team("team-design").cloned();
+
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+
+    assert_eq!(store.global(), &global_before);
+    assert_eq!(store.team("team-design"), other_before.as_ref());
+}
+
+#[test]
+fn replacing_global_preserves_cached_team_scopes() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+    let team_before = store.team("team-eng").cloned();
+
+    store.set_global(global_metadata(vec![team("team-design", "DES")]));
+
+    assert_eq!(store.team("team-eng"), team_before.as_ref());
+    assert!(store.team("team-design").is_none());
+}
+
+#[test]
+fn known_ids_union_cached_teams_and_team_choices() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    store.set_team(team_metadata("team-eng", "Todo"));
+
+    let known: LinearKnownIds = store.known_ids();
+
+    assert!(known.team_ids.contains("team-eng"));
+    assert!(known.project_ids.contains("project-team-eng"));
+    assert!(known.state_types.contains("unstarted"));
 }
 
 #[test]

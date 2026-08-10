@@ -57,10 +57,12 @@ mod tests;
 pub use client::{LinearClient, LinearCredentials};
 pub use error::{ErrorKind, LinearError, LinearResult};
 pub use presets::{
-    apply_team_scope, LinearPreset, LinearQuery, LinearSort, PresetScope, DEFAULT_PRESET_ID,
+    apply_team_scope, LinearAssigneeFilter, LinearCustomFilter, LinearFilterError, LinearKnownIds,
+    LinearPreset, LinearQuery, LinearSort, LinearSortDirection, PresetScope, DEFAULT_PRESET_ID,
     PRESETS,
 };
 pub use types::{
-    LinearIssue, LinearIssueDetail, LinearIssuePage, LinearState, LinearTeam, LinearViewer,
-    LinearWorkflowState,
+    LinearCreateIssueInput, LinearGlobalMetadata, LinearIssue, LinearIssueDetail, LinearIssuePage,
+    LinearLabelOption, LinearMetadataList, LinearProjectOption, LinearState, LinearTeam,
+    LinearTeamMetadata, LinearUserOption, LinearViewer, LinearWorkflowState,
 };

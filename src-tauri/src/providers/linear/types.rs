@@ -19,6 +19,7 @@
 //! GitHub 양쪽에 있어 생성물에 같은 타입이 두 번 나온 사고가 있었다.
 //! IPC 경계로 나가는 타입에는 provider 이름을 접두사로 붙인다.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -126,7 +127,7 @@ pub struct LinearIssueDetail {
 }
 
 /// 설정창 팀 목록의 한 줄.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LinearTeam {
     pub id: String,
@@ -159,6 +160,81 @@ pub struct LinearWorkflowState {
 pub struct LinearViewer {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearMetadataList<T> {
+    pub items: Vec<T>,
+    pub fetched_at: Option<DateTime<Utc>>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearUserOption {
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearProjectOption {
+    pub id: String,
+    pub name: String,
+    pub team_id: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearLabelOption {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearGlobalMetadata {
+    pub teams: LinearMetadataList<LinearTeam>,
+    pub viewer: Option<LinearUserOption>,
+    pub labels: LinearMetadataList<LinearLabelOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearTeamMetadata {
+    pub team_id: String,
+    pub states: LinearMetadataList<LinearWorkflowState>,
+    pub members: LinearMetadataList<LinearUserOption>,
+    pub projects: LinearMetadataList<LinearProjectOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearCreateIssueInput {
+    pub team_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub state_id: Option<String>,
+    pub assignee_id: Option<String>,
+    pub priority: Option<u8>,
+    pub project_id: Option<String>,
+}
+
+impl LinearCreateIssueInput {
+    pub fn to_graphql_input(&self) -> serde_json::Value {
+        serde_json::json!({
+            "teamId": self.team_id,
+            "title": self.title,
+            "description": self.description,
+            "stateId": self.state_id,
+            "assigneeId": self.assignee_id,
+            "priority": self.priority,
+            "projectId": self.project_id,
+        })
+    }
 }
 
 // ─────────────────────────── GraphQL 응답 파싱용 ───────────────────────────
@@ -227,6 +303,10 @@ pub(crate) struct PageInfo {
     pub has_next_page: bool,
     #[serde(default)]
     pub end_cursor: Option<String>,
+    #[serde(default)]
+    pub has_previous_page: bool,
+    #[serde(default)]
+    pub start_cursor: Option<String>,
 }
 
 /// GraphQL의 이슈 노드. **모든 필드가 `Option` + `serde(default)`다** —
@@ -313,15 +393,22 @@ pub(crate) struct ProjectNode {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct LabelConnection {
     #[serde(default)]
     pub nodes: Vec<Option<LabelNode>>,
+    #[serde(default)]
+    pub page_info: Option<PageInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct LabelNode {
     #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
     pub name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 /// `issue(id:) { description branchName }`
@@ -352,9 +439,12 @@ pub(crate) struct TeamsData {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct TeamConnection {
     #[serde(default)]
     pub nodes: Vec<Option<TeamNode>>,
+    #[serde(default)]
+    pub page_info: Option<PageInfo>,
 }
 
 /// `team(id:) { states { nodes { ... } } }`
@@ -371,9 +461,12 @@ pub(crate) struct TeamWithStates {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct StateConnection {
     #[serde(default)]
     pub nodes: Vec<Option<StateNode>>,
+    #[serde(default)]
+    pub page_info: Option<PageInfo>,
 }
 
 /// `viewer { id name }`
@@ -381,6 +474,64 @@ pub(crate) struct StateConnection {
 pub(crate) struct ViewerData {
     #[serde(default)]
     pub viewer: Option<UserNode>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct GlobalMetadataData {
+    #[serde(default)]
+    pub viewer: Option<UserNode>,
+    #[serde(default)]
+    pub teams: Option<TeamConnection>,
+    #[serde(default, rename = "issueLabels")]
+    pub issue_labels: Option<LabelConnection>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct TeamMetadataData {
+    #[serde(default)]
+    pub team: Option<TeamMetadataNode>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TeamMetadataNode {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub states: Option<StateConnection>,
+    #[serde(default)]
+    pub members: Option<UserConnection>,
+    #[serde(default)]
+    pub projects: Option<ProjectConnection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UserConnection {
+    #[serde(default)]
+    pub nodes: Vec<Option<UserNode>>,
+    #[serde(default)]
+    pub page_info: Option<PageInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectConnection {
+    #[serde(default)]
+    pub nodes: Vec<Option<ProjectMetadataNode>>,
+    #[serde(default)]
+    pub page_info: Option<PageInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectMetadataNode {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub team: Option<TeamNode>,
 }
 
 /// `issueUpdate(...) { success }`
@@ -394,6 +545,20 @@ pub(crate) struct IssueUpdateData {
 pub(crate) struct IssuePayload {
     #[serde(default)]
     pub success: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct IssueCreateData {
+    #[serde(default, rename = "issueCreate")]
+    pub issue_create: Option<IssueCreatePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct IssueCreatePayload {
+    #[serde(default)]
+    pub success: Option<bool>,
+    #[serde(default)]
+    pub issue: Option<IssueNode>,
 }
 
 impl IssueNode {
@@ -484,6 +649,20 @@ impl TeamNode {
             key: self.key.clone().unwrap_or_default(),
             name: self.name.or(self.key).unwrap_or_default(),
             id,
+        })
+    }
+}
+
+impl UserNode {
+    pub(crate) fn into_user_option(self) -> Option<LinearUserOption> {
+        let id = self.id?;
+        Some(LinearUserOption {
+            id,
+            name: self
+                .display_name
+                .or(self.name)
+                .unwrap_or_else(|| "이름 없음".to_owned()),
+            avatar_url: self.avatar_url,
         })
     }
 }

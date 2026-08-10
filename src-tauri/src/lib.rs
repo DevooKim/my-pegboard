@@ -75,6 +75,8 @@ pub fn run() {
         commands::linear::linear_verify,
         commands::linear::linear_fetch,
         commands::linear::linear_cached,
+        commands::linear::linear_metadata,
+        commands::linear::linear_create_issue,
         commands::linear::linear_issue,
         commands::linear::linear_teams,
         commands::linear::linear_team_states,

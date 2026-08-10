@@ -404,6 +404,22 @@ async linearCached(widgetId: string) : Promise<Result<LinearWidgetData | null, s
     else return { status: "error", error: e  as any };
 }
 },
+async linearMetadata(teamId: string | null, refresh: boolean) : Promise<Result<LinearMetadataResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("linear_metadata", { teamId, refresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async linearCreateIssue(input: LinearCreateIssueInput) : Promise<Result<LinearIssue, LinearCreateFailure>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("linear_create_issue", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 이슈 본문(markdown). 상세 모달이 골격을 그린 뒤에 채운다.
  * 
@@ -1345,6 +1361,7 @@ isAuthFailure: boolean; retryAfterSecs: number | null;
  */
 stale: JiraWidgetData | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type LinearAssigneeFilter = "any" | "viewer" | "unassigned"
 /**
  * 모달·팝오버에서 쓰는 단발 호출 실패.
  * 
@@ -1357,6 +1374,10 @@ export type LinearCallError = { kind: string;
  * Linear 원문 그대로. 우리가 고쳐 쓰지 않는다.
  */
 message: string; isAuthFailure: boolean; retryAfterSecs: number | null }
+export type LinearCreateFailure = { kind: string; message: string; isAuthFailure: boolean; possiblyCreated: boolean; checkUrl: string }
+export type LinearCreateIssueInput = { teamId: string; title: string; description: string | null; stateId: string | null; assigneeId: string | null; priority: number | null; projectId: string | null }
+export type LinearCustomFilter = { teamIds?: string[]; assignee?: LinearAssigneeFilter; stateTypes?: string[]; projectIds?: string[]; labelIds?: string[]; priorities?: number[]; createdFrom?: string | null; createdTo?: string | null; updatedFrom?: string | null; updatedTo?: string | null }
+export type LinearGlobalMetadata = { teams: LinearMetadataList<LinearTeam>; viewer: LinearUserOption | null; labels: LinearMetadataList<LinearLabelOption> }
 /**
  * 목록 한 줄. **화면이 그리는 모양 그대로**다.
  */
@@ -1441,6 +1462,9 @@ description: string | null;
  * `sammy/eng-142-redirect`. 브랜치를 만들 때 복사해 쓴다.
  */
 branchName: string | null }
+export type LinearLabelOption = { id: string; name: string; color: string }
+export type LinearMetadataList<T> = { items: T[]; fetchedAt: string | null; truncated: boolean }
+export type LinearMetadataResponse = { global: LinearGlobalMetadata; team: LinearTeamMetadata | null; refreshError: LinearCallError | null }
 /**
  * 프리셋 정의. 정적 테이블이므로 `&'static str`.
  */
@@ -1453,6 +1477,7 @@ id: string; name: string; description: string; scope: PresetScope;
  * 완료된 이슈를 제외하는가.
  */
 openOnly: boolean }
+export type LinearProjectOption = { id: string; name: string; teamId: string }
 /**
  * 위젯 config에 저장되는 쿼리.
  * 
@@ -1465,9 +1490,13 @@ openOnly: boolean }
  */
 export type LinearQuery = 
 /**
- * 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 `None`을 준다.
+ * 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 오류를 준다.
  */
-{ kind: "preset"; id: string }
+{ kind: "preset"; id: string } | 
+/**
+ * 타입화된 AND 조건. GraphQL JSON을 직접 저장하지 않는다.
+ */
+{ kind: "custom"; filter: LinearCustomFilter }
 /**
  * 정렬. **스키마가 주는 것이 이 둘뿐이다.**
  * 
@@ -1481,6 +1510,7 @@ export type LinearSort =
  * 기본값. "지금 뭐가 움직였나"가 이 앱의 목적이다.
  */
 "updatedAt" | "createdAt"
+export type LinearSortDirection = "descending" | "ascending"
 /**
  * 워크플로우 상태.
  * 
@@ -1516,6 +1546,8 @@ export type LinearTeam = { id: string;
  */
 key: string; name: string }
 export type LinearTeamList = { teams: LinearTeam[]; fetchedAt: string | null }
+export type LinearTeamMetadata = { teamId: string; states: LinearMetadataList<LinearWorkflowState>; members: LinearMetadataList<LinearUserOption>; projects: LinearMetadataList<LinearProjectOption> }
+export type LinearUserOption = { id: string; name: string; avatarUrl: string | null }
 export type LinearWidgetConfig = { 
 /**
  * 사용자가 붙인 위젯 이름. 비어 있으면 프리셋 이름을 쓴다.
@@ -1531,7 +1563,7 @@ teams?: string[];
 /**
  * **정렬은 두 종뿐이다.** `PaginationOrderBy`가 그것만 준다 (DECISIONS 25.3).
  */
-sort?: LinearSort; 
+sort?: LinearSort; sortDirection?: LinearSortDirection; 
 /**
  * 팀별로 묶어서 보여줄까. 기본 켬.
  */
