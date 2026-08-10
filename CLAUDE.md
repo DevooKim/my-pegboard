@@ -442,8 +442,10 @@ cd src-tauri && cargo check && cd ..
 bun run typecheck && bun run lint && bun run test
 cd src-tauri && cargo test && cd ..
 
-# 3. ★ 서명 키를 환경변수로 — 없으면 updater 번들이 조용히 안 만들어진다
-#    비밀번호는 키체인에서 읽는다. 명령줄에 적으면 셸 히스토리에 남는다.
+# 3. ★ 코드 서명 신원 + updater 서명 키
+#    코드 서명은 tauri.conf.json에 고정한 `my-pegboard Dev` 지문을 쓴다. 인증서가 없으면
+#    ad-hoc으로 폴백하지 말고 빌드를 실패시킨다.
+#    updater 비밀번호는 키체인에서 읽는다. 명령줄에 적으면 셸 히스토리에 남는다.
 #    최초 1회 등록:
 #      security add-generic-password -a "$USER" -s my-pegboard-updater-key -w '<비밀번호>'
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/my-pegboard.key)"
@@ -455,7 +457,7 @@ bun run tauri build
 # 5. latest.json 생성 (손으로 만들지 말 것)
 ./scripts/make-latest-json.sh
 
-# 6. ★ 배포 전 검사 — 건너뛰지 말 것 (검사 9개)
+# 6. ★ 배포 전 검사 — 건너뛰지 말 것 (검사 10개)
 ./scripts/verify-release.sh
 
 # 7. 태그 + 릴리즈 — 에셋 4개 전부, --prerelease 없이
@@ -474,10 +476,13 @@ gh release create vX.Y.Z-alpha --notes-file <notes> \
 
 **⚠️ `latest.json`이 빠지면 기존 사용자는 새 버전을 영원히 못 본다.** 조용한 실패다.
 
-**3번이 있는 이유:** 개인키 없이 빌드하면 tauri가 updater 번들을 **에러 없이 그냥
+**3번이 있는 이유:** `my-pegboard Dev`는 업데이트 사이에 코드 신원을 유지해
+키체인의 `항상 허용`을 다음 버전에도 이어준다. 이 인증서나 개인 키를 잃고 새로
+만들면 다음 업데이트에서 키체인을 다시 묻는다. 별도로 updater 개인키 없이 빌드하면
+tauri가 updater 번들을 **에러 없이 그냥
 만들지 않는다.** dmg는 정상이라 빌드한 기기에서는 아무 이상이 없고, 기존 사용자만
 "새 버전이 안 뜬다"를 겪는다. v0.3.0 서명 사고와 구조가 같다. `verify-release.sh`의
-검사 6이 이걸 막는다. **키/비밀번호를 잃으면 이미 배포된 앱은 영구히 업데이트를
+검사 7이 이걸 막는다. **updater 키/비밀번호를 잃으면 이미 배포된 앱은 영구히 업데이트를
 받지 못한다** (DECISIONS 23.2).
 
 **4번이 있는 이유:** v0.3.0-alpha를 **서명되지 않은 채로 배포했다.** 다른
