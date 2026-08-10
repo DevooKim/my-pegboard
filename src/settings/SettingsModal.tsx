@@ -2,8 +2,9 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { AlertCircle, Check, ExternalLink, Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import appIcon from '#/assets/icon.png'
-import { commands } from '#/ipc/bindings'
+import { type BoardImportCandidate, type BoardImportMode, commands } from '#/ipc/bindings'
 import { IN_TAURI } from '#/ipc/env'
+import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { RELEASES_PAGE, type UpdatePhase, useUpdateStore } from '#/store/update'
 import { Modal } from '#/ui/Modal'
@@ -21,7 +22,7 @@ type TestState =
   | { kind: 'ok'; displayName: string }
   | { kind: 'failed'; message: string }
 
-export type SettingsTab = 'connections' | 'about'
+export type SettingsTab = 'connections' | 'board' | 'about'
 
 /**
  * 통합 설정창 (DECISIONS 15장).
@@ -29,10 +30,8 @@ export type SettingsTab = 'connections' | 'about'
  * 별도 Tauri 창이 아니라 전체 모달인 이유: 별도 창은 위치 기억·중복 방지·
  * 포커스 관리라는 상태가 늘지만 얻는 게 없다. 잠깐 열었다 닫는 화면이다.
  *
- * 탭이 **연결/정보 둘**인 이유: 연결(Jira·GitHub)은 한 번 넣고 안 건드리는 것이고
- * 정보(버전·업데이트)는 자주 보는 것이다. 한 스크롤에 쌓으면 자주 보는 쪽이
- * 아래로 밀린다. Jira와 GitHub를 각각의 탭으로 쪼개지 않는 이유는 둘 다
- * "토큰 넣기" 한 덩어리라, 쪼개면 탭 이동만 늘기 때문이다.
+ * 연결·보드·정보를 별도 탭으로 나눈다. 연결은 자격증명, 보드는 배치 전송,
+ * 정보는 버전/업데이트라는 서로 다른 책임이라 한 스크롤에 섞지 않는다.
  *
  * 토큰은 이 폼을 떠나 키체인으로 바로 간다. 어떤 상태에도 보관하지 않고,
  * 저장 직후 입력을 비운다.
@@ -70,6 +69,9 @@ export function SettingsModal({
             <TabButton id="connections" current={tab} onSelect={setTab}>
               연결
             </TabButton>
+            <TabButton id="board" current={tab} onSelect={setTab}>
+              보드
+            </TabButton>
             <TabButton id="about" current={tab} onSelect={setTab}>
               정보
             </TabButton>
@@ -100,12 +102,258 @@ export function SettingsModal({
             <hr className="my-5 border-border-subtle" />
             <LinearSection onSaved={onSaved} />
           </>
+        ) : tab === 'board' ? (
+          <BoardSection />
         ) : (
           <AboutSection />
         )}
       </div>
     </Modal>
   )
+}
+
+function BoardSection() {
+  const replaceFromImport = useBoardStore((state) => state.replaceFromImport)
+  const [preview, setPreview] = useState<BoardImportCandidate | null>(null)
+  const [mode, setMode] = useState<BoardImportMode>('replace')
+  const [exportState, setExportState] = useState<
+    { kind: 'idle' } | { kind: 'ok'; path: string } | { kind: 'error'; message: string }
+  >({ kind: 'idle' })
+  const [importError, setImportError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'export' | 'preview' | 'apply' | null>(null)
+
+  const exportBoard = useCallback(async () => {
+    setBusy('export')
+    setExportState({ kind: 'idle' })
+    try {
+      const result = await commands.boardExport()
+      if (result.status === 'error') {
+        setExportState({ kind: 'error', message: result.error })
+      } else if (result.data) {
+        setExportState({ kind: 'ok', path: result.data })
+      }
+    } catch (error) {
+      setExportState({ kind: 'error', message: errorMessage(error) })
+    } finally {
+      setBusy(null)
+    }
+  }, [])
+
+  const previewImport = useCallback(async () => {
+    setBusy('preview')
+    setImportError(null)
+    try {
+      const result = await commands.boardImportPreview()
+      if (result.status === 'error') {
+        setImportError(result.error)
+      } else if (result.data) {
+        setMode('replace')
+        setPreview(result.data)
+      }
+    } catch (error) {
+      setImportError(errorMessage(error))
+    } finally {
+      setBusy(null)
+    }
+  }, [])
+
+  const applyImport = useCallback(async () => {
+    if (!preview) return
+    setBusy('apply')
+    setImportError(null)
+    try {
+      const result = await commands.boardImportApply(preview.file, mode)
+      if (result.status === 'error') {
+        setImportError(result.error)
+        return
+      }
+      // Rust and the existing frontend store share the same wire shape. The
+      // generated JsonValue config is intentionally wider than the widget
+      // registry's local config type, so this is the one IPC hydration seam.
+      replaceFromImport(result.data as never)
+      setPreview(null)
+    } catch (error) {
+      setImportError(errorMessage(error))
+    } finally {
+      setBusy(null)
+    }
+  }, [mode, preview, replaceFromImport])
+
+  return (
+    <section className="flex flex-col gap-5">
+      <div>
+        <h3 className="text-caption text-text-secondary">보드 설정</h3>
+        <p className="mt-0.5 text-caption text-text-tertiary leading-relaxed-ko">
+          보드, 배치, 위젯 설정만 내보냅니다. 토큰·이메일·Todo 데이터·API 캐시는 포함하지 않습니다.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h4 className="text-caption text-text-secondary">내보내기</h4>
+        <button
+          type="button"
+          onClick={() => void exportBoard()}
+          disabled={busy !== null}
+          className={`${primaryPill} self-start disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          {busy === 'export' && <Loader2 size={13} className="mr-1.5 inline animate-spin" />}
+          내보내기
+        </button>
+        {exportState.kind === 'ok' && (
+          <p className="flex items-start gap-1.5 text-caption text-success">
+            <Check size={13} className="mt-0.5 shrink-0" />
+            내보냈습니다: <span className="break-all">{exportState.path}</span>
+          </p>
+        )}
+        {exportState.kind === 'error' && (
+          <p className="text-caption text-danger leading-relaxed-ko">{exportState.message}</p>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h4 className="text-caption text-text-secondary">가져오기</h4>
+        <button
+          type="button"
+          onClick={() => void previewImport()}
+          disabled={busy !== null}
+          className={`${neutralPill} self-start disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          {busy === 'preview' && <Loader2 size={13} className="mr-1.5 inline animate-spin" />}
+          가져오기
+        </button>
+        {importError && (
+          <p className="text-caption text-danger leading-relaxed-ko">{importError}</p>
+        )}
+      </div>
+
+      {preview && (
+        <ImportPreview
+          candidate={preview}
+          mode={mode}
+          busy={busy}
+          onModeChange={setMode}
+          onApply={() => void applyImport()}
+          onCancel={() => {
+            setPreview(null)
+            setImportError(null)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+function ImportPreview({
+  candidate,
+  mode,
+  busy,
+  onModeChange,
+  onApply,
+  onCancel,
+}: {
+  candidate: BoardImportCandidate
+  mode: BoardImportMode
+  busy: 'export' | 'preview' | 'apply' | null
+  onModeChange: (mode: BoardImportMode) => void
+  onApply: () => void
+  onCancel: () => void
+}) {
+  const { preview } = candidate
+  return (
+    <section className="flex flex-col gap-3 rounded border border-border-subtle bg-surface-inset p-3">
+      <div>
+        <h4 className="text-caption text-text-secondary">가져오기 미리보기</h4>
+        <p className="mt-1 text-caption text-text-primary">
+          보드 {preview.boardCount}개 · 위젯 {preview.widgetCount}개
+        </p>
+        <p className="text-caption text-text-tertiary">
+          export v{preview.formatVersion} · board v{preview.boardSchemaVersion}
+        </p>
+      </div>
+
+      {preview.widgetCounts.length > 0 && (
+        <ul className="flex flex-col gap-1 text-caption text-text-secondary">
+          {preview.widgetCounts.map((item) => (
+            <li key={item.widgetType}>
+              {item.widgetType}: {item.count}개
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {preview.albumPathWarnings.length > 0 && (
+        <div className="flex flex-col gap-1 rounded bg-warning-muted p-2 text-caption text-warning">
+          <p className="flex items-center gap-1.5">
+            <AlertCircle size={13} />
+            찾을 수 없는 앨범 경로
+          </p>
+          <ul className="flex flex-col gap-0.5 break-all pl-5">
+            {preview.albumPathWarnings.map((warning) => (
+              <li key={warning.path}>{warning.path}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="text-caption text-text-secondary">가져오기 방식</legend>
+        <label className="flex items-start gap-2 text-caption text-text-primary">
+          <input
+            type="radio"
+            name="board-import-mode"
+            value="replace"
+            aria-label="교체"
+            checked={mode === 'replace'}
+            onChange={() => onModeChange('replace')}
+          />
+          <span>
+            <span className="block">교체</span>
+            {mode === 'replace' && (
+              <span className="block text-danger">현재 보드 구성이 사라집니다.</span>
+            )}
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-caption text-text-primary">
+          <input
+            type="radio"
+            name="board-import-mode"
+            value="merge"
+            aria-label="병합"
+            checked={mode === 'merge'}
+            onChange={() => onModeChange('merge')}
+          />
+          <span>
+            <span className="block">병합</span>
+            <span className="block text-text-tertiary">가져온 보드와 위젯 ID를 새로 만듭니다.</span>
+          </span>
+        </label>
+      </fieldset>
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={busy !== null}
+          className={`${primaryPill} disabled:cursor-not-allowed disabled:opacity-40`}
+        >
+          {busy === 'apply' && <Loader2 size={13} className="mr-1.5 inline animate-spin" />}
+          {mode === 'replace' ? '교체 적용' : '병합 적용'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy !== null}
+          className="rounded-md px-3 py-1.5 text-caption text-text-tertiary hover:text-text-primary disabled:opacity-40"
+        >
+          취소
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function TabButton({

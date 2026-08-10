@@ -6,7 +6,9 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use crate::storage::board::{
-    BoardStore, Widget, WidgetLayout, WidgetType, BOARD_FILE, DEFAULT_BOARD_ID,
+    build_import_result, validate_import, AlbumPathWarning, Board, BoardExportFile, BoardFile,
+    BoardImportMode, BoardStore, Widget, WidgetLayout, WidgetType, BOARD_FILE,
+    BOARD_SCHEMA_VERSION, DEFAULT_BOARD_ID,
 };
 use crate::storage::error::StorageError;
 
@@ -522,4 +524,229 @@ fn a_widget_with_no_config_key_defaults_to_null() {
     let (s, _) = BoardStore::load(dir.path()).unwrap();
 
     assert_eq!(s.widget("w1").unwrap().config, serde_json::Value::Null);
+}
+
+// ---------------------------------------------------------- board transfer
+
+fn export(file: BoardFile) -> BoardExportFile {
+    BoardExportFile::new(file, "2026-08-10T00:00:00Z".to_string())
+}
+
+#[test]
+fn export_envelope_contains_only_board_metadata_and_board_settings() {
+    let value = serde_json::to_value(export(BoardFile::default())).unwrap();
+    let keys = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(keys, vec!["board", "exportedAt", "formatVersion"]);
+    let serialized = value.to_string();
+    for forbidden in ["token", "email", "apiKey", "todos", "cache"] {
+        assert!(
+            !serialized.contains(forbidden),
+            "export envelope leaked {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn export_rejects_sensitive_widget_config_instead_of_serializing_it() {
+    for key in [
+        "apiKey",
+        "accessToken",
+        "refreshToken",
+        "authToken",
+        "clientSecret",
+        "secretKey",
+        "emailAddress",
+        "credential",
+        "cachedResponse",
+    ] {
+        let mut board = BoardFile::default();
+        let mut jira = widget("sensitive", WidgetType::Jira);
+        jira.config = json!({ key: "must-not-leave-the-app" });
+        board.boards[0].widgets.push(jira);
+
+        let error = crate::storage::board::validate_export(&board).unwrap_err();
+        assert!(error.to_string().contains(key), "{key} was not rejected");
+    }
+}
+
+#[test]
+fn import_rejects_future_versions_empty_boards_duplicate_ids_unknown_types_and_caps() {
+    let mut future_format = export(BoardFile::default());
+    future_format.format_version += 1;
+    assert!(validate_import(&future_format).is_err());
+
+    let mut future_board = export(BoardFile::default());
+    future_board.board.version = BOARD_SCHEMA_VERSION + 1;
+    assert!(validate_import(&future_board).is_err());
+
+    let mut empty = BoardFile::default();
+    empty.boards.clear();
+    assert!(validate_import(&export(empty)).is_err());
+
+    let mut duplicate_boards = BoardFile::default();
+    duplicate_boards
+        .boards
+        .push(duplicate_boards.boards[0].clone());
+    assert!(validate_import(&export(duplicate_boards)).is_err());
+
+    let mut duplicate_widgets = BoardFile::default();
+    duplicate_widgets.boards.push(Board {
+        id: "second".into(),
+        name: "Second".into(),
+        widgets: vec![widget("same", WidgetType::Jira)],
+    });
+    duplicate_widgets.boards[0]
+        .widgets
+        .push(widget("same", WidgetType::Todo));
+    assert!(validate_import(&export(duplicate_widgets)).is_err());
+
+    let unknown_type = serde_json::from_value::<BoardExportFile>(json!({
+        "formatVersion": 1,
+        "exportedAt": "2026-08-10T00:00:00Z",
+        "board": {
+            "version": 1,
+            "activeBoardId": "default",
+            "boards": [{
+                "id": "default",
+                "name": "Board",
+                "widgets": [{
+                    "id": "w1",
+                    "type": "future-widget",
+                    "layout": {"x": 0, "y": 0, "w": 4, "h": 3},
+                    "config": {}
+                }]
+            }]
+        }
+    }));
+    assert!(unknown_type.is_err());
+
+    let mut capped = BoardFile::default();
+    capped.boards[0].widgets = (0..=WidgetType::Jira.instance_limit())
+        .map(|n| widget(&format!("jira-{n}"), WidgetType::Jira))
+        .collect();
+    assert!(validate_import(&export(capped)).is_err());
+}
+
+#[test]
+fn merge_regenerates_ids_activates_first_imported_board_and_resolves_names() {
+    let current = BoardFile {
+        version: BOARD_SCHEMA_VERSION,
+        active_board_id: "existing".into(),
+        boards: vec![Board {
+            id: "existing".into(),
+            name: "업무".into(),
+            widgets: vec![widget("existing-widget", WidgetType::Jira)],
+        }],
+    };
+    let imported = BoardFile {
+        version: BOARD_SCHEMA_VERSION,
+        active_board_id: "imported-a".into(),
+        boards: vec![
+            Board {
+                id: "imported-a".into(),
+                name: "업무".into(),
+                widgets: vec![widget("imported-widget-a", WidgetType::Github)],
+            },
+            Board {
+                id: "imported-b".into(),
+                name: "업무".into(),
+                widgets: vec![widget("imported-widget-b", WidgetType::Todo)],
+            },
+        ],
+    };
+
+    let mut ids = 0;
+    let merged = build_import_result(&current, &imported, BoardImportMode::Merge, || {
+        ids += 1;
+        format!("new-{ids}")
+    })
+    .unwrap();
+
+    assert_eq!(merged.active_board_id, "new-1");
+    assert_eq!(merged.boards[0].name, "업무");
+    assert_eq!(merged.boards[1].name, "업무 (가져옴 2)");
+    assert_eq!(merged.boards[2].name, "업무 (가져옴 3)");
+    assert_eq!(merged.boards[1].id, "new-1");
+    assert_eq!(merged.boards[2].id, "new-3");
+    assert_eq!(merged.boards[1].widgets[0].id, "new-2");
+    assert_eq!(merged.boards[2].widgets[0].id, "new-4");
+    assert_eq!(current.boards[0].id, "existing");
+    assert_eq!(current.boards[0].widgets[0].id, "existing-widget");
+}
+
+#[test]
+fn replace_atomically_preserves_memory_and_disk_when_writer_fails() {
+    let dir = TempDir::new().unwrap();
+    let mut store = store(&dir);
+    store
+        .add_widget_to_active(widget("before", WidgetType::Jira))
+        .unwrap();
+    store.save().unwrap();
+    let before_memory = store.data().clone();
+    let before_disk = fs::read(dir.path().join(BOARD_FILE)).unwrap();
+
+    let next = BoardFile::default();
+    let result = store.replace_atomically_with(next, |_path, _file| {
+        Err(crate::storage::error::StorageError::InvalidPath {
+            path: "injected".into(),
+            reason: "test writer failure".into(),
+        })
+    });
+
+    assert!(result.is_err());
+    assert_eq!(store.data(), &before_memory);
+    assert_eq!(fs::read(dir.path().join(BOARD_FILE)).unwrap(), before_disk);
+}
+
+#[test]
+fn album_path_warnings_report_each_missing_folder_or_file() {
+    let dir = TempDir::new().unwrap();
+    let existing = dir.path().join("exists.jpg");
+    fs::write(&existing, b"image").unwrap();
+    let missing_folder = dir.path().join("missing-folder");
+    let missing_file = dir.path().join("missing.jpg");
+
+    let board = BoardFile {
+        version: BOARD_SCHEMA_VERSION,
+        active_board_id: DEFAULT_BOARD_ID.into(),
+        boards: vec![Board {
+            id: DEFAULT_BOARD_ID.into(),
+            name: "Board".into(),
+            widgets: vec![
+                {
+                    let mut album = widget("album", WidgetType::Album);
+                    album.config = json!({
+                        "source": {"kind": "folder", "path": missing_folder},
+                    });
+                    album
+                },
+                {
+                    let mut album = widget("album-files", WidgetType::Album);
+                    album.config = json!({
+                        "source": {"kind": "files", "paths": [existing, missing_file]},
+                    });
+                    album
+                },
+            ],
+        }],
+    };
+
+    let warnings = crate::providers::album::missing_path_warnings(&board);
+    assert_eq!(
+        warnings,
+        vec![
+            AlbumPathWarning {
+                path: missing_folder.to_string_lossy().into()
+            },
+            AlbumPathWarning {
+                path: missing_file.to_string_lossy().into()
+            },
+        ]
+    );
 }

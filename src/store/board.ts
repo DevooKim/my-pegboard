@@ -41,6 +41,8 @@ interface BoardState {
   hydrated: boolean
 
   hydrate: (file: BoardFile) => void
+  /** Rust has already persisted and validated this exact file. */
+  replaceFromImport: (file: BoardFile) => void
   addWidget: (type: WidgetType) => { ok: true; id: string } | { ok: false; reason: string }
   removeWidget: (id: string) => void
   updateWidgetConfig: (id: string, config: Record<string, unknown>) => void
@@ -88,6 +90,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       version: file.version,
       activeBoardId: file.activeBoardId,
       boards: file.boards.length > 0 ? file.boards : [emptyBoard()],
+      hydrated: true,
+    }),
+
+  replaceFromImport: (file) =>
+    set({
+      version: file.version,
+      activeBoardId: file.activeBoardId,
+      boards: file.boards,
       hydrated: true,
     }),
 

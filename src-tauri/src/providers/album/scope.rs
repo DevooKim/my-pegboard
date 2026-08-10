@@ -24,6 +24,7 @@
 //! 위젯을 훑어 다시 허용한다. `Files` 위젯은 파일을 하나도 빠뜨리면 안 되는데,
 //! 빠진 그 한 장만 안 보이므로 눈으로는 거의 못 잡는다. 그래서 테스트가 있다.
 
+use std::collections::HashSet;
 use tauri::scope::fs::Scope;
 
 use super::types::AlbumSource;
@@ -46,6 +47,26 @@ pub fn album_sources(board: &BoardFile) -> Vec<AlbumSource> {
         .filter(|w| w.widget_type == WidgetType::Album)
         .filter_map(|w| w.config.get("source"))
         .filter_map(|v| serde_json::from_value::<AlbumSource>(v.clone()).ok())
+        .collect()
+}
+
+/// Return stable, unique warnings for album paths that disappeared after an
+/// export. Missing paths are warnings rather than import failures: the user may
+/// reconnect an external disk or restore a folder later.
+pub fn missing_path_warnings(board: &BoardFile) -> Vec<crate::storage::board::AlbumPathWarning> {
+    let mut seen = HashSet::new();
+    album_sources(board)
+        .into_iter()
+        .flat_map(|source| {
+            source
+                .paths()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|path| !std::path::Path::new(path).exists())
+        .filter(|path| seen.insert(path.clone()))
+        .map(|path| crate::storage::board::AlbumPathWarning { path })
         .collect()
 }
 

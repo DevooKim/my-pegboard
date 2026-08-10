@@ -112,6 +112,23 @@ describe('board store', () => {
     expect(state.hydrated).toBe(true)
   })
 
+  it('replaceFromImport는 Rust가 저장한 보드 파일을 한 번에 hydrate한다', () => {
+    const imported = {
+      version: BOARD_SCHEMA_VERSION,
+      activeBoardId: 'imported',
+      boards: [{ id: 'imported', name: '가져온 보드', widgets: [] }],
+    }
+
+    useBoardStore.getState().replaceFromImport(imported)
+
+    expect(useBoardStore.getState()).toMatchObject({
+      version: imported.version,
+      activeBoardId: imported.activeBoardId,
+      boards: imported.boards,
+      hydrated: true,
+    })
+  })
+
   it('등록되지 않은 타입 추가는 조용히 실패하지 않고 예외를 던진다', () => {
     expect(() => useBoardStore.getState().addWidget('github')).toThrow(/등록되지 않은/)
   })

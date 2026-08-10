@@ -643,6 +643,30 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async boardExport() : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_export") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async boardImportPreview() : Promise<Result<BoardImportCandidate | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_import_preview") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async boardImportApply(candidate: BoardExportFile, mode: BoardImportMode) : Promise<Result<BoardFile, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_import_apply", { candidate, mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -656,6 +680,7 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
+export type AlbumPathWarning = { path: string }
 /**
  * 사진 한 장.
  * 
@@ -731,7 +756,23 @@ export type AppInfo = { version: string;
  */
 memory_bytes: number | null }
 export type Board = { id: string; name: string; widgets?: Widget[] }
+/**
+ * The only file shape that leaves the app for board transfer.
+ * Deliberately does not contain `TodoFile`, caches, connections, or secrets.
+ * Those stores are owned by separate files/services and are not part of board
+ * settings. Unknown envelope fields are rejected on import so a hand-edited
+ * file cannot smuggle another store into this boundary.
+ */
+export type BoardExportFile = { formatVersion: number; exportedAt: string; board: BoardFile }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
+/**
+ * Candidate returned by the preview command. The UI sends the exact typed
+ * `file` back when the user confirms; it never reconstructs settings locally.
+ */
+export type BoardImportCandidate = { file: BoardExportFile; preview: BoardImportPreview }
+export type BoardImportMode = "replace" | "merge"
+export type BoardImportPreview = { boardCount: number; widgetCount: number; widgetCounts: BoardImportWidgetCount[]; formatVersion: number; boardSchemaVersion: number; albumPathWarnings: AlbumPathWarning[] }
+export type BoardImportWidgetCount = { widgetType: string; count: number }
 /**
  * One item's before-state, enough to put it back.
  */

@@ -83,4 +83,22 @@ pub enum StorageError {
 
     #[error("a widget with id {id} already exists")]
     DuplicateWidget { id: String },
+
+    #[error("a board with id {id} appears more than once in the import")]
+    DuplicateBoard { id: String },
+
+    #[error("board export format version {found} is newer than supported version {supported}")]
+    FutureExportVersion { found: u32, supported: u32 },
+
+    #[error("board schema version {found} is newer than supported version {supported}")]
+    FutureBoardVersion { found: u32, supported: u32 },
+
+    #[error("the import contains no boards")]
+    EmptyImport,
+
+    #[error("the import is invalid: {reason}")]
+    InvalidImport { reason: String },
+
+    #[error("export would include sensitive widget config field {key}")]
+    InvalidExport { key: String },
 }

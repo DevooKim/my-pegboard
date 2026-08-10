@@ -91,9 +91,12 @@ pub fn run() {
         commands::album::album_pick_folder,
         commands::album::album_pick_files,
         commands::album::album_rescan,
-        commands::album::album_cached,
+            commands::album::album_cached,
             commands::board::board_load,
             commands::board::board_save,
+            commands::board::board_export,
+            commands::board::board_import_preview,
+            commands::board::board_import_apply,
     ]);
 
 
