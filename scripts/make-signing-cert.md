@@ -44,10 +44,13 @@ security find-identity -p codesigning
 security find-certificate -c "my-pegboard Dev" -Z | grep "SHA-1 hash"
 ```
 
+현재 릴리스에 고정된 지문은 `A6886CFB325F1BDC6839F7F2AF1F3FECC67E480E`다.
+동명 인증서가 여러 개면 이 지문이 붙은 신원을 사용한다.
+
 ## 개인 키 백업
 
-키체인 접근의 **내 인증서**에서 `my-pegboard Dev`를 펼쳐 개인 키를 선택하고,
-암호를 건 `.p12`로 내보내 안전한 비밀 저장소에 둔다.
+키체인 접근의 **내 인증서**에서 위 지문과 일치하는 `my-pegboard Dev`를 펼쳐 개인
+키를 선택하고, 암호를 건 `.p12`로 내보내 안전한 비밀 저장소에 둔다.
 
 - `.p12`, 개인 키, 내보내기 암호, base64 본문은 Git에 커밋하지 않는다
 - 인증서를 잃거나 새로 만들면 코드 신원이 바뀌어 키체인을 다시 묻는다
