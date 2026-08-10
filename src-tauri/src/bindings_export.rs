@@ -8,7 +8,28 @@
 #[cfg(test)]
 mod tests {
     use crate::commands;
+    use std::fs;
     use tauri_specta::{collect_commands, Builder};
+
+    fn trim_trailing_whitespace(input: &str) -> String {
+        let mut output = input
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if input.ends_with('\n') {
+            output.push('\n');
+        }
+        output
+    }
+
+    #[test]
+    fn generated_bindings_have_no_trailing_whitespace() {
+        assert_eq!(
+            trim_trailing_whitespace("type A = string | \nvalue: number; \n"),
+            "type A = string |\nvalue: number;\n"
+        );
+    }
 
     #[test]
     fn typescript_bindings_are_up_to_date() {
@@ -70,6 +91,7 @@ mod tests {
             commands::board::board_import_apply,
         ]);
 
+        let path = "../src/ipc/bindings.ts";
         builder
             .export(
                 specta_typescript::Typescript::default()
@@ -77,8 +99,13 @@ mod tests {
                     // 생성물에는 미사용 심볼이 섞여 있고 noUnusedLocals에 걸린다.
                     // 우리가 고칠 수 없는 파일이므로 생성 단계에서 검사를 끈다.
                     .header("// @ts-nocheck\n// tauri-specta 생성물. 손으로 고치지 말 것 — cargo test가 다시 만든다."),
-                "../src/ipc/bindings.ts",
+                path,
             )
             .expect("TypeScript 바인딩을 생성할 수 없습니다");
+
+        let generated =
+            fs::read_to_string(path).expect("생성된 TypeScript 바인딩을 읽을 수 없습니다");
+        fs::write(path, trim_trailing_whitespace(&generated))
+            .expect("TypeScript 바인딩의 trailing whitespace를 정리할 수 없습니다");
     }
 }
