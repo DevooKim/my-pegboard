@@ -350,6 +350,54 @@ function deferred<T>() {
 }
 
 describe('IssueDetailModal', () => {
+  it('브랜치 복사 실패를 헤더에 남긴다', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.assign(navigator, { clipboard: { writeText } })
+    linearIssue.mockResolvedValue({
+      status: 'ok',
+      data: {
+        id: 'uuid-1',
+        identifier: 'ENG-142',
+        description: null,
+        branchName: 'feature/eng-142',
+      },
+    })
+
+    render(<IssueDetailModal issue={issue()} onClose={vi.fn()} />)
+
+    const branchButton = await screen.findByTitle('브랜치 이름 복사: feature/eng-142')
+    fireEvent.click(branchButton)
+
+    expect(await screen.findByText('복사하지 못했습니다')).toBeInTheDocument()
+  })
+
+  it('브랜치 복사 타이머를 언마운트 때 정리한다', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    linearIssue.mockResolvedValue({
+      status: 'ok',
+      data: {
+        id: 'uuid-1',
+        identifier: 'ENG-142',
+        description: null,
+        branchName: 'feature/eng-142',
+      },
+    })
+
+    const view = render(<IssueDetailModal issue={issue()} onClose={vi.fn()} />)
+    const branchButton = await screen.findByTitle('브랜치 이름 복사: feature/eng-142')
+    vi.useFakeTimers()
+    await act(async () => {
+      fireEvent.click(branchButton)
+      await Promise.resolve()
+    })
+    expect(writeText).toHaveBeenCalledWith('feature/eng-142')
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    await act(async () => vi.advanceTimersByTimeAsync(1_500))
+  })
+
   it('먼저 연 이슈의 늦은 응답을 다음 이슈에 붙이지 않는다', async () => {
     const first = deferred<Awaited<ReturnType<typeof linearIssue>>>()
     const second = deferred<Awaited<ReturnType<typeof linearIssue>>>()

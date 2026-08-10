@@ -17,6 +17,7 @@ import { AdfDoc } from '#/widgets/jira/adf/AdfDoc'
 import { CreateIssueModal } from '#/widgets/jira/CreateIssueModal'
 import { childTypesFor, levelOf, projectKeyOf } from '#/widgets/jira/childTypes'
 import { notifyTransitioned, StatusTransitionPopover } from '#/widgets/jira/StatusTransitionPopover'
+import { TicketIdCopyButton } from '#/widgets/jira/TicketIdCopyButton'
 
 /**
  * 티켓 상세 모달.
@@ -167,7 +168,7 @@ export function IssueDetailModal({
             <ChevronLeft size={16} />
           </button>
         )}
-        <span className="ticket-key text-text-secondary">{current}</span>
+        <TicketIdCopyButton identifier={current} />
 
         {browse && (
           <button

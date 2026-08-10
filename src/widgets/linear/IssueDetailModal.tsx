@@ -12,6 +12,7 @@ import { Modal } from '#/ui/Modal'
 import { absoluteDate, absoluteTime, relativeTime, useNow } from '#/ui/relativeTime'
 import { MarkdownDoc } from './markdown/MarkdownDoc'
 import { StatePopover } from './StatePopover'
+import { TicketIdCopyButton } from './TicketIdCopyButton'
 
 /**
  * 이슈 상세 모달 (DECISIONS 25.6).
@@ -104,7 +105,7 @@ export function IssueDetailModal({
   return (
     <Modal open onClose={onClose} labelledBy="linear-detail-title" className="max-w-3xl">
       <header className="flex items-center gap-2 border-border-subtle border-b px-4 py-3">
-        <span className="ticket-key text-text-secondary">{issue.identifier}</span>
+        <TicketIdCopyButton identifier={issue.identifier} />
 
         {issue.url && (
           <button
@@ -312,24 +313,47 @@ function Row({
 
 /** 브랜치 이름 복사 버튼. Linear가 규칙대로 만들어 주는 값이다. */
 function CopyBranch({ branchName }: { branchName: string }) {
-  const [copied, setCopied] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle')
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current)
+    },
+    [],
+  )
+
+  const copy = async () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current)
+
+    try {
+      await navigator.clipboard.writeText(branchName)
+      setStatus('copied')
+      resetTimer.current = setTimeout(() => {
+        setStatus('idle')
+        resetTimer.current = null
+      }, 1_500)
+    } catch {
+      setStatus('error')
+    }
+  }
 
   return (
     <button
       type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(branchName).then(() => {
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
-        })
-      }}
+      onClick={() => void copy()}
       title={`브랜치 이름 복사: ${branchName}`}
       className="flex items-center gap-1 rounded px-1.5 py-0.5 text-caption text-text-tertiary
                  hover:bg-surface-inset hover:text-accent
                  focus-visible:outline-2 focus-visible:outline-accent"
     >
-      {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+      {status === 'copied' ? (
+        <Check size={11} aria-hidden="true" />
+      ) : (
+        <Copy size={11} aria-hidden="true" />
+      )}
       브랜치 이름
+      {status === 'error' && <span className="text-danger">복사하지 못했습니다</span>}
     </button>
   )
 }
