@@ -55,7 +55,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "-"
+      "signingIdentity": "A6886CFB325F1BDC6839F7F2AF1F3FECC67E480E"
     }
   }
 }
