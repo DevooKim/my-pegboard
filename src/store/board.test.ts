@@ -32,6 +32,7 @@ function resetStore() {
     activeBoardId: DEFAULT_BOARD_ID,
     boards: [{ id: DEFAULT_BOARD_ID, name: 'Board', widgets: [] }],
     hydrated: false,
+    skipNextSave: false,
   })
 }
 

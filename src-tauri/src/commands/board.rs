@@ -6,7 +6,7 @@
 use std::fs;
 
 use chrono::{NaiveDate, Utc};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ use crate::storage::atomic::write_json_atomic;
 use crate::storage::board::{
     build_import_result, validate_export, validate_import, BoardExportFile, BoardFile,
     BoardImportApplyResult, BoardImportCandidate, BoardImportMode, BoardImportPreview,
-    BoardImportWidgetCount,
+    BoardImportSignal, BoardImportWidgetCount,
 };
 use crate::storage::error::StorageResult;
 
@@ -99,10 +99,18 @@ pub fn apply_board_import(
     mode: BoardImportMode,
 ) -> Result<BoardFile, String> {
     validate_import(candidate).map_err(|e| format!("가져오기 파일을 검증할 수 없습니다: {e}"))?;
-    build_import_result(current, &candidate.board, mode, || {
+    let next = build_import_result(current, &candidate.board, mode, || {
         Uuid::new_v4().to_string()
     })
-    .map_err(|e| format!("보드를 가져올 수 없습니다: {e}"))
+    .map_err(|e| format!("보드를 가져올 수 없습니다: {e}"))?;
+    crate::providers::album::validate_album_scope_paths(&next)
+        .map_err(|error| format!("앨범 경로 권한을 검증할 수 없습니다: {error}"))?;
+    Ok(next)
+}
+
+fn import_signal(current: &BoardFile, next: &BoardFile) -> Option<BoardImportSignal> {
+    crate::providers::album::album_scope_membership_changed(current, next)
+        .then_some(BoardImportSignal::RelaunchRequired)
 }
 
 #[tauri::command]
@@ -158,29 +166,18 @@ pub async fn board_import_preview(app: AppHandle) -> Result<Option<BoardImportCa
 #[tauri::command]
 #[specta::specta]
 pub fn board_import_apply(
-    app: AppHandle,
     state: State<'_, AppState>,
     candidate: BoardExportFile,
     mode: BoardImportMode,
 ) -> Result<BoardImportApplyResult, String> {
     let mut store = state.board.lock().map_err(|_| "상태 잠금 실패")?;
-    let next = apply_board_import(store.data(), &candidate, mode)?;
-
-    let transition = crate::providers::album::plan_scope_transition(store.data(), &next);
-    let scope = app.asset_protocol_scope();
-    crate::providers::album::allow_scope_paths(&scope, &transition)
-        .map_err(|e| format!("앨범 경로 권한을 적용할 수 없습니다: {e}"))?;
+    let current = store.data().clone();
+    let next = apply_board_import(&current, &candidate, mode)?;
+    let signal = import_signal(&current, &next);
 
     store
         .replace_atomically(next.clone())
         .map_err(|e| format!("보드를 저장할 수 없습니다: {e}"))?;
-
-    // Tauri's Scope has no remove-allowed-pattern API. Its forbid_* methods add
-    // deny patterns that take precedence over allows, which is the supported
-    // runtime revocation mechanism for paths no longer in the replacement.
-    if let Err(error) = crate::providers::album::revoke_scope_paths(&scope, &transition) {
-        tracing::warn!(error = %error, "앨범 경로 스코프를 완전히 철회하지 못했습니다");
-    }
 
     let ids = store.all_widget_ids();
     let orphan_cache_cleanup_warning = match state.cache.lock() {
@@ -201,6 +198,7 @@ pub fn board_import_apply(
     Ok(BoardImportApplyResult {
         board: next,
         orphan_cache_cleanup_warning,
+        signal,
     })
 }
 
@@ -280,5 +278,30 @@ mod tests {
             apply_board_import(&BoardFile::default(), &candidate, BoardImportMode::Replace)
                 .unwrap();
         assert_eq!(result, candidate.board);
+    }
+
+    #[test]
+    fn malformed_album_scope_path_is_rejected_before_persistence() {
+        let mut candidate = test_file();
+        candidate.board.boards[0].widgets[0].config["source"]["path"] =
+            serde_json::Value::String("relative/photos".into());
+
+        let error = apply_board_import(&BoardFile::default(), &candidate, BoardImportMode::Replace)
+            .unwrap_err();
+
+        assert!(error.contains("절대 경로"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn album_membership_change_returns_a_typed_relaunch_signal() {
+        let current = test_file().board;
+        let mut imported = current.clone();
+        imported.boards[0].widgets[0].config["source"] =
+            json!({ "kind": "files", "paths": ["/missing/photos"] });
+
+        assert_eq!(
+            import_signal(&current, &imported),
+            Some(BoardImportSignal::RelaunchRequired)
+        );
     }
 }

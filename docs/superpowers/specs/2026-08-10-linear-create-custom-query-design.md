@@ -218,7 +218,16 @@ API 응답에서는 폼이 쓰는 필드만 평평하게 만들어 IPC로 전달
 - 병합 이름 충돌: `업무 (가져옴 2)`, `업무 (가져옴 3)`처럼 결정적으로 해소한다.
 - 병합 성공 후 첫 번째로 가져온 보드를 활성화한다.
 
-적용은 보드 잠금 안에서 완성된 후보를 검증하고 원자적으로 디스크에 쓴 뒤 메모리 `BoardStore`를 교체한다. 저장이 실패하면 기존 메모리와 기존 `board.json`을 그대로 유지한다. 성공 응답의 `BoardFile`로 Zustand를 한 번 hydrate하고, 앨범 위젯의 runtime asset scope를 다시 허용한다. 교체로 사라진 위젯의 캐시는 기존 고아 캐시 정리 경로로 제거한다.
+적용 전에 pending frontend board save를 flush한다. 보드 잠금 안에서 완성된 후보와
+모든 앨범 경로의 Tauri escaped pattern을 임시·순수 검증 경로로 확인한 뒤 원자적으로
+디스크에 쓰고 메모리 `BoardStore`를 교체한다. 저장이 실패하면 기존 메모리와 기존
+`board.json`을 그대로 유지하며 live global asset scope도 변하지 않는다. Tauri
+2.11.5는 허용 패턴을 제거할 수 없고 `forbid_*`가 허용보다 우선하므로 import가
+runtime scope를 추가·철회하지 않는 것이 필수다. 앨범 scope membership이 달라지면
+typed `relaunchRequired` 신호를 반환하고 설정 UI에 재시작 요구를 표시한다. 기존
+`@tauri-apps/plugin-process`의 `relaunch`는 사용자가 명시적 버튼을 누른 경우에만
+호출한다. 성공 응답의 `BoardFile`로 Zustand를 한 번 hydrate하고, 교체로 사라진
+위젯의 캐시는 기존 고아 캐시 정리 경로로 제거한다.
 
 ### UI와 오류
 
@@ -230,6 +239,8 @@ API 응답에서는 폼이 쓰는 필드만 평평하게 만들어 IPC로 전달
 - import 스키마와 보드 불변식 검증을 테스트한다.
 - 교체와 병합, ID 전면 재발급, 이름 충돌, 활성 보드 선택을 테스트한다.
 - 원자 저장 실패 시 메모리와 기존 파일이 보존되는지 테스트한다.
-- 앨범 경로 경고와 성공 후 scope 복원 대상을 테스트한다.
-- 설정 탭의 미리보기, 모드 선택, 확인, 취소, 오류 노출을 React 테스트로 검증한다.
+- 앨범 경로 경고, 폴더→파일·파일→폴더·중첩 경로 membership, pure pattern 검증,
+  저장 실패 시 live scope 불변, membership 변경의 typed relaunch 신호를 테스트한다.
+- pending save flush 순서, 정확히 한 번의 hydrate, visible restart requirement와
+  명시적 relaunch rejection을 React 테스트로 검증한다.
 - 실제 앱 실행과 OS 다이얼로그 수동 테스트는 수행하지 않는다.

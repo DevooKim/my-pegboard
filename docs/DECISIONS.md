@@ -2103,7 +2103,26 @@ React는 Rust가 돌려준 후보와 미리보기만 표시하고, 사용자가 
 앨범의 로컬 절대 경로는 위젯 설정의 일부이므로 보존한다. 다만 미리보기에서 존재하지
 않는 폴더·파일을 모두 경고하며, 경로가 없다는 이유만으로 가져오기를 거부하지 않는다.
 성공한 apply의 `BoardFile`은 Zustand에 한 번만 hydrate하고, Rust가 저장을 끝낸 뒤
-앨범 runtime scope와 고아 캐시 정리를 수행한다.
+고아 캐시 정리를 수행한다. 앨범 scope membership이 달라지면 응답에 typed
+`relaunchRequired` 신호를 담고 설정 UI가 재시작을 요구한다.
+
+### 26.1 앨범 scope와 import의 재시작 경계
+
+Tauri 2.11.5의 `fs::Scope`는 런타임에 허용 패턴을 추가할 수 있지만 이미 추가한
+허용 패턴을 제거하는 API가 없다. `forbid_*`는 허용보다 항상 우선하고 영구적인
+금지 패턴을 추가하므로, import에서 이를 철회 수단으로 사용하면 현재 프로세스의
+새 보드가 옛 경로까지 잘못 막거나 이후 허용을 무효화한다.
+
+따라서 board import는 apply 전후에 live global asset scope를 변이하지 않는다. 가져온
+모든 앨범 경로는 Tauri가 만드는 escaped literal pattern과 동등한 순수 pattern
+구성 경로로 먼저 검증하고, 검증이 끝난 후보만 board.json에 원자적으로 저장한다.
+저장 실패 시 메모리·파일·live scope에는 변화가 없다.
+
+앨범 scope membership(경로와 폴더/파일 종류)이 현재 보드와 다르면 `relaunchRequired`
+신호를 반환한다. 설정 UI는 이 신호를 눈에 보이는 재시작 요구와 명시적 재시작 버튼으로
+표시한다. 기존 `@tauri-apps/plugin-process`의 `relaunch`는 그 버튼을 눌렀을 때만
+호출한다. 재시작 시 setup의 `restore_scopes()`가 이제 저장된 보드의 membership을
+다시 live scope에 허용한다.
 
 이 결정의 검증 범위에는 실제 Tauri 앱 실행, 실제 OS 파일 다이얼로그, 브라우저 수동
 테스트, live API 호출을 포함하지 않는다. 순수 Rust helper·임시 디렉토리·React IPC

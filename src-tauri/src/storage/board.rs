@@ -269,11 +269,18 @@ pub struct BoardImportCandidate {
     pub preview: BoardImportPreview,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum BoardImportSignal {
+    RelaunchRequired,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardImportApplyResult {
     pub board: BoardFile,
     pub orphan_cache_cleanup_warning: Option<String>,
+    pub signal: Option<BoardImportSignal>,
 }
 
 /// Validate an untrusted board transfer before it can reach `BoardStore`.

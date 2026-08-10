@@ -6,6 +6,7 @@ import { type BoardImportCandidate, type BoardImportMode, commands } from '#/ipc
 import { IN_TAURI } from '#/ipc/env'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
+import { flushPendingSaves } from '#/store/persist'
 import { RELEASES_PAGE, type UpdatePhase, useUpdateStore } from '#/store/update'
 import { Modal } from '#/ui/Modal'
 
@@ -114,6 +115,7 @@ export function SettingsModal({
 
 function BoardSection() {
   const replaceFromImport = useBoardStore((state) => state.replaceFromImport)
+  const restart = useUpdateStore((state) => state.restart)
   const [preview, setPreview] = useState<BoardImportCandidate | null>(null)
   const [mode, setMode] = useState<BoardImportMode>('replace')
   const [exportState, setExportState] = useState<
@@ -121,6 +123,9 @@ function BoardSection() {
   >({ kind: 'idle' })
   const [importError, setImportError] = useState<string | null>(null)
   const [importWarning, setImportWarning] = useState<string | null>(null)
+  const [restartRequired, setRestartRequired] = useState(false)
+  const [relaunching, setRelaunching] = useState(false)
+  const [relaunchError, setRelaunchError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'export' | 'preview' | 'apply' | null>(null)
 
   const exportBoard = useCallback(async () => {
@@ -144,6 +149,8 @@ function BoardSection() {
     setBusy('preview')
     setImportError(null)
     setImportWarning(null)
+    setRestartRequired(false)
+    setRelaunchError(null)
     try {
       const result = await commands.boardImportPreview()
       if (result.status === 'error') {
@@ -164,7 +171,9 @@ function BoardSection() {
     setBusy('apply')
     setImportError(null)
     setImportWarning(null)
+    setRelaunchError(null)
     try {
+      await flushPendingSaves()
       const result = await commands.boardImportApply(preview.file, mode)
       if (result.status === 'error') {
         setImportError(result.error)
@@ -175,6 +184,7 @@ function BoardSection() {
       // registry's local config type, so this is the one IPC hydration seam.
       replaceFromImport(result.data.board as never)
       setImportWarning(result.data.orphanCacheCleanupWarning)
+      setRestartRequired(result.data.signal === 'relaunchRequired')
       setPreview(null)
     } catch (error) {
       setImportError(errorMessage(error))
@@ -182,6 +192,18 @@ function BoardSection() {
       setBusy(null)
     }
   }, [mode, preview, replaceFromImport])
+
+  const relaunchApp = useCallback(async () => {
+    setRelaunching(true)
+    setRelaunchError(null)
+    try {
+      await restart()
+    } catch (error) {
+      setRelaunchError(`앱을 재시작하지 못했습니다: ${errorMessage(error)}`)
+    } finally {
+      setRelaunching(false)
+    }
+  }, [restart])
 
   return (
     <section className="flex flex-col gap-5">
@@ -230,6 +252,23 @@ function BoardSection() {
         )}
         {importWarning && (
           <p className="text-caption text-warning leading-relaxed-ko">{importWarning}</p>
+        )}
+        {restartRequired && (
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded bg-warning-muted p-2 text-caption text-warning"
+          >
+            <p>앨범 경로 권한 변경은 앱 재시작 후 반영됩니다.</p>
+            <button
+              type="button"
+              onClick={() => void relaunchApp()}
+              disabled={relaunching}
+              className={`${neutralPill} self-start disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              {relaunching && <Loader2 size={13} className="mr-1.5 inline animate-spin" />}앱 재시작
+            </button>
+            {relaunchError && <p className="text-danger">{relaunchError}</p>}
+          </div>
         )}
       </div>
 

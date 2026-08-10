@@ -752,7 +752,7 @@ export type Board = { id: string; name: string; widgets?: Widget[] }
  */
 export type BoardExportFile = { formatVersion: number; exportedAt: string; board: BoardFile }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
-export type BoardImportApplyResult = { board: BoardFile; orphanCacheCleanupWarning: string | null }
+export type BoardImportApplyResult = { board: BoardFile; orphanCacheCleanupWarning: string | null; signal: BoardImportSignal | null }
 /**
  * Candidate returned by the preview command. The UI sends the exact typed
  * `file` back when the user confirms; it never reconstructs settings locally.
@@ -760,6 +760,7 @@ export type BoardImportApplyResult = { board: BoardFile; orphanCacheCleanupWarni
 export type BoardImportCandidate = { file: BoardExportFile; preview: BoardImportPreview }
 export type BoardImportMode = "replace" | "merge"
 export type BoardImportPreview = { boardCount: number; widgetCount: number; widgetCounts: BoardImportWidgetCount[]; formatVersion: number; boardSchemaVersion: number; albumPathWarnings: AlbumPathWarning[] }
+export type BoardImportSignal = "relaunchRequired"
 export type BoardImportWidgetCount = { widgetType: string; count: number }
 /**
  * One item's before-state, enough to put it back.

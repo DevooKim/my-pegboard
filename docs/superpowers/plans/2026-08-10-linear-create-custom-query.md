@@ -1277,11 +1277,11 @@ Add async commands with these contracts:
 ```rust
 pub async fn board_export(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String>;
 pub async fn board_import_preview(app: AppHandle) -> Result<Option<BoardImportCandidate>, String>;
-pub fn board_import_apply(app: AppHandle, state: State<'_, AppState>, candidate: BoardExportFile,
-                          mode: BoardImportMode) -> Result<BoardFile, String>;
+pub fn board_import_apply(state: State<'_, AppState>, candidate: BoardExportFile,
+                          mode: BoardImportMode) -> Result<BoardImportApplyResult, String>;
 ```
 
-Use `tauri_plugin_dialog::DialogExt` in Rust only. Export writes through an atomic helper to the selected path. Preview re-parses and validates untrusted JSON. Apply revalidates the candidate, builds the complete result, calls `replace_atomically`, restores all album runtime scopes, and evicts orphan caches only after save succeeds.
+Use `tauri_plugin_dialog::DialogExt` in Rust only. Export writes through an atomic helper to the selected path. Preview re-parses and validates untrusted JSON. Apply revalidates the candidate, constructs and validates every album scope pattern through a pure/non-global path, compares old/new path-kind membership, calls `replace_atomically`, and evicts orphan caches only after save succeeds. It must not receive an `AppHandle` or mutate the live global asset scope. When membership differs, return typed `BoardImportSignal::RelaunchRequired`; Tauri 2.11.5 cannot remove allowed patterns, and `forbid_*` permanently overrides them, so Settings must require a relaunch.
 
 - [ ] **Step 4: Register commands and regenerate bindings**
 
@@ -1306,7 +1306,7 @@ Expected: PASS without launching Tauri or opening a real OS dialog.
 
 - [ ] **Step 1: Add failing settings UI tests**
 
-Mock generated IPC commands and test the `보드` tab, export success/cancel/error, import cancel, preview summary, album warnings, replace warning, merge selection, apply confirmation, and visible apply errors. Assert a successful apply calls a dedicated store action with the returned `BoardFile` exactly once.
+Mock generated IPC commands, pending-save flush, and process relaunch. Test the `보드` tab, export success/cancel/error, import cancel, preview summary, album warnings, replace warning, merge selection, apply confirmation, and visible apply errors. Assert flush occurs before apply, a successful apply calls a dedicated store action with the returned `BoardFile` exactly once, membership change visibly requires restart without auto-relaunch, and relaunch rejection remains visible.
 
 - [ ] **Step 2: Verify RED**
 
@@ -1316,11 +1316,11 @@ Expected: FAIL because the `board` settings tab and IPC calls do not exist.
 
 - [ ] **Step 3: Add an explicit imported-board store action**
 
-Extend `BoardState` with `replaceFromImport(file: BoardFile): void`. It must set version, activeBoardId, boards, and hydrated in one Zustand update. Do not call the debounced `boardSave`: Rust has already persisted the exact returned file, and a second write creates a race.
+Extend `BoardState` with `replaceFromImport(file: BoardFile): void` and a one-shot `skipNextSave` marker. It must set version, activeBoardId, boards, and hydrated in one Zustand update; the persistence subscriber consumes the marker without scheduling a save. Do not call the debounced `boardSave`: Rust has already persisted the exact returned file, and a second write creates a race.
 
 - [ ] **Step 4: Implement the `보드` tab and preview confirmation**
 
-Extend `SettingsTab` with `board`. Add separate `내보내기` and `가져오기` sections. Keep preview state inside the modal, show counts and every missing album path, provide `교체`/`병합` radios, require an explicit final button, and keep all errors inline. On successful apply, call `replaceFromImport(result.data)` and clear the preview.
+Extend `SettingsTab` with `board`. Add separate `내보내기` and `가져오기` sections. Flush pending saves before apply. Keep preview state inside the modal, show counts and every missing album path, provide `교체`/`병합` radios, require an explicit final button, and keep all errors inline. On successful apply, call `replaceFromImport(result.data.board)` once, keep cache-cleanup warnings visible, and when `result.data.signal` is `relaunchRequired`, show a visible restart requirement whose button is the only import path that calls the existing process-plugin relaunch.
 
 - [ ] **Step 5: Document the decision**
 

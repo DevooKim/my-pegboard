@@ -343,6 +343,14 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 "어제는 됐는데 오늘 아침에 안 된다"로만 나타난다.
 `providers/album/tests/mod.rs`의 `restore_covers_every_path…`가 이걸 막는다.
 
+**Tauri 2.11.5 scope의 import 경계:** 허용 패턴은 런타임에서 제거할 수 없다.
+`forbid_*`는 허용보다 우선하는 영구 금지 패턴이므로 revoke 용도로 쓰지 않는다.
+board import는 live global asset scope를 전혀 건드리지 않고, 가져온 모든 앨범
+경로를 Tauri escaped pattern과 동등한 순수 검증 경로로 확인한 뒤 원자 저장한다.
+membership이 달라지면 typed `relaunchRequired` 신호를 반환해 설정 UI에 재시작을
+표시한다. `@tauri-apps/plugin-process`의 `relaunch`는 사용자가 명시적 재시작
+버튼을 누른 경우에만 호출한다.
+
 **앨범을 만진 뒤에는 반드시 앱을 껐다 켜서 사진이 여전히 뜨는지 본다.**
 브라우저 dev 서버에는 `asset:`이 없어 원리적으로 확인할 수 없다.
 
@@ -401,7 +409,7 @@ Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 
 - 파일 다이얼로그, JSON 파싱/검증, 미리보기, 교체/병합, 원자적 저장은 Rust가 소유한다. React는 preview를 표시하고 최종 확인만 요청한다.
 - 교체는 가져온 `BoardFile` 전체를 사용하고, 병합은 가져온 모든 보드/위젯 ID를 새 UUID로 재발급한다. 이름 충돌은 결정적으로 `업무 (가져옴 2)` 형식으로 푼다.
 - 앨범 경로는 보존하되 존재하지 않는 폴더/파일은 미리보기에서 모두 경고한다. 경로 누락은 import 거부 사유가 아니다.
-- apply는 디스크 원자 저장 성공 후에만 메모리 교체·앨범 scope 복원·고아 캐시 정리를 한다. 성공한 Rust 반환 파일은 Zustand에 한 번만 반영하고 디바운스 저장을 다시 예약하지 않는다.
+- apply 전에는 pending debounced board save를 flush한다. 순수 앨범 scope pattern 검증과 디스크 원자 저장 성공 후에만 메모리 교체·고아 캐시 정리를 한다. import 중 live asset scope는 변이하지 않으며 membership 변경 시 재시작 신호를 표시한다. 성공한 Rust 반환 파일은 Zustand에 한 번만 반영하고 디바운스 저장을 다시 예약하지 않는다.
 - 이 기능은 실제 Tauri 앱/OS 다이얼로그/live API/브라우저 수동 테스트 없이 pure helper, 임시 디렉토리, IPC mock으로 검증한다.
 
 ---

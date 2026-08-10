@@ -16,7 +16,10 @@ use tempfile::TempDir;
 
 use super::error::AlbumError;
 use super::scan::{is_image_file, scan, MAX_PHOTOS};
-use super::scope::{album_sources, plan_scope_transition};
+use super::scope::{
+    album_scope_membership, album_scope_membership_changed, album_sources,
+    validate_album_scope_paths,
+};
 use super::types::AlbumSource;
 
 fn touch(dir: &Path, name: &str) {
@@ -33,9 +36,7 @@ fn folder(dir: &Path) -> AlbumSource {
 
 #[test]
 fn accepts_every_supported_extension() {
-    for name in [
-        "a.jpg", "b.jpeg", "c.png", "d.gif", "e.webp", "f.heic",
-    ] {
+    for name in ["a.jpg", "b.jpeg", "c.png", "d.gif", "e.webp", "f.heic"] {
         assert!(is_image_file(name), "{name}이 거부됐다");
     }
 }
@@ -44,7 +45,10 @@ fn accepts_every_supported_extension() {
 #[test]
 fn extension_matching_ignores_case() {
     for name in ["a.JPG", "b.JPEG", "c.PNG", "d.Gif", "e.WebP", "f.HEIC"] {
-        assert!(is_image_file(name), "{name}이 거부됐다 — 대소문자 처리 누락");
+        assert!(
+            is_image_file(name),
+            "{name}이 거부됐다 — 대소문자 처리 누락"
+        );
     }
 }
 
@@ -174,7 +178,10 @@ fn a_file_path_given_as_a_folder_errors() {
     .unwrap_err();
 
     assert!(matches!(err, AlbumError::NotADirectory { .. }));
-    assert!(err.to_string().contains("사진 선택"), "무엇을 해야 하는지가 없다");
+    assert!(
+        err.to_string().contains("사진 선택"),
+        "무엇을 해야 하는지가 없다"
+    );
 }
 
 // ───────────────────────────── 파일 목록 ─────────────────────────────
@@ -268,12 +275,18 @@ fn album_widget(id: &str, source: serde_json::Value) -> serde_json::Value {
 #[test]
 fn restore_covers_every_path_of_every_album_widget() {
     let board = board_with(vec![
-        album_widget("a1", json!({ "kind": "folder", "path": "/Users/me/Pictures/여행" })),
+        album_widget(
+            "a1",
+            json!({ "kind": "folder", "path": "/Users/me/Pictures/여행" }),
+        ),
         album_widget(
             "a2",
             json!({ "kind": "files", "paths": ["/Users/me/a.jpg", "/Users/me/b.png", "/Users/me/c.heic"] }),
         ),
-        album_widget("a3", json!({ "kind": "folder", "path": "/Volumes/NAS/사진" })),
+        album_widget(
+            "a3",
+            json!({ "kind": "folder", "path": "/Volumes/NAS/사진" }),
+        ),
         // 다른 타입은 섞여 있어도 무시된다.
         json!({
             "id": "j1", "type": "jira",
@@ -297,48 +310,57 @@ fn restore_covers_every_path_of_every_album_widget() {
 }
 
 #[test]
-fn replace_transition_covers_every_new_path_and_revokes_removed_paths() {
-    let old = board_with(vec![
+fn folder_to_file_is_a_scope_membership_change() {
+    let old = board_with(vec![album_widget(
+        "album",
+        json!({ "kind": "folder", "path": "/photos" }),
+    )]);
+    let new = board_with(vec![album_widget(
+        "album",
+        json!({ "kind": "files", "paths": ["/photos"] }),
+    )]);
+
+    assert!(album_scope_membership_changed(&old, &new));
+    assert_ne!(album_scope_membership(&old), album_scope_membership(&new));
+}
+
+#[test]
+fn file_to_folder_is_a_scope_membership_change() {
+    let old = board_with(vec![album_widget(
+        "album",
+        json!({ "kind": "files", "paths": ["/photos"] }),
+    )]);
+    let new = board_with(vec![album_widget(
+        "album",
+        json!({ "kind": "folder", "path": "/photos" }),
+    )]);
+
+    assert!(album_scope_membership_changed(&old, &new));
+    assert_ne!(album_scope_membership(&old), album_scope_membership(&new));
+}
+
+#[test]
+fn nested_album_paths_are_validated_as_individual_scope_patterns() {
+    let board = board_with(vec![
         album_widget(
-            "old-folder",
-            json!({ "kind": "folder", "path": "/old/photos" }),
+            "folder",
+            json!({ "kind": "folder", "path": "/photos/trips" }),
         ),
         album_widget(
-            "old-files",
-            json!({ "kind": "files", "paths": ["/old/a.jpg", "/keep/b.jpg"] }),
-        ),
-    ]);
-    let new = board_with(vec![
-        album_widget(
-            "new-folder",
-            json!({ "kind": "folder", "path": "/new/photos" }),
-        ),
-        album_widget(
-            "new-files",
-            json!({ "kind": "files", "paths": ["/keep/b.jpg", "/new/a.jpg", "/new/b.jpg"] }),
+            "files",
+            json!({
+                "kind": "files",
+                "paths": [
+                    "/photos/trips/2026/seoul.jpg",
+                    "/photos/trips/2026/busan/night.png"
+                ]
+            }),
         ),
     ]);
 
-    let transition = plan_scope_transition(&old, &new);
-
-    assert_eq!(
-        transition
-            .to_allow
-            .iter()
-            .map(|path| path.path.as_str())
-            .collect::<Vec<_>>(),
-        vec!["/new/photos", "/keep/b.jpg", "/new/a.jpg", "/new/b.jpg"],
-        "every new folder and every file in Files sources must be covered"
-    );
-    assert_eq!(
-        transition
-            .to_revoke
-            .iter()
-            .map(|path| path.path.as_str())
-            .collect::<Vec<_>>(),
-        vec!["/old/photos", "/old/a.jpg"],
-        "replacement must remove paths absent from the new board while preserving shared Files paths"
-    );
+    validate_album_scope_paths(&board)
+        .expect("Tauri asset scope pattern validation should be pure");
+    assert_eq!(album_scope_membership(&board).len(), 3);
 }
 
 /// `Folder`와 `Files`는 스코프 종류가 다르다. 파일 목록에 디렉터리 스코프를

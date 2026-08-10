@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { type BoardImportCandidate, commands } from '#/ipc/bindings'
 import { SettingsModal } from '#/settings/SettingsModal'
 import { type BoardFile, useBoardStore } from '#/store/board'
+import { flushPendingSaves } from '#/store/persist'
+
+const { relaunchMock } = vi.hoisted(() => ({ relaunchMock: vi.fn() }))
 
 vi.mock('#/ipc/bindings', () => ({
   commands: {
@@ -10,6 +13,16 @@ vi.mock('#/ipc/bindings', () => ({
     boardImportPreview: vi.fn(),
     boardImportApply: vi.fn(),
   },
+}))
+
+vi.mock('#/store/persist', () => ({
+  flushPendingSaves: vi.fn(),
+}))
+
+vi.mock('#/store/update', () => ({
+  RELEASES_PAGE: 'https://example.com/releases',
+  useUpdateStore: (selector: (state: { restart: typeof relaunchMock }) => unknown) =>
+    selector({ restart: relaunchMock }),
 }))
 
 const boardFile: BoardFile = {
@@ -40,6 +53,7 @@ function resetStore() {
     activeBoardId: 'default',
     boards: [{ id: 'default', name: 'Board', widgets: [] }],
     hydrated: false,
+    skipNextSave: false,
   })
 }
 
@@ -50,6 +64,8 @@ function renderBoardTab() {
 describe('SettingsModal board transfer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(flushPendingSaves).mockResolvedValue(undefined)
+    relaunchMock.mockResolvedValue(undefined)
     resetStore()
   })
 
@@ -120,6 +136,60 @@ describe('SettingsModal board transfer', () => {
     expect(replaceFromImport).toHaveBeenCalledTimes(1)
     expect(replaceFromImport).toHaveBeenCalledWith(boardFile)
     expect(screen.queryByText('보드 1개 · 위젯 0개')).not.toBeInTheDocument()
+  })
+
+  it('flushes a pending save before apply and shows restart requirement without auto-relaunch', async () => {
+    const order: string[] = []
+    vi.mocked(flushPendingSaves).mockImplementation(async () => {
+      order.push('flush')
+    })
+    vi.mocked(commands.boardImportApply).mockImplementation(async () => {
+      order.push('apply')
+      return {
+        status: 'ok',
+        data: {
+          board: boardFile,
+          orphanCacheCleanupWarning: '고아 캐시 경고',
+          signal: 'relaunchRequired',
+        } as never,
+      }
+    })
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+
+    await waitFor(() => expect(commands.boardImportApply).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['flush', 'apply'])
+    expect(await screen.findByText(/앨범 경로 권한 변경.*재시작/)).toBeInTheDocument()
+    expect(await screen.findByText('고아 캐시 경고')).toBeInTheDocument()
+    expect(relaunchMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '앱 재시작' }))
+    await waitFor(() => expect(relaunchMock).toHaveBeenCalledTimes(1))
+    expect(order).toEqual(['flush', 'apply'])
+  })
+
+  it('keeps a relaunch rejection visible after the explicit restart button is pressed', async () => {
+    relaunchMock.mockRejectedValue(new Error('재시작이 거부됐습니다'))
+    vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: candidate })
+    vi.mocked(commands.boardImportApply).mockResolvedValue({
+      status: 'ok',
+      data: {
+        board: boardFile,
+        orphanCacheCleanupWarning: null,
+        signal: 'relaunchRequired',
+      } as never,
+    })
+    renderBoardTab()
+
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+    fireEvent.click(await screen.findByRole('button', { name: '앱 재시작' }))
+
+    expect(
+      await screen.findByText('앱을 재시작하지 못했습니다: 재시작이 거부됐습니다'),
+    ).toBeInTheDocument()
   })
 
   it('keeps an apply error visible in the board tab', async () => {

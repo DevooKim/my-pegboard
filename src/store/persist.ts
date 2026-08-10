@@ -73,6 +73,13 @@ function subscribeSave(): void {
   }
 
   useBoardStore.subscribe((state, prev) => {
+    if (state.skipNextSave) {
+      // Rust board_import_apply가 이미 이 정확한 파일을 저장했다. 이 플래그를
+      // 먼저 소비하지 않으면 hydrate가 다시 디바운스 저장되어 오래된 상태가
+      // import 결과를 덮을 수 있다.
+      useBoardStore.setState({ skipNextSave: false })
+      return
+    }
     // hydrate 자체가 저장을 유발하면 안 된다.
     if (!state.hydrated) return
     // activeBoardId도 저장 대상이다 — 앱을 다시 켜면 마지막에 보던 보드가
