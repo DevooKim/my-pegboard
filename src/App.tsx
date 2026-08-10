@@ -147,15 +147,37 @@ function AddBoardButton() {
 /**
  * 인증 실패는 위젯마다 반복하지 않고 여기서 한 번만 알린다 (DECISIONS 16장).
  * 위젯 4개에 같은 401이 4번 뜨면 그건 소음이다.
+ *
+ * **서비스별로 한 줄이다.** Jira가 죽은 것과 Linear가 죽은 것은 사용자가 할 일이
+ * 다르므로(어느 토큰을 다시 넣어야 하는지) 하나로 합치지 않는다. 대신 위젯
+ * 개수와는 무관하게 서비스당 한 줄로 묶인다.
  */
 function AuthBanner({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const failed = useConnectionStore((s) => s.jiraAuthFailed)
-  if (!failed) return null
+  const jiraFailed = useConnectionStore((s) => s.jiraAuthFailed)
+  const linearFailed = useConnectionStore((s) => s.linearAuthFailed)
+
+  return (
+    <>
+      {jiraFailed && (
+        <BannerRow
+          message="Jira 인증에 실패했습니다. API 토큰을 확인하세요."
+          onOpenSettings={onOpenSettings}
+        />
+      )}
+      {linearFailed && (
+        <BannerRow
+          message="Linear 인증에 실패했습니다. API 키를 확인하세요."
+          onOpenSettings={onOpenSettings}
+        />
+      )}
+    </>
+  )
+}
+
+function BannerRow({ message, onOpenSettings }: { message: string; onOpenSettings: () => void }) {
   return (
     <div className="flex shrink-0 items-center gap-2 bg-danger-muted px-3 py-1.5">
-      <span className="flex-1 text-caption text-danger">
-        Jira 인증에 실패했습니다. API 토큰을 확인하세요.
-      </span>
+      <span className="flex-1 text-caption text-danger">{message}</span>
       <button
         type="button"
         onClick={onOpenSettings}

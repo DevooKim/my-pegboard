@@ -12,6 +12,8 @@ const TOKEN_PAGE = 'https://id.atlassian.com/manage-profile/security/api-tokens'
 /** Classic PAT 발급 페이지. 스코프를 미리 채워 보낸다. */
 const GITHUB_TOKEN_PAGE =
   'https://github.com/settings/tokens/new?scopes=repo,read:org&description=my-pegboard'
+/** Linear의 개인 API 키 발급 페이지. 워크스페이스와 무관한 계정 설정이다. */
+const LINEAR_TOKEN_PAGE = 'https://linear.app/settings/account/security'
 
 type TestState =
   | { kind: 'idle' }
@@ -95,6 +97,8 @@ export function SettingsModal({
             <JiraSection onSaved={onSaved} onClose={onClose} />
             <hr className="my-5 border-border-subtle" />
             <GithubSection onSaved={onSaved} />
+            <hr className="my-5 border-border-subtle" />
+            <LinearSection onSaved={onSaved} />
           </>
         ) : (
           <AboutSection />
@@ -415,6 +419,112 @@ function GithubSection({ onSaved }: { onSaved: () => void }) {
         >
           {state.kind === 'working' && <Loader2 size={13} className="animate-spin" />}
           {configured ? '토큰 교체' : '저장'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Linear 연결.
+ *
+ * GitHub과 같은 모양이다 — 입력이 **API 키 하나**뿐이고 URL이 없다
+ * (`api.linear.app` 고정), 사용자 식별은 키가 한다(`viewer`).
+ *
+ * gh CLI에 해당하는 것이 없어서 가져오기 버튼도 없다. 키는 Linear 설정에서
+ * 직접 발급한다.
+ */
+function LinearSection({ onSaved }: { onSaved: () => void }) {
+  const refreshConnection = useConnectionStore((s) => s.refresh)
+  const configured = useConnectionStore((s) => s.linearConfigured)
+  const setAuthFailed = useConnectionStore((s) => s.setLinearAuthFailed)
+  const [token, setToken] = useState('')
+  const [state, setState] = useState<GithubState>({ kind: 'idle' })
+
+  const save = useCallback(async () => {
+    if (!token.trim() || !IN_TAURI) return
+    setState({ kind: 'working' })
+    const saved = await commands.linearSaveToken(token.trim())
+    if (saved.status !== 'ok') {
+      setState({ kind: 'failed', message: saved.error })
+      return
+    }
+    setToken('') // 저장 후 폼에 남기지 않는다
+
+    // 저장과 확인을 붙여둔다. 저장만 하고 끝내면 틀린 키를 넣어도
+    // 위젯이 401을 낼 때까지 모른다. 확인은 `viewer` 한 방이다.
+    const verified = await commands.linearVerify()
+    if (verified.status === 'ok') {
+      setState({ kind: 'ok', message: verified.data })
+      // 새 키로 성공했으므로 전역 배너를 내린다. 안 내리면 고친 뒤에도
+      // "인증 실패"가 남아 있어 뭘 더 해야 하는지 모른다.
+      setAuthFailed(false)
+    } else {
+      setState({ kind: 'failed', message: verified.error })
+    }
+    await refreshConnection()
+    onSaved()
+  }, [token, refreshConnection, onSaved, setAuthFailed])
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-caption text-text-secondary">Linear 연결</h3>
+        <p className="mt-0.5 text-caption text-text-tertiary leading-relaxed-ko">
+          API 키는 macOS 키체인에 저장되며 파일이나 로그에 남지 않습니다.
+        </p>
+      </div>
+
+      <p
+        className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-caption ${
+          configured ? 'bg-success-muted text-success' : 'bg-surface-inset text-text-tertiary'
+        }`}
+      >
+        {configured ? <Check size={13} /> : <AlertCircle size={13} />}
+        {configured ? '연결됨 — API 키가 키체인에 저장돼 있습니다' : '아직 연결되지 않았습니다'}
+      </p>
+
+      <Field label="Personal API key">
+        <input
+          data-selectable
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="lin_api_..."
+          className={`${inputClass} font-mono`}
+        />
+        <button
+          type="button"
+          onClick={() => void openUrl(LINEAR_TOKEN_PAGE)}
+          className="mt-1 flex items-center gap-1 self-start text-caption text-accent hover:underline"
+        >
+          API 키 발급 페이지 열기
+          <ExternalLink size={11} />
+        </button>
+      </Field>
+
+      {state.kind === 'ok' && (
+        <p className="flex items-center gap-1.5 text-caption text-success">
+          <Check size={13} />
+          {state.message}
+        </p>
+      )}
+      {state.kind === 'failed' && (
+        <p className="text-caption text-danger leading-relaxed-ko">{state.message}</p>
+      )}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!token.trim() || state.kind === 'working'}
+          className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-caption
+                     text-surface-base disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {state.kind === 'working' && <Loader2 size={13} className="animate-spin" />}
+          {configured ? 'API 키 교체' : '저장'}
         </button>
       </div>
     </section>

@@ -1,0 +1,50 @@
+{
+  "data": {
+    "team": {
+      "states": {
+        "nodes": [
+          {
+            "id": "state-done",
+            "name": "Done",
+            "color": "#5e6ad2",
+            "type": "completed",
+            "position": 4
+          },
+          {
+            "id": "state-backlog",
+            "name": "Backlog",
+            "color": "#bec2c8",
+            "type": "backlog",
+            "position": 0
+          },
+          {
+            "id": "state-inprogress",
+            "name": "In Progress",
+            "color": "#f2c94c",
+            "type": "started",
+            "position": 2
+          },
+          {
+            "id": "state-todo",
+            "name": "Todo",
+            "color": "#e2e2e2",
+            "type": "unstarted",
+            "position": 1
+          },
+          {
+            "name": "id가 없는 상태 — 고를 수 없으므로 버린다",
+            "color": "#000000",
+            "type": "unstarted",
+            "position": 3
+          },
+          {
+            "id": "state-no-position",
+            "name": "position이 없는 상태",
+            "color": "#111111",
+            "type": "triage"
+          }
+        ]
+      }
+    }
+  }
+}

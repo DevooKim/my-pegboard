@@ -87,6 +87,7 @@ src/
 │  ├─ shell/       WidgetShell — 헤더·새로고침·상태·에러·설정·삭제 공통 처리
 │  ├─ jira/        ← 위젯 하나 = 폴더 하나
 │  ├─ github/
+│  ├─ linear/      markdown/ 렌더러를 안에 갖는다 (의존성 0)
 │  ├─ todo/
 │  ├─ web/
 │  └─ album/
@@ -97,7 +98,7 @@ src/
 
 src-tauri/src/
 ├─ commands/       IPC 커맨드
-├─ providers/      jira/ github/ album/ — API 클라이언트·타입·캐시 (album은 로컬 스캔)
+├─ providers/      jira/ github/ linear/ album/ — API 클라이언트·타입·캐시 (album은 로컬 스캔)
 ├─ scheduler/      위젯별 폴링 타이머
 ├─ storage/        파일 IO, 원자적 쓰기, 마이그레이션
 ├─ secrets/        키체인
@@ -211,6 +212,64 @@ src-tauri/src/
 
 ---
 
+## Linear
+
+- **GraphQL API만.** `https://api.linear.app/graphql` (REST가 없다 — 선택이 아니다)
+- **조작 범위: 읽기 + 상태 변경 + 상세.** GitHub과 달리 상세 모달이 있다 —
+  사용자 결정이다 (DECISIONS 25.1). **생성은 없다.**
+- 위젯 타입은 **하나**. 쿼리는 **프리셋 4종뿐, 직접 입력 없음** —
+  Linear 필터는 문자열이 아니라 `IssueFilter` **JSON 객체**라 탈출구가 함정이 된다
+- 프리셋은 전부 `viewer` 기반 (accountId 조회 왕복 없음)
+
+**⚠️⚠️ 이 위젯은 실제 응답을 한 번도 받지 못한 채 만들어졌다.**
+API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필드에
+`#[serde(default)]`가 붙어 있고, 무엇이 틀릴 수 있는지는 **DECISIONS 25.7**에
+있다. **키가 생기면 그 목록부터 확인할 것.**
+
+**공개 스키마로 확인한 함정:**
+- **★ `Authorization`에 `Bearer` 접두사가 없다.** GitHub과 다르다 —
+  `Authorization: lin_api_xxx`가 그대로다. 붙이면 401이고, GitHub provider를
+  복사해 오면 `.bearer_auth()`를 쓰게 된다
+- **★ rate limit이 HTTP 400이다.** 본문 `errors[].extensions.code == "RATELIMITED"`.
+  이 앱은 400을 **영구**로 분류하므로, 본문을 안 보면 rate limit이 "재시도 없는
+  영구 실패"가 된다. `classify_status`가 본문을 인자로 받는 이유다
+- 대기 시간은 `Retry-After`가 아니라 `X-RateLimit-*-Reset` — **UTC epoch 밀리초**다.
+  초로 쓰면 5분 대기가 5일이 된다. 요청/복잡도 두 헤더 중 **늦은 쪽**을 쓴다
+- **GraphQL은 실패해도 200을 준다.** 본문 `errors`를 봐야 한다 (GitHub과 같다)
+- **정렬은 `updatedAt`·`createdAt` 둘뿐이다.** `PaginationOrderBy`가 그것만 준다 →
+  우선순위·마감일 정렬을 만들 수 없고, **클라이언트에서 다시 정렬하지 않는다**
+  (30건만 받은 것을 정렬하면 설정 UI가 거짓말을 한다)
+- **총 건수를 주지 않는다** (`totalCount` 없음). "217건 중 30건"을 만들 수 없다 —
+  GitHub과 다르고 Jira 신규 검색과 같다
+- `priority` 정수 0~4의 의미를 모른다 → **`priorityLabel` 문자열을 그대로 표시.**
+  0을 "없음"으로 가정하지 않는다
+- 공개 스키마의 `WorkflowState.type` 7종은 확인했지만 실제 응답은 못 봤다 →
+  **`state.color`로 배지 색을 칠한다.** `type`은 완료 제외 필터에만 쓴다
+
+**상태 변경은 Jira transition과 모델이 다르다:**
+| | Jira | Linear |
+|---|---|---|
+| 받는 것 | 그 티켓의 **전이 목록** | 그 **팀의 상태 전부** |
+| 조회 단위 | 이슈 | **팀** (캐시 키도 팀 id) |
+| 성공 응답 | 204 No Content | 본문 `success: Boolean!` |
+| 필수 필드 | 걸릴 수 있다 → 브라우저 | **없다** (`stateId`만 보낸다) |
+
+→ Jira 11.5가 크게 다룬 "필수 필드가 걸린 전이" 문제가 **여기선 발생하지 않는다.**
+반대로 성공 판정은 **본문을 봐야 한다** — `success: false`를 넘기면 바뀌지 않은
+상태를 바뀌었다고 보고한다.
+
+**`issueUpdate`는 멱등이 아니다 → 자동 재시도 금지.** 낙관적 업데이트도 없다.
+
+**`description`은 markdown이다** (Jira는 ADF). **markdown 라이브러리를 추가하지
+않는다** — ADF도 의존성 0으로 직접 그렸다. `widgets/linear/markdown/`이 파서와
+렌더러를 나눠 갖고, **미지원 문법(표·이미지)은 회색 플레이스홀더 + 원문**으로
+드러낸다. 링크 URL은 `http`/`https`/`mailto` 화이트리스트를 통과해야 링크가 된다.
+
+**인증:** API 키를 키체인에 저장한다 (`linear.default.token`). gh CLI에 해당하는
+것이 없어 가져오기 버튼도 없다 — Linear 계정 설정에서 직접 발급한다.
+
+---
+
 ## Todo
 
 **단순 체크리스트가 아니다. 날짜 축을 가진 daily todo.**
@@ -293,12 +352,15 @@ src-tauri/src/
 | Jira 상태 변경(transition) | **있음** — 배지 → 팝오버. 필수 필드가 걸린 전이만 브라우저로 (DECISIONS 11.5 개정) |
 | Jira 전이의 필수 필드 폼 | **안 만든다.** 필드 타입별 렌더러가 다시 필요해진다 → 브라우저 링크로 대체 |
 | 이미지 첨부 렌더링 | 인증 URL 재요청 필요, 보류 |
+| Linear 이슈 생성·코멘트 | **안 만든다.** 조작 범위는 읽기+상태변경+상세 (DECISIONS 25.1) |
+| Linear 생 필터 입력 | **안 만든다.** 필터가 JSON 객체라 탈출구가 함정이 된다 (25.2) |
+| Linear 실제 응답 검증 | **미완.** API 키가 없어 스키마만 보고 만들었다 (25.7) |
 | 앨범 재귀 스캔·EXIF·썸네일 | **의도적으로 없음** (DECISIONS 24.1 / 24.5) |
 | PWA | **폐기됨** (Tauri로 대체) |
 | i18n | 한국어 단일 |
 | 자동 업데이트 | **있음** — GitHub Release 기반 (DECISIONS 23) |
 
-**위젯 개수 제한:** Jira 4 / GitHub 4 / **Todo 1** / Web 4 / **앨범 4**
+**위젯 개수 제한:** Jira 4 / GitHub 4 / **Linear 4** / **Todo 1** / Web 4 / **앨범 4**
 (타입별, **보드당**)
 
 **"보드당"이다.** 보드 A에 Jira 4개가 있어도 보드 B에 또 넣을 수 있다.

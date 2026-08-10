@@ -1,0 +1,122 @@
+{
+  "data": {
+    "viewer": {
+      "issues": {
+        "nodes": [
+          {
+            "id": "11111111-2222-3333-4444-555555555555",
+            "identifier": "ENG-142",
+            "title": "로그인 후 리다이렉트가 한 번 더 발생한다",
+            "url": "https://linear.app/acme/issue/ENG-142/redirect",
+            "priority": 2,
+            "priorityLabel": "High",
+            "estimate": 3,
+            "dueDate": "2026-08-20",
+            "updatedAt": "2026-08-06T09:12:00.000Z",
+            "createdAt": "2026-08-01T02:00:00.000Z",
+            "state": {
+              "id": "state-inprogress",
+              "name": "In Progress",
+              "color": "#f2c94c",
+              "type": "started"
+            },
+            "assignee": {
+              "id": "user-1",
+              "name": "sammy.kim",
+              "displayName": "Sammy",
+              "avatarUrl": "https://example.com/a.png"
+            },
+            "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" },
+            "project": { "name": "인증 개편" },
+            "labels": { "nodes": [{ "name": "bug" }, { "name": "auth" }] },
+            "description": "이 필드는 우리가 목록에서 읽지 않는다",
+            "branchName": "sammy/eng-142-redirect",
+            "someFutureField": { "nested": [1, 2, 3] }
+          },
+          {
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "identifier": "ENG-143",
+            "title": "담당자·프로젝트·마감일·추정치가 전부 없는 이슈",
+            "url": "https://linear.app/acme/issue/ENG-143/bare",
+            "priority": 0,
+            "priorityLabel": "No priority",
+            "estimate": null,
+            "dueDate": null,
+            "updatedAt": "2026-08-05T01:00:00.000Z",
+            "createdAt": "2026-08-05T01:00:00.000Z",
+            "state": {
+              "id": "state-backlog",
+              "name": "Backlog",
+              "color": "#bec2c8",
+              "type": "backlog"
+            },
+            "assignee": null,
+            "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" },
+            "project": null,
+            "labels": { "nodes": [] }
+          },
+          {
+            "id": "99999999-8888-7777-6666-555555555555",
+            "identifier": "DES-7",
+            "title": "type이 우리가 모르는 값인 이슈",
+            "url": "https://linear.app/acme/issue/DES-7/unknown-type",
+            "priority": 4,
+            "priorityLabel": "Low",
+            "updatedAt": "2026-08-04T00:00:00.000Z",
+            "createdAt": "2026-07-20T00:00:00.000Z",
+            "state": {
+              "id": "state-weird",
+              "name": "Waiting on legal",
+              "color": "#5e6ad2",
+              "type": "someBrandNewType"
+            },
+            "assignee": { "id": "user-2", "name": "designer", "displayName": null },
+            "team": { "id": "team-des", "key": "DES", "name": "Design" },
+            "labels": { "nodes": [{ "name": null }, { "name": "blocked" }] }
+          },
+          {
+            "id": "color-broken",
+            "identifier": "ENG-144",
+            "title": "색이 이상한 값으로 온 이슈",
+            "url": "https://linear.app/acme/issue/ENG-144/color",
+            "priorityLabel": "Medium",
+            "updatedAt": "2026-08-03T00:00:00.000Z",
+            "createdAt": "2026-08-03T00:00:00.000Z",
+            "state": {
+              "id": "state-todo",
+              "name": "Todo",
+              "color": "#e2e2e2;background:url(javascript:alert(1))",
+              "type": "unstarted"
+            },
+            "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" }
+          },
+          {},
+          {
+            "id": "no-state",
+            "identifier": "ENG-145",
+            "title": "state가 없는 이슈 — 배지를 그릴 수 없어 버린다",
+            "url": "https://linear.app/acme/issue/ENG-145/no-state",
+            "updatedAt": "2026-08-02T00:00:00.000Z",
+            "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" }
+          },
+          {
+            "identifier": "ENG-146",
+            "title": "id가 없는 이슈 — 상태 변경을 할 수 없어 버린다",
+            "url": "https://linear.app/acme/issue/ENG-146/no-id",
+            "state": {
+              "id": "state-todo",
+              "name": "Todo",
+              "color": "#e2e2e2",
+              "type": "unstarted"
+            },
+            "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" }
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": true,
+          "endCursor": "cursor-abc"
+        }
+      }
+    }
+  }
+}
