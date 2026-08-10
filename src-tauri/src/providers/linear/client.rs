@@ -363,7 +363,10 @@ impl LinearClient {
         // 헤더는 본문을 읽기 전에 챙긴다 (본문 읽기가 소유권을 가져간다).
         let reset_at_ms = rate_limit_reset_ms(&response);
 
-        let body = response.text().await.unwrap_or_default();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| body_read_error(context, error))?;
 
         if !(200..300).contains(&status) {
             return Err(classify_status(
@@ -634,6 +637,12 @@ impl LinearClient {
                 .or(user.name)
                 .unwrap_or_else(|| "이름 없음".to_owned()),
         })
+    }
+}
+
+fn body_read_error(context: &str, error: impl std::fmt::Display) -> LinearError {
+    LinearError::Network {
+        message: format!("{context}: 응답 본문을 읽지 못했습니다: {error}"),
     }
 }
 
@@ -965,6 +974,13 @@ pub(crate) mod query_exports {
         body: &str,
     ) -> super::super::error::LinearResult<super::super::types::LinearIssue> {
         super::decode_issue_create(body)
+    }
+
+    pub(crate) fn body_read_error(
+        context: &str,
+        message: &str,
+    ) -> super::super::error::LinearError {
+        super::body_read_error(context, message)
     }
 
     pub(crate) fn pagination_args(direction: LinearSortDirection, limit: u32) -> Value {

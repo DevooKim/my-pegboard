@@ -18,7 +18,7 @@
 //! 손상되거나 미래 버전이면 빈 값으로 시작한다 — 캐시는 재구성 가능하므로
 //! 앱을 실패시킬 이유가 없다.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -97,6 +97,13 @@ impl LinearMetaStore {
     /// 개념이 팀에 없고, 팀 수는 대개 한 자리다.
     pub fn set_teams(&mut self, teams: Vec<LinearTeam>, fetched_at: DateTime<Utc>) {
         self.data.version = LINEAR_META_SCHEMA_VERSION;
+        let team_ids = teams
+            .iter()
+            .map(|team| team.id.clone())
+            .collect::<BTreeSet<_>>();
+        self.data
+            .teams
+            .retain(|team_id, _| team_ids.contains(team_id));
         self.data.global.teams.items = teams;
         self.data.global.teams.fetched_at = Some(fetched_at);
         self.data.global.teams.truncated = false;
@@ -142,7 +149,20 @@ impl LinearMetaStore {
 
     pub fn set_global(&mut self, global: LinearGlobalMetadata) {
         self.data.version = LINEAR_META_SCHEMA_VERSION;
-        self.data.global = global;
+        apply_global(&mut self.data, global);
+    }
+
+    /// 전역 메타데이터를 디스크에 먼저 저장하고 성공한 경우에만 메모리를 교체한다.
+    ///
+    /// 전역 팀 목록이 줄어들면 더 이상 존재하지 않는 팀의 프로젝트·상태·멤버
+    /// 스코프도 함께 버린다. 그렇지 않으면 `known_ids()`가 삭제된 프로젝트를
+    /// 유효하다고 판정해 이슈 생성 입력을 통과시킨다.
+    pub fn replace_global_and_save(&mut self, global: LinearGlobalMetadata) -> StorageResult<()> {
+        let mut next = self.data.clone();
+        apply_global(&mut next, global);
+        write_json_atomic(&self.path, &next)?;
+        self.data = next;
+        Ok(())
     }
 
     pub fn set_viewer(&mut self, viewer: LinearUserOption) {
@@ -155,6 +175,16 @@ impl LinearMetaStore {
         self.data.teams.insert(team.team_id.clone(), team);
     }
 
+    /// 팀 메타데이터를 디스크에 먼저 저장하고 성공한 경우에만 메모리를 교체한다.
+    pub fn replace_team_and_save(&mut self, team: LinearTeamMetadata) -> StorageResult<()> {
+        let mut next = self.data.clone();
+        next.version = LINEAR_META_SCHEMA_VERSION;
+        next.teams.insert(team.team_id.clone(), team);
+        write_json_atomic(&self.path, &next)?;
+        self.data = next;
+        Ok(())
+    }
+
     /// 자격증명이 바뀌면 이전 Linear 계정의 선택지를 전부 버린다.
     pub fn clear(&mut self) {
         self.data = LinearMetaFile::default();
@@ -163,6 +193,18 @@ impl LinearMetaStore {
     pub fn save(&self) -> StorageResult<()> {
         write_json_atomic(&self.path, &self.data)
     }
+}
+
+fn apply_global(data: &mut LinearMetaFile, global: LinearGlobalMetadata) {
+    data.version = LINEAR_META_SCHEMA_VERSION;
+    let team_ids = global
+        .teams
+        .items
+        .iter()
+        .map(|team| team.id.clone())
+        .collect::<BTreeSet<_>>();
+    data.global = global;
+    data.teams.retain(|team_id, _| team_ids.contains(team_id));
 }
 
 fn migrate_v1_to_v2(mut value: serde_json::Value) -> Result<serde_json::Value, String> {

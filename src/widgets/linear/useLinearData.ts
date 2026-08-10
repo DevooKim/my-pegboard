@@ -65,33 +65,53 @@ export function useLinearData(
 
   // 설정 객체는 매 렌더 새로 만들어질 수 있으므로 값으로 비교한다.
   const configKey = JSON.stringify(config)
-  const inFlight = useRef(false)
+  const configGeneration = useRef({ key: configKey, value: 0 })
+  if (configGeneration.current.key !== configKey) {
+    configGeneration.current = {
+      key: configKey,
+      value: configGeneration.current.value + 1,
+    }
+  }
+  const inFlight = useRef(new Set<number>())
   const retryAttempt = useRef(0)
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryTimerGeneration = useRef<number | null>(null)
   const fetchNowRef = useRef<(reason?: FetchReason) => Promise<void>>(async () => {})
-  const pendingMutationRefresh = useRef(false)
+  const pendingMutationRefresh = useRef<{ generation: number; pending: boolean } | null>(null)
   const active = useRef(true)
 
   const cancelRetry = useCallback(() => {
     if (retryTimer.current !== null) clearTimeout(retryTimer.current)
     retryTimer.current = null
+    retryTimerGeneration.current = null
     retryAttempt.current = 0
   }, [])
 
   const fetchNow = useCallback(
     async (reason: FetchReason = 'regular') => {
-      if (inFlight.current) {
-        if (reason === 'mutation') pendingMutationRefresh.current = true
+      if (configGeneration.current.key !== configKey) return
+      const requestGeneration = configGeneration.current.value
+      if (retryTimer.current !== null && retryTimerGeneration.current !== requestGeneration) {
+        cancelRetry()
+      }
+      if (inFlight.current.has(requestGeneration)) {
+        if (reason === 'mutation') {
+          pendingMutationRefresh.current = { generation: requestGeneration, pending: true }
+        }
         return
       }
       const retrying = reason === 'retry'
       // rate-limit 리셋을 기다리는 중이면 정기 폴링도 그 시각을 앞당기지 않는다.
       if (!retrying && retryTimer.current !== null) {
-        if (reason === 'mutation') pendingMutationRefresh.current = true
+        if (reason === 'mutation') {
+          pendingMutationRefresh.current = { generation: requestGeneration, pending: true }
+        }
         return
       }
       // 지금 시작하는 조회가 그 전에 밀린 상태 변경까지 함께 반영한다.
-      pendingMutationRefresh.current = false
+      if (pendingMutationRefresh.current?.generation === requestGeneration) {
+        pendingMutationRefresh.current.pending = false
+      }
       // 사용자가 누른 새로고침·정기 폴링·상태 변경은 새 시도 묶음이다.
       if (!retrying) cancelRetry()
       // Tauri 밖(브라우저 dev)에서는 IPC가 없다. 영원한 로딩 대신 이유를 말한다.
@@ -107,7 +127,7 @@ export function useLinearData(
         })
         return
       }
-      inFlight.current = true
+      inFlight.current.add(requestGeneration)
 
       // 데이터가 이미 있으면 status만 바꾸고 목록은 유지한다.
       setEnvelope((prev) => ({
@@ -117,7 +137,13 @@ export function useLinearData(
 
       try {
         const result = await commands.linearFetch(widgetId, JSON.parse(configKey))
-        if (!active.current) return
+        if (
+          !active.current ||
+          configGeneration.current.key !== configKey ||
+          configGeneration.current.value !== requestGeneration
+        ) {
+          return
+        }
         if (result.status === 'ok') {
           cancelRetry()
           setAuthFailed(false)
@@ -136,9 +162,12 @@ export function useLinearData(
             retryAttempt.current = attempt
             const backoffMs = RETRY_BASE_MS * 2 ** (attempt - 1)
             const serverDelayMs = (e.retryAfterSecs ?? 0) * 1_000
+            retryTimerGeneration.current = requestGeneration
             retryTimer.current = setTimeout(
               () => {
+                if (retryTimerGeneration.current !== requestGeneration) return
                 retryTimer.current = null
+                retryTimerGeneration.current = null
                 void fetchNowRef.current('retry')
               },
               Math.max(backoffMs, serverDelayMs),
@@ -167,11 +196,18 @@ export function useLinearData(
           })
         }
       } finally {
-        inFlight.current = false
+        inFlight.current.delete(requestGeneration)
         // 상태 변경 직후의 전용 조회는 버리지 않는다. 다만 rate limit 대기
         // 중이면 예약된 재시도가 곧 최신 상태를 읽으므로 그때 함께 처리한다.
-        if (active.current && pendingMutationRefresh.current && retryTimer.current === null) {
-          pendingMutationRefresh.current = false
+        if (
+          active.current &&
+          configGeneration.current.key === configKey &&
+          configGeneration.current.value === requestGeneration &&
+          pendingMutationRefresh.current?.generation === requestGeneration &&
+          pendingMutationRefresh.current.pending &&
+          retryTimer.current === null
+        ) {
+          pendingMutationRefresh.current.pending = false
           void fetchNowRef.current('mutation')
         }
       }

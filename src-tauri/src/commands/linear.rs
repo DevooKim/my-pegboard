@@ -357,8 +357,7 @@ pub async fn linear_metadata(
         None => match client.global_metadata().await {
             Ok(global) => {
                 let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-                meta.set_global(global);
-                meta.save()
+                meta.replace_global_and_save(global)
                     .map_err(|error| format!("Linear 메타데이터를 저장할 수 없습니다: {error}"))?;
                 metadata_response(&meta, None, None)
             }
@@ -371,8 +370,7 @@ pub async fn linear_metadata(
         Some(team_id) => match client.team_metadata(team_id).await {
             Ok(team) => {
                 let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-                meta.set_team(team);
-                meta.save().map_err(|error| {
+                meta.replace_team_and_save(team).map_err(|error| {
                     format!("Linear 팀 메타데이터를 저장할 수 없습니다: {error}")
                 })?;
                 metadata_response(&meta, Some(team_id), None)

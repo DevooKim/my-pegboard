@@ -1064,6 +1064,19 @@ fn issue_create_only_network_and_server_failures_are_possibly_created() {
     .possibly_created());
 }
 
+#[test]
+fn response_body_read_failure_is_transport_uncertainty_for_mutations_and_transient_for_queries() {
+    let create_error = query_exports::body_read_error("이슈 생성", "connection reset");
+    assert!(matches!(create_error, LinearError::Network { .. }));
+    assert!(create_error.is_transient());
+    assert!(create_error.possibly_created());
+
+    let query_error = query_exports::body_read_error("이슈 목록", "connection reset");
+    assert!(matches!(query_error, LinearError::Network { .. }));
+    assert!(query_error.is_transient());
+    assert!(query_error.message().contains("이슈 목록"));
+}
+
 // ─────────────────────────── 쿼리 문자열 ───────────────────────────
 //
 // GraphQL 쿼리가 Rust 문자열이라 오타가 컴파일에 안 잡힌다. 최소한 **없으면

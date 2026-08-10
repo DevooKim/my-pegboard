@@ -104,17 +104,68 @@ fn replacing_one_team_preserves_global_and_other_teams() {
 }
 
 #[test]
-fn replacing_global_preserves_cached_team_scopes() {
+fn replacing_global_prunes_cached_scopes_for_removed_teams() {
     let dir = TempDir::new().unwrap();
     let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
-    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
     store.set_team(team_metadata("team-eng", "Engineering Todo"));
-    let team_before = store.team("team-eng").cloned();
+    store.set_team(team_metadata("team-design", "Design Todo"));
 
     store.set_global(global_metadata(vec![team("team-design", "DES")]));
 
-    assert_eq!(store.team("team-eng"), team_before.as_ref());
-    assert!(store.team("team-design").is_none());
+    assert!(store.team("team-eng").is_none());
+    assert!(store.team("team-design").is_some());
+    let known = store.known_ids();
+    assert!(!known.project_ids.contains("project-team-eng"));
+    assert!(known.project_ids.contains("project-team-design"));
+}
+
+#[test]
+fn failed_global_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let old = global_metadata(vec![team("team-old", "OLD")]);
+    store.set_global(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("global-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let error = store
+        .replace_global_and_save(global_metadata(vec![team("team-new", "NEW")]))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("global-write-failure"));
+    assert_eq!(store.global(), &old);
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.global(), &old);
+}
+
+#[test]
+fn failed_team_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    let old = team_metadata("team-eng", "Old Todo");
+    store.set_team(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("team-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let error = store
+        .replace_team_and_save(team_metadata("team-eng", "New Todo"))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("team-write-failure"));
+    assert_eq!(store.team("team-eng"), Some(&old));
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.team("team-eng"), Some(&old));
 }
 
 #[test]
