@@ -8,7 +8,10 @@ use std::fs;
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
-use crate::providers::linear::LinearTeam;
+use crate::providers::linear::{
+    LinearGlobalMetadata, LinearKnownIds, LinearMetadataList, LinearProjectOption, LinearTeam,
+    LinearTeamMetadata, LinearUserOption, LinearWorkflowState,
+};
 use crate::storage::linear_meta::{LinearMetaStore, LINEAR_META_FILE};
 use crate::storage::migrate::LoadOutcome;
 
@@ -18,6 +21,263 @@ fn team(id: &str, key: &str) -> LinearTeam {
         key: key.to_string(),
         name: format!("{key} 팀"),
     }
+}
+
+fn list<T>(items: Vec<T>) -> LinearMetadataList<T> {
+    LinearMetadataList {
+        items,
+        fetched_at: Some(Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()),
+        truncated: false,
+    }
+}
+
+fn global_metadata(teams: Vec<LinearTeam>) -> LinearGlobalMetadata {
+    LinearGlobalMetadata {
+        teams: list(teams),
+        viewer: None,
+        labels: list(Vec::new()),
+    }
+}
+
+fn truncated_global_metadata(teams: Vec<LinearTeam>) -> LinearGlobalMetadata {
+    let mut global = global_metadata(teams);
+    global.teams.truncated = true;
+    global
+}
+
+fn team_metadata(team_id: &str, state_name: &str) -> LinearTeamMetadata {
+    LinearTeamMetadata {
+        team_id: team_id.into(),
+        states: list(vec![LinearWorkflowState {
+            id: format!("state-{team_id}"),
+            name: state_name.into(),
+            color: "#8a8f98".into(),
+            type_name: "unstarted".into(),
+            position: 0.0,
+        }]),
+        members: list(vec![LinearUserOption {
+            id: format!("member-{team_id}"),
+            name: format!("{team_id} member"),
+            avatar_url: None,
+        }]),
+        projects: list(vec![LinearProjectOption {
+            id: format!("project-{team_id}"),
+            name: format!("{team_id} project"),
+            team_id: team_id.into(),
+        }]),
+    }
+}
+
+#[test]
+fn migrates_v1_team_list_into_v2_global_metadata() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join(LINEAR_META_FILE),
+        r#"{
+          "version":1,
+          "teamsFetchedAt":"2026-08-07T12:00:00Z",
+          "teams":[{"id":"t1","key":"ENG","name":"Engineering"}]
+        }"#,
+    )
+    .unwrap();
+
+    let (store, outcome) = LinearMetaStore::load(dir.path()).unwrap();
+
+    assert_eq!(outcome, LoadOutcome::Migrated { from: 1, to: 2 });
+    assert_eq!(store.global().teams.items[0].id, "t1");
+    assert_eq!(
+        store.global().teams.fetched_at,
+        Some("2026-08-07T12:00:00Z".parse().unwrap())
+    );
+}
+
+#[test]
+fn replacing_one_team_preserves_global_and_other_teams() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
+    store.set_team(team_metadata("team-design", "Design Todo"));
+    let global_before = store.global().clone();
+    let other_before = store.team("team-design").cloned();
+
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+
+    assert_eq!(store.global(), &global_before);
+    assert_eq!(store.team("team-design"), other_before.as_ref());
+}
+
+#[test]
+fn replacing_global_prunes_cached_scopes_for_removed_teams() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+    store.set_team(team_metadata("team-design", "Design Todo"));
+
+    store
+        .replace_global_and_save(global_metadata(vec![team("team-design", "DES")]))
+        .unwrap();
+
+    assert!(store.team("team-eng").is_none());
+    assert!(store.team("team-design").is_some());
+    let known = store.known_ids();
+    assert!(!known.project_ids.contains("project-team-eng"));
+    assert!(known.project_ids.contains("project-team-design"));
+}
+
+#[test]
+fn replacing_truncated_global_preserves_cached_scopes_absent_from_the_page() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-design", "DES"),
+    ]));
+    store.set_team(team_metadata("team-eng", "Engineering Todo"));
+    store.set_team(team_metadata("team-design", "Design Todo"));
+    store.save().unwrap();
+
+    store
+        .replace_global_and_save(truncated_global_metadata(vec![team("team-design", "DES")]))
+        .unwrap();
+
+    assert!(store.team("team-eng").is_some());
+    assert!(store.team("team-design").is_some());
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.team("team-eng").is_some());
+}
+
+#[test]
+fn late_complete_global_refresh_drops_a_team_scope_that_started_before_it() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![
+        team("team-eng", "ENG"),
+        team("team-orphan", "ORP"),
+    ]));
+    store.set_team(team_metadata("team-orphan", "Old Todo"));
+    store.save().unwrap();
+
+    // The global refresh completes while the team refresh is still in flight.
+    store
+        .replace_global_and_save(global_metadata(vec![team("team-eng", "ENG")]))
+        .unwrap();
+    store
+        .replace_team_and_save(team_metadata("team-orphan", "Late Todo"))
+        .unwrap();
+
+    assert!(store.team("team-orphan").is_none());
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.team("team-orphan").is_none());
+}
+
+#[test]
+fn unknown_team_scope_is_allowed_while_global_teams_are_truncated() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(truncated_global_metadata(vec![team("team-eng", "ENG")]));
+
+    store
+        .replace_team_and_save(team_metadata("team-unknown", "Unknown Todo"))
+        .unwrap();
+
+    assert!(store.team("team-unknown").is_some());
+}
+
+#[test]
+fn failed_viewer_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let mut old = global_metadata(vec![team("team-eng", "ENG")]);
+    old.viewer = Some(LinearUserOption {
+        id: "viewer-old".into(),
+        name: "Old viewer".into(),
+        avatar_url: None,
+    });
+    store.set_global(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("viewer-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let mut next = old.clone();
+    next.viewer = Some(LinearUserOption {
+        id: "viewer-new".into(),
+        name: "New viewer".into(),
+        avatar_url: None,
+    });
+    let error = store.replace_global_and_save(next).unwrap_err();
+
+    assert!(error.to_string().contains("viewer-write-failure"));
+    assert_eq!(store.global(), &old);
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.global(), &old);
+}
+
+#[test]
+fn failed_global_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let old = global_metadata(vec![team("team-old", "OLD")]);
+    store.set_global(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("global-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let error = store
+        .replace_global_and_save(global_metadata(vec![team("team-new", "NEW")]))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("global-write-failure"));
+    assert_eq!(store.global(), &old);
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.global(), &old);
+}
+
+#[test]
+fn failed_team_refresh_keeps_old_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    let old = team_metadata("team-eng", "Old Todo");
+    store.set_team(old.clone());
+    store.save().unwrap();
+
+    let failure_path = dir.path().join("team-write-failure");
+    fs::create_dir(&failure_path).unwrap();
+    store.path = failure_path;
+
+    let error = store
+        .replace_team_and_save(team_metadata("team-eng", "New Todo"))
+        .unwrap_err();
+
+    assert!(error.to_string().contains("team-write-failure"));
+    assert_eq!(store.team("team-eng"), Some(&old));
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert_eq!(reloaded.team("team-eng"), Some(&old));
+}
+
+#[test]
+fn known_ids_union_cached_teams_and_team_choices() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    store.set_global(global_metadata(vec![team("team-eng", "ENG")]));
+    store.set_team(team_metadata("team-eng", "Todo"));
+
+    let known: LinearKnownIds = store.known_ids();
+
+    assert!(known.team_ids.contains("team-eng"));
+    assert!(known.project_ids.contains("project-team-eng"));
+    assert!(known.state_types.contains("unstarted"));
 }
 
 #[test]
@@ -75,4 +335,30 @@ fn set_teams_replaces_rather_than_appends() {
 
     assert_eq!(store.teams().len(), 1);
     assert_eq!(store.teams()[0].id, "new");
+}
+
+#[test]
+fn clearing_for_token_rotation_removes_all_metadata_from_memory_and_disk() {
+    let dir = TempDir::new().unwrap();
+    let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+    let mut global = global_metadata(vec![team("old-account-team", "OLD")]);
+    global.viewer = Some(LinearUserOption {
+        id: "old-viewer".into(),
+        name: "Old account".into(),
+        avatar_url: None,
+    });
+    store.set_global(global);
+    store.set_team(team_metadata("old-account-team", "Old Todo"));
+    store.save().unwrap();
+
+    store.clear();
+    assert!(store.global().teams.items.is_empty());
+    assert!(store.global().viewer.is_none());
+    assert!(store.team("old-account-team").is_none());
+
+    store.save().unwrap();
+    let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+    assert!(reloaded.global().teams.items.is_empty());
+    assert!(reloaded.global().viewer.is_none());
+    assert!(reloaded.team("old-account-team").is_none());
 }

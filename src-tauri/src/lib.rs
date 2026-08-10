@@ -75,8 +75,9 @@ pub fn run() {
         commands::linear::linear_verify,
         commands::linear::linear_fetch,
         commands::linear::linear_cached,
+        commands::linear::linear_metadata,
+        commands::linear::linear_create_issue,
         commands::linear::linear_issue,
-        commands::linear::linear_teams,
         commands::linear::linear_team_states,
         commands::linear::linear_set_state,
         commands::todo::todo_list,
@@ -89,9 +90,12 @@ pub fn run() {
         commands::album::album_pick_folder,
         commands::album::album_pick_files,
         commands::album::album_rescan,
-        commands::album::album_cached,
+            commands::album::album_cached,
             commands::board::board_load,
             commands::board::board_save,
+            commands::board::board_export,
+            commands::board::board_import_preview,
+            commands::board::board_import_apply,
     ]);
 
 

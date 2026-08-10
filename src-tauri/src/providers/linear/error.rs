@@ -155,6 +155,14 @@ impl LinearError {
         self.kind().is_permanent()
     }
 
+    /// Mutation 요청을 보낸 뒤 생성 여부를 확정할 수 없는 실패인가.
+    ///
+    /// 네트워크·5xx만 true다. rate limit은 서버가 요청을 명시적으로 거절한
+    /// 응답이므로 중복 생성 경고를 띄우지 않는다.
+    pub fn possibly_created(&self) -> bool {
+        matches!(self, Self::Network { .. } | Self::ServerError { .. })
+    }
+
     /// 401 전용 판별. "인증 실패는 전역 배너 한 번만" 규칙의 트리거.
     pub fn is_auth_failure(&self) -> bool {
         matches!(self, LinearError::Unauthorized { .. })

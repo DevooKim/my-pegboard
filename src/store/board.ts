@@ -39,8 +39,12 @@ interface BoardState {
   boards: Board[]
   /** 디스크에서 불러오기 전인가 — 그리드를 그리기 전에 대기해야 한다 */
   hydrated: boolean
+  /** import apply가 이미 Rust에 저장한 정확한 파일임을 persist에 알린다 */
+  skipNextSave: boolean
 
   hydrate: (file: BoardFile) => void
+  /** Rust has already persisted and validated this exact file. */
+  replaceFromImport: (file: BoardFile) => void
   addWidget: (type: WidgetType) => { ok: true; id: string } | { ok: false; reason: string }
   removeWidget: (id: string) => void
   updateWidgetConfig: (id: string, config: Record<string, unknown>) => void
@@ -82,6 +86,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   activeBoardId: DEFAULT_BOARD_ID,
   boards: [emptyBoard()],
   hydrated: false,
+  skipNextSave: false,
 
   hydrate: (file) =>
     set({
@@ -89,6 +94,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       activeBoardId: file.activeBoardId,
       boards: file.boards.length > 0 ? file.boards : [emptyBoard()],
       hydrated: true,
+      skipNextSave: false,
+    }),
+
+  replaceFromImport: (file) =>
+    set({
+      version: file.version,
+      activeBoardId: file.activeBoardId,
+      boards: file.boards,
+      hydrated: true,
+      skipNextSave: true,
     }),
 
   addWidget: (type) => {

@@ -21,15 +21,18 @@
 
 use serde_json::json;
 
+use crate::commands::linear::LinearWidgetConfig;
+
 use super::client::{query_exports, LinearCredentials};
 use super::error::{body_says_rate_limited, classify_status, ErrorKind, LinearError};
 use super::presets::{
-    apply_team_scope, completed_state_types, LinearPreset, LinearQuery, LinearSort, PresetScope,
+    apply_team_scope, completed_state_types, LinearAssigneeFilter, LinearCustomFilter,
+    LinearKnownIds, LinearPreset, LinearQuery, LinearSort, LinearSortDirection, PresetScope,
     DEFAULT_PRESET_ID, PRESETS,
 };
 use super::types::{
-    GqlEnvelope, IssueDetailData, IssueNode, LinearIssue, StateNode, TeamStatesData,
-    ViewerIssuesData,
+    GqlEnvelope, IssueDetailData, IssueNode, LinearCreateIssueInput, LinearGlobalMetadata,
+    LinearIssue, LinearTeamMetadata, PageInfo, StateNode, TeamStatesData, ViewerIssuesData,
 };
 
 /// fixture를 파싱해 평평한 항목 목록으로 만든다. 클라이언트가 하는 일과 같다.
@@ -58,6 +61,8 @@ fn parse_issues(json_text: &str) -> (Vec<LinearIssue>, Option<String>) {
 }
 
 const ISSUES_FIXTURE: &str = include_str!("fixtures/viewer_issues.json");
+const METADATA_FIXTURE: &str = include_str!("fixtures/metadata.json");
+const ISSUE_CREATE_FIXTURE: &str = include_str!("fixtures/issue_create.json");
 
 // ─────────────────────────── 파싱 ───────────────────────────
 
@@ -246,10 +251,10 @@ fn accepts_valid_hex_and_rejects_everything_else() {
     }
 
     for bad in [
-        "#5e6ad",                 // 5자리 — 유효한 길이가 아니다
-        "#gggggg",                // 16진수가 아니다
-        "#5e6ad2;x:1",            // 뒤에 CSS가 붙었다
-        "red",                    // 이름 색 — `#`가 없다
+        "#5e6ad",      // 5자리 — 유효한 길이가 아니다
+        "#gggggg",     // 16진수가 아니다
+        "#5e6ad2;x:1", // 뒤에 CSS가 붙었다
+        "red",         // 이름 색 — `#`가 없다
         "url(javascript:alert(1))",
         "",
     ] {
@@ -350,16 +355,14 @@ fn detail_carries_the_markdown_description() {
         .as_deref()
         .expect("description 없음")
         .contains("## 재현"));
-    assert_eq!(
-        issue.branch_name.as_deref(),
-        Some("sammy/eng-142-redirect")
-    );
+    assert_eq!(issue.branch_name.as_deref(), Some("sammy/eng-142-redirect"));
 }
 
 /// 본문이 없는 이슈가 흔하다. 그것 때문에 상세가 실패하면 안 된다.
 #[test]
 fn detail_survives_a_null_description() {
-    let json_text = r#"{"data":{"issue":{"id":"uuid-1","identifier":"ENG-143","description":null}}}"#;
+    let json_text =
+        r#"{"data":{"issue":{"id":"uuid-1","identifier":"ENG-143","description":null}}}"#;
     let envelope: GqlEnvelope<IssueDetailData> =
         serde_json::from_str(json_text).expect("파싱 실패");
     let issue = envelope.data.expect("data 없음").issue.expect("issue 없음");
@@ -375,7 +378,8 @@ fn detail_survives_a_null_description() {
 /// "재시도 없는 영구 실패"가 된다.
 #[test]
 fn rate_limit_arrives_as_http_400_and_must_be_transient() {
-    let body = r#"{"errors":[{"message":"Rate limit exceeded","extensions":{"code":"RATELIMITED"}}]}"#;
+    let body =
+        r#"{"errors":[{"message":"Rate limit exceeded","extensions":{"code":"RATELIMITED"}}]}"#;
     let e = classify_status(400, "Rate limit exceeded".into(), body, None, 0);
 
     assert!(
@@ -461,7 +465,8 @@ fn graphql_errors_are_permanent() {
 /// 상태 코드만 보면 성공으로 보인다.
 #[test]
 fn parses_200_with_errors_body() {
-    let json_text = r#"{"data":null,"errors":[{"message":"Cannot query field"},{"message":"또 하나"}]}"#;
+    let json_text =
+        r#"{"data":null,"errors":[{"message":"Cannot query field"},{"message":"또 하나"}]}"#;
     let envelope: GqlEnvelope<ViewerIssuesData> =
         serde_json::from_str(json_text).expect("파싱 실패");
 
@@ -522,11 +527,25 @@ fn preset_ids_are_stable_and_unique() {
 }
 
 #[test]
-fn unknown_preset_yields_none() {
+fn unknown_preset_is_rejected() {
     let q = LinearQuery::Preset {
         id: "없는-프리셋".into(),
     };
-    assert_eq!(q.to_filter(), None);
+    let error = q
+        .to_filter(
+            None,
+            &LinearKnownIds::new(
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+            ),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        super::presets::LinearFilterError::UnknownPreset(id) if id == "없는-프리셋"
+    ));
     assert_eq!(q.scope(), None);
     assert_eq!(q.default_title(), "Linear");
 }
@@ -645,6 +664,419 @@ fn team_scope_works_on_an_empty_filter() {
     assert_eq!(scoped, json!({ "team": { "id": { "in": ["t1"] } } }));
 }
 
+// ─────────────────────────── 사용자 필터 ───────────────────────────
+
+fn known_filter_ids() -> LinearKnownIds {
+    LinearKnownIds::new(
+        ["team-eng", "team-design"],
+        ["project-auth"],
+        ["label-bug"],
+        ["started", "unstarted"],
+    )
+}
+
+#[test]
+fn custom_filter_combines_conditions_with_and_semantics() {
+    let filter = LinearCustomFilter {
+        team_ids: vec!["team-eng".into(), "team-design".into()],
+        assignee: LinearAssigneeFilter::Viewer,
+        state_types: vec!["started".into(), "unstarted".into()],
+        project_ids: vec!["project-auth".into()],
+        label_ids: vec!["label-bug".into()],
+        priorities: vec![1, 2],
+        created_from: Some("2026-08-01T00:00:00.000Z".into()),
+        created_to: Some("2026-08-10T14:59:59.999Z".into()),
+        updated_from: None,
+        updated_to: None,
+    };
+
+    assert_eq!(
+        filter
+            .to_issue_filter(Some("viewer-1"), &known_filter_ids())
+            .unwrap(),
+        json!({
+            "team": { "id": { "in": ["team-eng", "team-design"] } },
+            "assignee": { "id": { "eq": "viewer-1" } },
+            "state": { "type": { "in": ["started", "unstarted"] } },
+            "project": { "id": { "in": ["project-auth"] } },
+            "labels": { "id": { "in": ["label-bug"] } },
+            "priority": { "in": [1, 2] },
+            "createdAt": { "gte": "2026-08-01T00:00:00.000Z", "lte": "2026-08-10T14:59:59.999Z" }
+        })
+    );
+}
+
+#[test]
+fn custom_filter_uses_viewer_id_for_assigned_to_me() {
+    let filter = LinearCustomFilter {
+        assignee: LinearAssigneeFilter::Viewer,
+        ..LinearCustomFilter::default()
+    };
+
+    assert_eq!(
+        filter
+            .to_issue_filter(Some("viewer-1"), &known_filter_ids())
+            .unwrap(),
+        json!({ "assignee": { "id": { "eq": "viewer-1" } } })
+    );
+}
+
+#[test]
+fn custom_filter_rejects_empty_filter() {
+    let error = LinearCustomFilter::default()
+        .to_issue_filter(None, &known_filter_ids())
+        .unwrap_err();
+
+    assert!(matches!(error, super::presets::LinearFilterError::Empty));
+}
+
+#[test]
+fn custom_filter_rejects_unknown_ids() {
+    let filter = LinearCustomFilter {
+        team_ids: vec!["team-missing".into()],
+        ..LinearCustomFilter::default()
+    };
+
+    let error = filter
+        .to_issue_filter(None, &known_filter_ids())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        super::presets::LinearFilterError::UnknownTeam(id) if id == "team-missing"
+    ));
+}
+
+#[test]
+fn custom_filter_rejects_reversed_dates() {
+    let filter = LinearCustomFilter {
+        created_from: Some("2026-08-11T00:00:00Z".into()),
+        created_to: Some("2026-08-10T00:00:00Z".into()),
+        ..LinearCustomFilter::default()
+    };
+
+    let error = filter
+        .to_issue_filter(None, &known_filter_ids())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        super::presets::LinearFilterError::ReversedRange { field: "createdAt" }
+    ));
+}
+
+#[test]
+fn custom_filter_rejects_priority_outside_zero_to_four() {
+    let filter = LinearCustomFilter {
+        priorities: vec![5],
+        ..LinearCustomFilter::default()
+    };
+
+    let error = filter
+        .to_issue_filter(None, &known_filter_ids())
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        super::presets::LinearFilterError::InvalidPriority(5)
+    ));
+}
+
+#[test]
+fn custom_filter_rejects_missing_viewer_and_invalid_dates() {
+    let viewer_filter = LinearCustomFilter {
+        assignee: LinearAssigneeFilter::Viewer,
+        ..LinearCustomFilter::default()
+    };
+    assert!(matches!(
+        viewer_filter
+            .to_issue_filter(None, &known_filter_ids())
+            .unwrap_err(),
+        super::presets::LinearFilterError::ViewerUnavailable
+    ));
+
+    let invalid_date = LinearCustomFilter {
+        created_from: Some("not-an-iso-date".into()),
+        ..LinearCustomFilter::default()
+    };
+    assert!(matches!(
+        invalid_date
+            .to_issue_filter(None, &known_filter_ids())
+            .unwrap_err(),
+        super::presets::LinearFilterError::InvalidDate {
+            field: "createdAt",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn custom_filter_handles_unassigned_and_any_assignee() {
+    let unassigned = LinearCustomFilter {
+        assignee: LinearAssigneeFilter::Unassigned,
+        ..LinearCustomFilter::default()
+    };
+    assert_eq!(
+        unassigned
+            .to_issue_filter(None, &known_filter_ids())
+            .unwrap(),
+        json!({ "assignee": { "null": true } })
+    );
+
+    let any = LinearCustomFilter {
+        team_ids: vec!["team-eng".into()],
+        assignee: LinearAssigneeFilter::Any,
+        ..LinearCustomFilter::default()
+    };
+    assert!(any
+        .to_issue_filter(None, &known_filter_ids())
+        .unwrap()
+        .get("assignee")
+        .is_none());
+}
+
+// ─────────────────────────── 양방향 페이지 조회 ───────────────────────────
+
+#[test]
+fn descending_uses_first_after_and_next_page() {
+    assert_eq!(
+        query_exports::pagination_args(LinearSortDirection::Descending, 30),
+        json!({ "first": 30, "after": null, "last": null, "before": null })
+    );
+
+    let page = query_exports::finish_page(
+        Vec::new(),
+        Some(PageInfo {
+            has_next_page: true,
+            end_cursor: Some("next".into()),
+            has_previous_page: false,
+            start_cursor: None,
+        }),
+        LinearSortDirection::Descending,
+    );
+
+    assert_eq!(page.next_cursor.as_deref(), Some("next"));
+}
+
+#[test]
+fn ascending_uses_last_before_previous_page_and_reverses_nodes() {
+    assert_eq!(
+        query_exports::pagination_args(LinearSortDirection::Ascending, 30),
+        json!({ "first": null, "after": null, "last": 30, "before": null })
+    );
+
+    let (mut issues, _) = parse_issues(ISSUES_FIXTURE);
+    issues.truncate(3);
+    let server_order = issues
+        .iter()
+        .map(|issue| issue.identifier.clone())
+        .collect::<Vec<_>>();
+    let page = query_exports::finish_page(
+        issues,
+        Some(PageInfo {
+            has_next_page: false,
+            end_cursor: None,
+            has_previous_page: true,
+            start_cursor: Some("previous".into()),
+        }),
+        LinearSortDirection::Ascending,
+    );
+
+    assert_eq!(
+        page.issues
+            .iter()
+            .map(|issue| issue.identifier.as_str())
+            .collect::<Vec<_>>(),
+        server_order
+            .iter()
+            .rev()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(page.next_cursor.as_deref(), Some("previous"));
+}
+
+#[test]
+fn config_without_direction_defaults_to_descending() {
+    let config: LinearWidgetConfig = serde_json::from_value(json!({
+        "query": { "kind": "preset", "id": "assigned-to-me" },
+        "maxResults": 30
+    }))
+    .unwrap();
+
+    assert_eq!(config.sort_direction, LinearSortDirection::Descending);
+}
+
+// ─────────────────────────── 메타데이터 ───────────────────────────
+
+#[test]
+fn metadata_fixture_flattens_global_and_team_choices() {
+    let global: LinearGlobalMetadata =
+        query_exports::parse_global_metadata(METADATA_FIXTURE).expect("전역 메타데이터 파싱 실패");
+    let team: LinearTeamMetadata =
+        query_exports::parse_team_metadata(METADATA_FIXTURE).expect("팀 메타데이터 파싱 실패");
+
+    assert_eq!(global.viewer.as_ref().unwrap().id, "viewer-1");
+    assert_eq!(global.teams.items[0].key, "ENG");
+    assert!(global.labels.truncated);
+    assert_eq!(team.members.items[0].name, "Sammy");
+    assert_eq!(team.projects.items[0].id, "project-auth");
+    assert_eq!(team.states.items[0].type_name, "unstarted");
+}
+
+#[test]
+fn metadata_queries_request_bounded_connections_and_flattened_fields() {
+    for needle in [
+        "viewer {",
+        "teams(first: 100)",
+        "issueLabels(first: 100)",
+        "pageInfo { hasNextPage }",
+        "displayName",
+        "avatarUrl",
+    ] {
+        assert!(
+            query_exports::GLOBAL_METADATA.contains(needle),
+            "전역 메타데이터 쿼리에 {needle}이 없습니다"
+        );
+    }
+    for needle in [
+        "team(id: $teamId)",
+        "states(first: 50)",
+        "members(first: 100)",
+        "projects(first: 100)",
+        "pageInfo { hasNextPage }",
+    ] {
+        assert!(
+            query_exports::TEAM_METADATA.contains(needle),
+            "팀 메타데이터 쿼리에 {needle}이 없습니다"
+        );
+    }
+}
+
+#[test]
+fn metadata_missing_connection_is_decode_error() {
+    let json = r#"{"data":{"viewer":null,"teams":null,"issueLabels":null}}"#;
+    let error = query_exports::parse_global_metadata(json).unwrap_err();
+
+    assert!(matches!(error, LinearError::Decode { .. }));
+}
+
+// ─────────────────────────── 이슈 생성 ───────────────────────────
+
+#[test]
+fn issue_create_input_uses_linear_graphql_field_names() {
+    let input = LinearCreateIssueInput {
+        team_id: "team-eng".into(),
+        title: "로그인 수정".into(),
+        description: Some("재현 절차".into()),
+        state_id: Some("state-todo".into()),
+        assignee_id: Some("viewer-1".into()),
+        priority: Some(2),
+        project_id: Some("project-auth".into()),
+    };
+
+    assert_eq!(
+        input.to_graphql_input(),
+        json!({
+            "teamId":"team-eng", "title":"로그인 수정", "description":"재현 절차",
+            "stateId":"state-todo", "assigneeId":"viewer-1", "priority":2,
+            "projectId":"project-auth"
+        })
+    );
+}
+
+#[tokio::test]
+async fn issue_create_rejects_invalid_input_before_transport() {
+    let client = super::client::LinearClient::new(LinearCredentials::new("test-key")).unwrap();
+    let input = LinearCreateIssueInput {
+        team_id: "  ".into(),
+        title: "제목".into(),
+        description: None,
+        state_id: None,
+        assignee_id: None,
+        priority: None,
+        project_id: None,
+    };
+
+    let error = client.create_issue(&input).await.unwrap_err();
+
+    assert!(matches!(error, LinearError::BadRequest { .. }));
+}
+
+#[test]
+fn issue_create_success_fixture_flattens_created_issue() {
+    let issue = query_exports::parse_issue_create(ISSUE_CREATE_FIXTURE)
+        .expect("생성 성공 fixture 파싱 실패");
+
+    assert_eq!(issue.identifier, "ENG-143");
+    assert_eq!(issue.title, "로그인 수정");
+    assert_eq!(issue.team_id, "team-eng");
+    assert_eq!(issue.state.id, "state-todo");
+    assert_eq!(issue.project_name.as_deref(), Some("Authentication"));
+}
+
+#[test]
+fn issue_create_success_false_is_a_rejected_request() {
+    let body = r#"{"data":{"issueCreate":{"success":false,"issue":null}}}"#;
+    let error = query_exports::parse_issue_create(body).unwrap_err();
+
+    assert!(matches!(error, LinearError::BadRequest { .. }));
+    assert!(!error.possibly_created());
+}
+
+#[test]
+fn issue_create_missing_issue_is_decode_error() {
+    let body = r#"{"data":{"issueCreate":{"success":true,"issue":null}}}"#;
+    let error = query_exports::parse_issue_create(body).unwrap_err();
+
+    assert!(matches!(error, LinearError::Decode { .. }));
+    assert!(!error.possibly_created());
+}
+
+#[test]
+fn issue_create_graphql_errors_are_not_treated_as_success() {
+    let body = r#"{"data":null,"errors":[{"message":"validation failed"}]}"#;
+    let error = query_exports::parse_issue_create(body).unwrap_err();
+
+    assert!(matches!(error, LinearError::GraphqlErrors { .. }));
+    assert!(!error.possibly_created());
+}
+
+#[test]
+fn issue_create_only_network_and_server_failures_are_possibly_created() {
+    assert!(LinearError::Network {
+        message: "timeout".into()
+    }
+    .possibly_created());
+    assert!(LinearError::ServerError {
+        status: 503,
+        message: "down".into()
+    }
+    .possibly_created());
+    assert!(!LinearError::RateLimited {
+        message: "limited".into(),
+        retry_after_secs: Some(10)
+    }
+    .possibly_created());
+    assert!(!LinearError::Unauthorized {
+        message: "bad key".into()
+    }
+    .possibly_created());
+}
+
+#[test]
+fn response_body_read_failure_is_transport_uncertainty_for_mutations_and_transient_for_queries() {
+    let create_error = query_exports::body_read_error("이슈 생성", "connection reset");
+    assert!(matches!(create_error, LinearError::Network { .. }));
+    assert!(create_error.is_transient());
+    assert!(create_error.possibly_created());
+
+    let query_error = query_exports::body_read_error("이슈 목록", "connection reset");
+    assert!(matches!(query_error, LinearError::Network { .. }));
+    assert!(query_error.is_transient());
+    assert!(query_error.message().contains("이슈 목록"));
+}
+
 // ─────────────────────────── 쿼리 문자열 ───────────────────────────
 //
 // GraphQL 쿼리가 Rust 문자열이라 오타가 컴파일에 안 잡힌다. 최소한 **없으면
@@ -694,6 +1126,25 @@ fn update_mutation_sends_only_the_state_id() {
     assert!(m.contains("issueUpdate(id: $id, input: { stateId: $stateId })"));
     // `success`를 읽지 않으면 실패를 성공으로 보고한다.
     assert!(m.contains("success"));
+}
+
+#[test]
+fn create_mutation_contains_success_and_detail_fields() {
+    let mutation = query_exports::issue_create();
+    for needle in [
+        "issueCreate(input: $input)",
+        "success",
+        "identifier",
+        "url",
+        "state {",
+        "team {",
+        "labels(first: 10)",
+    ] {
+        assert!(
+            mutation.contains(needle),
+            "생성 mutation에 {needle}이 없습니다"
+        );
+    }
 }
 
 // ─────────────────────────── 인증 헤더 ───────────────────────────

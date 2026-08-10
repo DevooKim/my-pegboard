@@ -7,11 +7,13 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::providers::linear::{
-    LinearClient, LinearCredentials, LinearError, LinearIssue, LinearIssueDetail, LinearPreset,
-    LinearQuery, LinearSort, LinearTeam, LinearWorkflowState, PRESETS,
+    LinearClient, LinearCredentials, LinearError, LinearFilterError, LinearGlobalMetadata,
+    LinearIssue, LinearIssueDetail, LinearPreset, LinearQuery, LinearSort, LinearSortDirection,
+    LinearTeamMetadata, LinearUserOption, LinearWorkflowState, PresetScope, PRESETS,
 };
 use crate::secrets::{Secret, SecretKey};
 use crate::state::AppState;
+use crate::storage::{LinearMetaStore, StorageResult};
 
 /// 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -54,6 +56,24 @@ pub struct LinearCallError {
     pub message: String,
     pub is_auth_failure: bool,
     pub retry_after_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearMetadataResponse {
+    pub global: LinearGlobalMetadata,
+    pub team: Option<LinearTeamMetadata>,
+    pub refresh_error: Option<LinearCallError>,
+}
+
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearCreateFailure {
+    pub kind: String,
+    pub message: String,
+    pub is_auth_failure: bool,
+    pub possibly_created: bool,
+    pub check_url: String,
 }
 
 impl From<LinearError> for LinearCallError {
@@ -100,6 +120,8 @@ pub struct LinearWidgetConfig {
     /// **정렬은 두 종뿐이다.** `PaginationOrderBy`가 그것만 준다 (DECISIONS 25.3).
     #[serde(default)]
     pub sort: LinearSort,
+    #[serde(default)]
+    pub sort_direction: LinearSortDirection,
     /// 팀별로 묶어서 보여줄까. 기본 켬.
     #[serde(default = "default_true")]
     pub group_by_team: bool,
@@ -140,19 +162,45 @@ pub fn linear_save_token(state: State<'_, AppState>, token: String) -> Result<()
     if token.is_empty() {
         return Err("API 키가 비어 있습니다".into());
     }
-    state
-        .secrets
-        .set(&SecretKey::linear_token(), &Secret::new(token))
-        .map_err(|e| format!("키체인에 저장할 수 없습니다: {e}"))
+    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+    clear_then_keychain_mutation(
+        &mut meta,
+        clear_linear_metadata,
+        || {
+            state
+                .secrets
+                .set(&SecretKey::linear_token(), &Secret::new(token))
+                .map_err(|error| error.to_string())
+        },
+        |error| {
+            format!(
+                "이전 Linear 계정 메타데이터를 지울 수 없어 API 키를 변경하지 않았습니다: {error}"
+            )
+        },
+        |error| format!("키체인에 저장할 수 없습니다: {error}"),
+    )
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn linear_delete_token(state: State<'_, AppState>) -> Result<(), String> {
-    state
-        .secrets
-        .delete(&SecretKey::linear_token())
-        .map_err(|e| format!("키체인에서 지울 수 없습니다: {e}"))
+    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+    clear_then_keychain_mutation(
+        &mut meta,
+        clear_linear_metadata,
+        || {
+            state
+                .secrets
+                .delete(&SecretKey::linear_token())
+                .map_err(|error| error.to_string())
+        },
+        |error| {
+            format!(
+                "이전 Linear 계정 메타데이터를 지울 수 없어 연결을 삭제하지 않았습니다: {error}"
+            )
+        },
+        |error| format!("키체인에서 지울 수 없습니다: {error}"),
+    )
 }
 
 /// 키가 실제로 동작하는지 확인. 설정창의 [확인] 버튼.
@@ -188,19 +236,58 @@ pub async fn linear_fetch(
 
     // 프리셋 id를 못 풀면 **빈 필터를 보내지 않는다.** 빈 필터는 조직 전체
     // 이슈를 긁어오는 조용한 오작동이 된다.
-    let (Some(filter), Some(scope)) = (config.query.to_filter(), config.query.scope()) else {
-        return Err(permanent_error(
-            "알 수 없는 프리셋입니다. 위젯 설정에서 쿼리를 다시 선택하세요.",
-            None,
-        ));
+    let (known, cached_viewer_id) = {
+        let meta = state
+            .linear_meta
+            .lock()
+            .map_err(|_| permanent_error("상태 잠금 실패", None))?;
+        (
+            meta.known_ids(),
+            meta.global()
+                .viewer
+                .as_ref()
+                .map(|viewer| viewer.id.clone()),
+        )
     };
+
+    let viewer_id = if config.query.needs_viewer() && cached_viewer_id.is_none() {
+        let viewer = client
+            .viewer()
+            .await
+            .map_err(|error| to_widget_error(&state, &widget_id, error))?;
+        let id = viewer.id.clone();
+        match state.linear_meta.lock() {
+            Ok(mut meta) => {
+                if let Err(error) = cache_viewer(
+                    &mut meta,
+                    LinearUserOption {
+                        id: viewer.id,
+                        name: viewer.name,
+                        avatar_url: None,
+                    },
+                ) {
+                    tracing::warn!(error = %error, "Linear viewer 메타데이터 캐시 저장 실패");
+                }
+            }
+            Err(_) => {
+                tracing::warn!("Linear viewer 메타데이터 캐시 상태 잠금 실패");
+            }
+        }
+        Some(id)
+    } else {
+        cached_viewer_id
+    };
+
+    let (filter, scope, team_ids) = resolve_linear_query(&config, viewer_id.as_deref(), &known)
+        .map_err(|error| permanent_error(&error.to_string(), None))?;
 
     match client
         .issues(
             scope,
             &filter,
-            &config.teams,
+            &team_ids,
             config.sort,
+            config.sort_direction,
             config.max_results,
         )
         .await
@@ -227,6 +314,16 @@ pub async fn linear_fetch(
     }
 }
 
+fn cache_viewer(meta: &mut LinearMetaStore, viewer: LinearUserOption) -> StorageResult<()> {
+    let mut global = meta.global().clone();
+    global.viewer = Some(viewer);
+    meta.replace_global_and_save(global)
+}
+
+fn team_refresh_allowed(global: &LinearGlobalMetadata, team_id: &str) -> bool {
+    global.teams.truncated || global.teams.items.iter().any(|team| team.id == team_id)
+}
+
 /// 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
 ///
 /// **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
@@ -241,45 +338,106 @@ pub fn linear_cached(
     Ok(cached_data(&cache, &widget_id))
 }
 
-/// 팀 목록. 설정 폼의 범위 UI를 채운다.
-///
-/// 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
 #[tauri::command]
 #[specta::specta]
-pub async fn linear_teams(
+pub async fn linear_metadata(
     state: State<'_, AppState>,
+    team_id: Option<String>,
     refresh: bool,
-) -> Result<LinearTeamList, String> {
+) -> Result<LinearMetadataResponse, String> {
     if !refresh {
         let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-        if meta.has_teams() {
-            return Ok(LinearTeamList {
-                teams: meta.teams().to_vec(),
-                fetched_at: meta.fetched_at().map(|t| t.to_rfc3339()),
-            });
+        return metadata_response(&meta, team_id.as_deref(), None);
+    }
+
+    if let Some(team_id) = team_id.as_deref() {
+        let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+        if !team_refresh_allowed(meta.global(), team_id) {
+            return Err(format!(
+                "알 수 없는 팀입니다: {team_id}. 전역 메타데이터를 먼저 새로고침하세요."
+            ));
         }
     }
 
-    let client = client_from_state(&state)?;
-    let teams = client.teams().await.map_err(|e| e.to_string())?;
-    let fetched_at = chrono::Utc::now();
+    let client = match client_for_call(&state) {
+        Ok(client) => client,
+        Err(error) => {
+            let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+            return metadata_response(&meta, team_id.as_deref(), Some(error));
+        }
+    };
 
-    let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
-    meta.set_teams(teams, fetched_at);
-    meta.save()
-        .map_err(|e| format!("팀 목록을 저장할 수 없습니다: {e}"))?;
-
-    Ok(LinearTeamList {
-        teams: meta.teams().to_vec(),
-        fetched_at: Some(fetched_at.to_rfc3339()),
-    })
+    match team_id.as_deref() {
+        None => match client.global_metadata().await {
+            Ok(global) => {
+                let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+                meta.replace_global_and_save(global)
+                    .map_err(|error| format!("Linear 메타데이터를 저장할 수 없습니다: {error}"))?;
+                metadata_response(&meta, None, None)
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "Linear 전역 메타데이터 갱신 실패");
+                let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+                metadata_response(&meta, None, Some(error.into()))
+            }
+        },
+        Some(team_id) => match client.team_metadata(team_id).await {
+            Ok(team) => {
+                let mut meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+                meta.replace_team_and_save(team).map_err(|error| {
+                    format!("Linear 팀 메타데이터를 저장할 수 없습니다: {error}")
+                })?;
+                metadata_response(&meta, Some(team_id), None)
+            }
+            Err(error) => {
+                tracing::warn!(team = %team_id, error = %error, "Linear 팀 메타데이터 갱신 실패");
+                let meta = state.linear_meta.lock().map_err(|_| "상태 잠금 실패")?;
+                metadata_response(&meta, Some(team_id), Some(error.into()))
+            }
+        },
+    }
 }
 
-#[derive(Debug, Clone, Serialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct LinearTeamList {
-    pub teams: Vec<LinearTeam>,
-    pub fetched_at: Option<String>,
+#[tauri::command]
+#[specta::specta]
+pub async fn linear_create_issue(
+    state: State<'_, AppState>,
+    input: crate::providers::linear::LinearCreateIssueInput,
+) -> Result<LinearIssue, LinearCreateFailure> {
+    {
+        let meta = state.linear_meta.lock().map_err(|_| LinearCreateFailure {
+            kind: "permanent".into(),
+            message: "상태 잠금 실패".into(),
+            is_auth_failure: false,
+            possibly_created: false,
+            check_url: "https://linear.app".into(),
+        })?;
+        validate_create_input(&meta, &input)?;
+    }
+
+    let client = client_from_state(&state).map_err(|message| LinearCreateFailure {
+        kind: "permanent".into(),
+        message,
+        is_auth_failure: true,
+        possibly_created: false,
+        check_url: "https://linear.app".into(),
+    })?;
+
+    match client.create_issue(&input).await {
+        Ok(issue) => {
+            tracing::info!(issue = %issue.identifier, "Linear 이슈 생성됨");
+            Ok(issue)
+        }
+        Err(error) => {
+            let failure = create_failure(&error);
+            tracing::warn!(
+                kind = %failure.kind,
+                possibly_created = failure.possibly_created,
+                "Linear 이슈 생성 실패"
+            );
+            Err(failure)
+        }
+    }
 }
 
 /// 이슈 본문(markdown). 상세 모달이 골격을 그린 뒤에 채운다.
@@ -376,8 +534,177 @@ fn client_from_state(state: &AppState) -> Result<LinearClient, String> {
     ))
 }
 
+fn clear_linear_metadata(
+    meta: &mut crate::storage::linear_meta::LinearMetaStore,
+) -> Result<(), String> {
+    meta.clear();
+    meta.save()
+        .map_err(|error| format!("Linear 메타데이터를 지울 수 없습니다: {error}"))
+}
+
+fn clear_then_keychain_mutation<Clear, Mutate, MapMetadataError, MapKeychainError>(
+    meta: &mut crate::storage::linear_meta::LinearMetaStore,
+    clear: Clear,
+    mutate: Mutate,
+    map_metadata_error: MapMetadataError,
+    map_keychain_error: MapKeychainError,
+) -> Result<(), String>
+where
+    Clear: FnOnce(&mut crate::storage::linear_meta::LinearMetaStore) -> Result<(), String>,
+    Mutate: FnOnce() -> Result<(), String>,
+    MapMetadataError: FnOnce(String) -> String,
+    MapKeychainError: FnOnce(String) -> String,
+{
+    clear(meta).map_err(map_metadata_error)?;
+    mutate().map_err(map_keychain_error)
+}
+
 fn client_for_call(state: &AppState) -> Result<LinearClient, LinearCallError> {
     client_from_state(state).map_err(|_| LinearCallError::not_configured())
+}
+
+fn metadata_response(
+    meta: &crate::storage::linear_meta::LinearMetaStore,
+    team_id: Option<&str>,
+    refresh_error: Option<LinearCallError>,
+) -> Result<LinearMetadataResponse, String> {
+    let team = team_id.and_then(|id| meta.team(id).cloned());
+    if let Some(id) = team_id {
+        let known_team = meta.global().teams.items.iter().any(|team| team.id == id);
+        if !known_team {
+            return Err(format!(
+                "알 수 없는 팀입니다: {id}. 전역 메타데이터를 먼저 새로고침하세요."
+            ));
+        }
+    }
+    Ok(LinearMetadataResponse {
+        global: meta.global().clone(),
+        team,
+        refresh_error,
+    })
+}
+
+fn resolve_linear_query(
+    config: &LinearWidgetConfig,
+    viewer_id: Option<&str>,
+    known: &crate::providers::linear::LinearKnownIds,
+) -> Result<(serde_json::Value, PresetScope, Vec<String>), LinearFilterError> {
+    let filter = config.query.to_filter(viewer_id, known)?;
+    let scope = config
+        .query
+        .scope()
+        .ok_or_else(|| LinearFilterError::UnknownPreset("알 수 없는 쿼리".into()))?;
+    let team_ids = match &config.query {
+        LinearQuery::Preset { .. } => config.teams.clone(),
+        LinearQuery::Custom { .. } => Vec::new(),
+    };
+    Ok((filter, scope, team_ids))
+}
+
+fn create_failure(error: &LinearError) -> LinearCreateFailure {
+    LinearCreateFailure {
+        kind: match error.kind() {
+            crate::providers::linear::ErrorKind::Transient => "transient".into(),
+            crate::providers::linear::ErrorKind::Permanent => "permanent".into(),
+        },
+        message: error.to_string(),
+        is_auth_failure: error.is_auth_failure(),
+        possibly_created: error.possibly_created(),
+        check_url: "https://linear.app".into(),
+    }
+}
+
+fn validation_failure(field: &str, message: impl Into<String>) -> LinearCreateFailure {
+    LinearCreateFailure {
+        kind: "permanent".into(),
+        message: format!("{field}: {}. 메타데이터를 새로고침하세요.", message.into()),
+        is_auth_failure: false,
+        possibly_created: false,
+        check_url: "https://linear.app".into(),
+    }
+}
+
+fn input_failure(field: &str, message: impl Into<String>) -> LinearCreateFailure {
+    LinearCreateFailure {
+        kind: "permanent".into(),
+        message: format!("{field}: {}.", message.into()),
+        is_auth_failure: false,
+        possibly_created: false,
+        check_url: "https://linear.app".into(),
+    }
+}
+
+fn validate_create_input(
+    meta: &crate::storage::linear_meta::LinearMetaStore,
+    input: &crate::providers::linear::LinearCreateIssueInput,
+) -> Result<(), LinearCreateFailure> {
+    let team_id = input.team_id.trim();
+    if team_id.is_empty() {
+        return Err(input_failure("teamId", "팀을 선택하세요"));
+    }
+    if input.title.trim().is_empty() {
+        return Err(input_failure("title", "제목을 입력하세요"));
+    }
+    if input.priority.is_some_and(|priority| priority > 4) {
+        return Err(input_failure(
+            "priority",
+            "우선순위는 0부터 4까지만 가능합니다",
+        ));
+    }
+
+    if !meta
+        .global()
+        .teams
+        .items
+        .iter()
+        .any(|team| team.id == team_id)
+    {
+        return Err(validation_failure(
+            "teamId",
+            format!("캐시된 팀 목록에 없는 팀입니다: {team_id}"),
+        ));
+    }
+
+    let team = meta.team(team_id);
+    if let Some(state_id) = input.state_id.as_deref() {
+        let known =
+            team.is_some_and(|team| team.states.items.iter().any(|state| state.id == state_id));
+        if !known {
+            return Err(validation_failure(
+                "stateId",
+                format!("캐시된 상태 목록에 없는 상태입니다: {state_id}"),
+            ));
+        }
+    }
+    if let Some(assignee_id) = input.assignee_id.as_deref() {
+        let known = team.is_some_and(|team| {
+            team.members
+                .items
+                .iter()
+                .any(|member| member.id == assignee_id)
+        });
+        if !known {
+            return Err(validation_failure(
+                "assigneeId",
+                format!("캐시된 멤버 목록에 없는 담당자입니다: {assignee_id}"),
+            ));
+        }
+    }
+    if let Some(project_id) = input.project_id.as_deref() {
+        let known = team.is_some_and(|team| {
+            team.projects
+                .items
+                .iter()
+                .any(|project| project.id == project_id)
+        });
+        if !known {
+            return Err(validation_failure(
+                "projectId",
+                format!("캐시된 프로젝트 목록에 없는 프로젝트입니다: {project_id}"),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn cached_data(
@@ -423,6 +750,11 @@ fn to_widget_error(state: &AppState, widget_id: &str, e: LinearError) -> LinearW
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::linear::{
+        LinearAssigneeFilter, LinearCreateIssueInput, LinearCustomFilter, LinearGlobalMetadata,
+        LinearKnownIds, LinearMetadataList, LinearQuery, LinearTeam, LinearTeamMetadata,
+    };
+    use crate::storage::linear_meta::LinearMetaStore;
 
     fn data(count: usize) -> LinearWidgetData {
         LinearWidgetData {
@@ -503,5 +835,370 @@ mod tests {
         assert!(config.group_by_team, "그룹핑 기본값은 켬이다");
         assert_eq!(config.refresh_secs, 300);
         assert!(config.teams.is_empty());
+    }
+
+    fn cached_store() -> (tempfile::TempDir, LinearMetaStore) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (mut store, _) = LinearMetaStore::load(dir.path()).unwrap();
+        store.set_global(LinearGlobalMetadata {
+            teams: LinearMetadataList {
+                items: vec![LinearTeam {
+                    id: "team-eng".into(),
+                    key: "ENG".into(),
+                    name: "Engineering".into(),
+                }],
+                fetched_at: Some(chrono::Utc::now()),
+                truncated: false,
+            },
+            ..LinearGlobalMetadata::default()
+        });
+        store.set_team(LinearTeamMetadata {
+            team_id: "team-eng".into(),
+            states: LinearMetadataList {
+                items: Vec::new(),
+                fetched_at: None,
+                truncated: false,
+            },
+            members: LinearMetadataList {
+                items: Vec::new(),
+                fetched_at: None,
+                truncated: false,
+            },
+            projects: LinearMetadataList {
+                items: Vec::new(),
+                fetched_at: None,
+                truncated: false,
+            },
+        });
+        (dir, store)
+    }
+
+    #[test]
+    fn metadata_response_returns_cached_global_and_requested_team_without_refresh() {
+        let (_dir, store) = cached_store();
+
+        let response = metadata_response(&store, Some("team-eng"), None).unwrap();
+
+        assert_eq!(response.global.teams.items[0].id, "team-eng");
+        assert_eq!(response.team.unwrap().team_id, "team-eng");
+        assert!(response.refresh_error.is_none());
+    }
+
+    #[test]
+    fn viewer_cache_helper_persists_the_viewer_before_returning() {
+        let (dir, mut store) = cached_store();
+        cache_viewer(
+            &mut store,
+            LinearUserOption {
+                id: "viewer-new".into(),
+                name: "New viewer".into(),
+                avatar_url: None,
+            },
+        )
+        .unwrap();
+
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert_eq!(reloaded.global().viewer.as_ref().unwrap().id, "viewer-new");
+    }
+
+    #[test]
+    fn team_refresh_preflight_allows_unknown_teams_in_a_truncated_global_list() {
+        let (_dir, mut store) = cached_store();
+        let mut global = store.global().clone();
+        global.teams.truncated = true;
+        store.set_global(global);
+
+        assert!(team_refresh_allowed(store.global(), "team-unknown"));
+    }
+
+    #[test]
+    fn team_refresh_preflight_rejects_absent_teams_in_a_complete_global_list() {
+        let (_dir, store) = cached_store();
+
+        assert!(!team_refresh_allowed(store.global(), "team-unknown"));
+    }
+
+    #[test]
+    fn metadata_response_preserves_cached_values_when_refresh_fails() {
+        let (_dir, store) = cached_store();
+        let error = LinearCallError {
+            kind: "transient".into(),
+            message: "Linear 연결 실패".into(),
+            is_auth_failure: false,
+            retry_after_secs: None,
+        };
+
+        let response = metadata_response(&store, Some("team-eng"), Some(error)).unwrap();
+
+        assert_eq!(response.global.teams.items[0].key, "ENG");
+        assert_eq!(response.team.unwrap().team_id, "team-eng");
+        assert_eq!(response.refresh_error.unwrap().message, "Linear 연결 실패");
+    }
+
+    #[test]
+    fn metadata_response_keeps_auth_failure_visible() {
+        let (_dir, store) = cached_store();
+        let error = LinearCallError {
+            kind: "permanent".into(),
+            message: "인증 실패".into(),
+            is_auth_failure: true,
+            retry_after_secs: None,
+        };
+
+        let response = metadata_response(&store, None, Some(error)).unwrap();
+
+        assert!(response.refresh_error.unwrap().is_auth_failure);
+    }
+
+    #[test]
+    fn token_rotation_clears_cached_linear_account_metadata() {
+        let (dir, mut store) = cached_store();
+        let mut global = store.global().clone();
+        global.viewer = Some(crate::providers::linear::LinearUserOption {
+            id: "old-viewer".into(),
+            name: "Old account".into(),
+            avatar_url: None,
+        });
+        store.set_global(global);
+
+        clear_linear_metadata(&mut store).unwrap();
+
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert!(reloaded.global().teams.items.is_empty());
+        assert!(reloaded.global().viewer.is_none());
+        assert!(reloaded.team("team-eng").is_none());
+    }
+
+    #[test]
+    fn metadata_write_happens_before_credential_mutation() {
+        let (_dir, mut store) = cached_store();
+        let credential = std::rc::Rc::new(std::cell::RefCell::new("old-token"));
+        let new_credential = std::rc::Rc::clone(&credential);
+        let order = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let clear_order = std::rc::Rc::clone(&order);
+        let mutate_order = std::rc::Rc::clone(&order);
+
+        clear_then_keychain_mutation(
+            &mut store,
+            move |_meta| {
+                clear_order.borrow_mut().push("metadata");
+                Ok(())
+            },
+            move || {
+                mutate_order.borrow_mut().push("keychain");
+                *new_credential.borrow_mut() = "new-token";
+                Ok(())
+            },
+            |error| error,
+            |error| error,
+        )
+        .unwrap();
+
+        assert_eq!(*order.borrow(), ["metadata", "keychain"]);
+        assert_eq!(*credential.borrow(), "new-token");
+    }
+
+    #[test]
+    fn metadata_write_failure_leaves_credential_unchanged() {
+        let (_dir, mut store) = cached_store();
+        let credential = std::cell::RefCell::new("old-token");
+        let mutation_called = std::cell::Cell::new(false);
+
+        let error = clear_then_keychain_mutation(
+            &mut store,
+            |_meta| Err("metadata disk full".to_owned()),
+            || {
+                mutation_called.set(true);
+                *credential.borrow_mut() = "new-token";
+                Ok(())
+            },
+            |error| format!("metadata: {error}"),
+            |error| format!("keychain: {error}"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "metadata: metadata disk full");
+        assert!(!mutation_called.get());
+        assert_eq!(*credential.borrow(), "old-token");
+    }
+
+    #[test]
+    fn keychain_failure_leaves_the_cleared_cache_visible() {
+        let (dir, mut store) = cached_store();
+
+        let error = clear_then_keychain_mutation(
+            &mut store,
+            clear_linear_metadata,
+            || Err("keychain unavailable".to_owned()),
+            |error| format!("metadata: {error}"),
+            |error| format!("keychain: {error}"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "keychain: keychain unavailable");
+        assert!(store.global().teams.items.is_empty());
+        let (reloaded, _) = LinearMetaStore::load(dir.path()).unwrap();
+        assert!(reloaded.global().teams.items.is_empty());
+        assert!(reloaded.team("team-eng").is_none());
+    }
+
+    #[test]
+    fn custom_query_uses_all_issues_and_ignores_legacy_team_scope() {
+        let config = LinearWidgetConfig {
+            title: None,
+            query: LinearQuery::Custom {
+                filter: LinearCustomFilter {
+                    team_ids: vec!["team-eng".into()],
+                    assignee: LinearAssigneeFilter::Any,
+                    ..LinearCustomFilter::default()
+                },
+            },
+            max_results: 30,
+            teams: vec!["legacy-team".into()],
+            sort: LinearSort::UpdatedAt,
+            sort_direction: LinearSortDirection::Descending,
+            group_by_team: true,
+            refresh_secs: 300,
+        };
+
+        let (filter, scope, team_ids) = resolve_linear_query(
+            &config,
+            None,
+            &LinearKnownIds::new(
+                ["team-eng"],
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(scope, crate::providers::linear::PresetScope::AllIssues);
+        assert!(team_ids.is_empty());
+        assert_eq!(
+            filter,
+            serde_json::json!({
+                "team": { "id": { "in": ["team-eng"] } }
+            })
+        );
+    }
+
+    #[test]
+    fn invalid_custom_query_is_rejected_before_a_client_request() {
+        let config = LinearWidgetConfig {
+            title: None,
+            query: LinearQuery::Custom {
+                filter: LinearCustomFilter {
+                    project_ids: vec!["project-stale".into()],
+                    ..LinearCustomFilter::default()
+                },
+            },
+            max_results: 30,
+            teams: Vec::new(),
+            sort: LinearSort::UpdatedAt,
+            sort_direction: LinearSortDirection::Descending,
+            group_by_team: true,
+            refresh_secs: 300,
+        };
+
+        let error = resolve_linear_query(
+            &config,
+            None,
+            &LinearKnownIds::new(
+                ["team-eng"],
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+                std::iter::empty::<String>(),
+            ),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            crate::providers::linear::LinearFilterError::UnknownProject(id)
+                if id == "project-stale"
+        ));
+    }
+
+    #[test]
+    fn create_failure_classifies_uncertain_and_explicit_failures() {
+        let network = create_failure(&LinearError::Network {
+            message: "timeout".into(),
+        });
+        assert!(network.possibly_created);
+        assert!(!network.is_auth_failure);
+        assert_eq!(network.check_url, "https://linear.app");
+
+        let server = create_failure(&LinearError::ServerError {
+            status: 503,
+            message: "down".into(),
+        });
+        assert!(server.possibly_created);
+
+        for error in [
+            LinearError::RateLimited {
+                message: "limited".into(),
+                retry_after_secs: Some(30),
+            },
+            LinearError::BadRequest {
+                message: "bad input".into(),
+            },
+            LinearError::GraphqlErrors {
+                message: "validation".into(),
+            },
+            LinearError::Unauthorized {
+                message: "bad key".into(),
+            },
+            LinearError::Forbidden {
+                message: "forbidden".into(),
+            },
+        ] {
+            let failure = create_failure(&error);
+            assert!(!failure.possibly_created, "{error:?}");
+            assert_eq!(failure.check_url, "https://linear.app");
+        }
+
+        assert!(
+            create_failure(&LinearError::Unauthorized {
+                message: "bad key".into(),
+            })
+            .is_auth_failure
+        );
+    }
+
+    #[test]
+    fn create_validation_rejects_ids_outside_cached_team_metadata() {
+        let (_dir, store) = cached_store();
+        let input = LinearCreateIssueInput {
+            team_id: "team-eng".into(),
+            title: "제목".into(),
+            description: None,
+            state_id: None,
+            assignee_id: None,
+            priority: None,
+            project_id: Some("project-stale".into()),
+        };
+
+        let failure = validate_create_input(&store, &input).unwrap_err();
+
+        assert_eq!(failure.kind, "permanent");
+        assert!(failure.message.contains("projectId"));
+        assert!(!failure.possibly_created);
+    }
+
+    #[test]
+    fn create_validation_accepts_a_cached_team_without_optional_fields() {
+        let (_dir, store) = cached_store();
+        let input = LinearCreateIssueInput {
+            team_id: "team-eng".into(),
+            title: "제목".into(),
+            description: None,
+            state_id: None,
+            assignee_id: None,
+            priority: None,
+            project_id: None,
+        };
+
+        validate_create_input(&store, &input).unwrap();
     }
 }

@@ -1,67 +1,198 @@
 import { RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   commands,
+  type LinearGlobalMetadata,
   type LinearPreset,
   type LinearSort,
+  type LinearSortDirection,
   type LinearTeam,
+  type LinearTeamMetadata,
   type LinearWidgetConfig,
 } from '#/ipc/bindings'
 import { relativeTime, useNow } from '#/ui/relativeTime'
 import type { WidgetConfigFormProps } from '#/widgets/types'
+import { CustomQueryFields } from './CustomQueryFields'
+import {
+  emptyCustomFilter,
+  hasReversedDateRange,
+  isEmptyCustomFilter,
+  normalizeCustomFilter,
+  pruneTeamDependentSelections,
+} from './customQuery'
 
-/**
- * Linear 위젯 설정 (DECISIONS 25.3).
- *
- * Jira·GitHub 설정 폼과 같은 구조지만 **없는 것이 둘 있다:**
- *
- * 1. **직접 입력(탈출구)이 없다.** Linear의 필터는 문자열이 아니라 `IssueFilter`
- *    JSON 객체다. 사용자에게 GraphQL 필터 JSON을 쓰게 하는 것은 탈출구가 아니라
- *    함정이다 — 우리가 검증할 수 없고, 에러도 JQL만큼 친절하지 않다.
- *    프리셋 × 팀 범위의 조합으로 커버한다
- * 2. **열 설정이 없다.** Jira의 10열은 필드 채움률 실측(라벨 0/22 등)을 근거로
- *    골랐는데, Linear는 실측이 없다. GitHub처럼 고정 2행으로 둔다
- *
- * 정렬은 **두 종뿐이다.** `PaginationOrderBy`가 그것만 준다 — 없는 정렬을
- * 드롭다운에 넣으면 설정 UI가 거짓말을 한다.
- */
-export function LinearConfigForm({ config, onChange }: WidgetConfigFormProps<LinearWidgetConfig>) {
+function transportErrorMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `Linear 메타데이터를 불러오지 못했습니다: ${detail}. 새로고침하세요.`
+}
+
+export function LinearConfigForm({
+  config,
+  onChange,
+  onValidityChange,
+}: WidgetConfigFormProps<LinearWidgetConfig>) {
   const [presets, setPresets] = useState<LinearPreset[]>([])
-  const [teams, setTeams] = useState<LinearTeam[]>([])
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [presetsError, setPresetsError] = useState<string | null>(null)
+  const [metadata, setMetadata] = useState<LinearGlobalMetadata | null>(null)
+  const [teamMetadata, setTeamMetadata] = useState<Record<string, LinearTeamMetadata>>({})
+  const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [metadataErrorTeamId, setMetadataErrorTeamId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [teamsError, setTeamsError] = useState<string | null>(null)
+  const metadataRequestRef = useRef(new Map<string, number>())
+  const activeRefreshRef = useRef<{ key: string; requestId: number } | null>(null)
+  const [globalRefreshVersion, setGlobalRefreshVersion] = useState(0)
   const now = useNow()
+  const isCustom = config.query.kind === 'custom'
+  const filter = useMemo(() => {
+    return config.query.kind === 'custom'
+      ? normalizeCustomFilter(config.query.filter)
+      : emptyCustomFilter()
+  }, [config.query])
 
-  const loadTeams = useCallback(async (force: boolean) => {
-    if (force) setRefreshing(true)
-    const r = await commands.linearTeams(force)
-    if (r.status === 'ok') {
-      setTeams(r.data.teams)
-      setFetchedAt(r.data.fetchedAt)
-      setTeamsError(null)
-    } else {
-      // 조용히 빈 목록을 두지 않는다. 왜 비었는지 말한다.
-      setTeamsError(r.error)
+  const loadMetadata = useCallback(async (teamId: string | null, refresh: boolean) => {
+    const key = teamId ?? '__global__'
+    const requestId = (metadataRequestRef.current.get(key) ?? 0) + 1
+    metadataRequestRef.current.set(key, requestId)
+    if (refresh) {
+      activeRefreshRef.current = { key, requestId }
+      setRefreshing(true)
+    } else if (activeRefreshRef.current === null) {
+      setRefreshing(false)
     }
-    setRefreshing(false)
+    try {
+      const result = await commands.linearMetadata(teamId, refresh)
+      if (metadataRequestRef.current.get(key) !== requestId) return
+      if (result.status !== 'ok') {
+        setMetadataError(result.error)
+        setMetadataErrorTeamId(teamId)
+        return
+      }
+
+      const error = result.data.refreshError?.message ?? null
+      if (teamId === null && (!refresh || !error)) setMetadata(result.data.global)
+      const team = result.data.team
+      if (team) {
+        setTeamMetadata((current) => ({
+          ...current,
+          [team.teamId]: team,
+        }))
+      }
+      setMetadataError(error)
+      setMetadataErrorTeamId(error ? teamId : null)
+      if (teamId === null && refresh && !error) {
+        setGlobalRefreshVersion((version) => version + 1)
+      }
+    } catch (error) {
+      if (metadataRequestRef.current.get(key) !== requestId) return
+      setMetadataError(transportErrorMessage(error))
+      setMetadataErrorTeamId(teamId)
+    } finally {
+      if (metadataRequestRef.current.get(key) === requestId) {
+        if (
+          activeRefreshRef.current?.key === key &&
+          activeRefreshRef.current.requestId === requestId
+        ) {
+          activeRefreshRef.current = null
+          setRefreshing(false)
+        } else if (activeRefreshRef.current === null) {
+          setRefreshing(false)
+        }
+      }
+    }
+  }, [])
+
+  const loadPresets = useCallback(async () => {
+    try {
+      setPresets(await commands.linearPresets())
+      setPresetsError(null)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      setPresetsError(`Linear 쿼리 목록을 불러오지 못했습니다: ${detail}. 다시 시도하세요.`)
+    }
   }, [])
 
   useEffect(() => {
-    void commands.linearPresets().then(setPresets)
-    void loadTeams(false)
-  }, [loadTeams])
+    void loadPresets()
+    void loadMetadata(null, false)
+  }, [loadMetadata, loadPresets])
 
-  const selectedTeams = config.teams ?? []
-  const preset = presets.find((p) => p.id === config.query.id)
-  const defaultTitle = preset?.name ?? 'Linear'
+  const selectedCustomTeams = filter.teamIds ?? []
+  useEffect(() => {
+    if (!isCustom) return
+    for (const teamId of selectedCustomTeams) {
+      if (!teamMetadata[teamId]) void loadMetadata(teamId, false)
+    }
+  }, [isCustom, loadMetadata, selectedCustomTeams, teamMetadata])
 
-  const toggleTeam = (id: string) => {
-    const next = selectedTeams.includes(id)
-      ? selectedTeams.filter((t) => t !== id)
-      : [...selectedTeams, id]
-    onChange({ ...config, teams: next })
+  const valid = !isCustom || (!isEmptyCustomFilter(filter) && !hasReversedDateRange(filter))
+  useEffect(() => {
+    onValidityChange?.(valid)
+  }, [onValidityChange, valid])
+
+  const updateFilter = useCallback(
+    (next: typeof filter) => {
+      onChange({ ...config, query: { kind: 'custom', filter: next } })
+    },
+    [config, onChange],
+  )
+
+  useEffect(() => {
+    if (!isCustom) return
+    const next = pruneTeamDependentSelections(
+      filter,
+      selectedCustomTeams,
+      teamMetadata,
+      globalRefreshVersion > 0 ? metadata : null,
+    )
+    const teamIdsChanged =
+      next.teamIds.length !== filter.teamIds.length ||
+      next.teamIds.some((value, index) => value !== filter.teamIds[index])
+    const stateTypesChanged =
+      next.stateTypes.length !== filter.stateTypes.length ||
+      next.stateTypes.some((value, index) => value !== filter.stateTypes[index])
+    const projectIdsChanged =
+      next.projectIds.length !== filter.projectIds.length ||
+      next.projectIds.some((value, index) => value !== filter.projectIds[index])
+    const labelIdsChanged =
+      next.labelIds.length !== filter.labelIds.length ||
+      next.labelIds.some((value, index) => value !== filter.labelIds[index])
+    if (teamIdsChanged || stateTypesChanged || projectIdsChanged || labelIdsChanged) {
+      updateFilter(next)
+    }
+  }, [
+    filter,
+    globalRefreshVersion,
+    isCustom,
+    metadata,
+    selectedCustomTeams,
+    teamMetadata,
+    updateFilter,
+  ])
+
+  const chooseQuery = (value: string) => {
+    if (value === '__custom__') {
+      const next =
+        config.query.kind === 'custom'
+          ? config.query.filter
+          : { ...emptyCustomFilter(), teamIds: [...(config.teams ?? [])] }
+      onChange({ ...config, query: { kind: 'custom', filter: next } })
+      return
+    }
+    onChange({ ...config, query: { kind: 'preset', id: value } })
   }
+
+  const togglePresetTeam = (id: string) => {
+    const selected = config.teams ?? []
+    onChange({
+      ...config,
+      teams: selected.includes(id) ? selected.filter((teamId) => teamId !== id) : [...selected, id],
+    })
+  }
+
+  const presetQuery = config.query.kind === 'preset' ? config.query : null
+  const preset = presetQuery ? presets.find((p) => p.id === presetQuery.id) : null
+  const defaultTitle = isCustom ? '직접 구성한 이슈' : (preset?.name ?? 'Linear')
+  const teams = metadata?.teams.items ?? []
 
   return (
     <div className="flex flex-col">
@@ -73,22 +204,24 @@ export function LinearConfigForm({ config, onChange }: WidgetConfigFormProps<Lin
             value={config.title ?? ''}
             onChange={(e) => onChange({ ...config, title: e.target.value })}
             placeholder={defaultTitle}
-            className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5
-                       text-body text-text-primary placeholder:text-text-quaternary"
+            className="rounded border border-border-subtle bg-surface-inset px-2 py-1.5 text-body text-text-primary placeholder:text-text-quaternary"
           />
         </label>
 
         <label className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">쿼리</span>
           <select
-            value={config.query.id}
-            onChange={(e) => onChange({ ...config, query: { kind: 'preset', id: e.target.value } })}
-            className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5
-                       text-body text-text-primary"
+            aria-label="쿼리"
+            value={isCustom ? '__custom__' : (presetQuery?.id ?? '')}
+            onChange={(e) => chooseQuery(e.target.value)}
+            className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5 text-body text-text-primary"
           >
-            {/* 프리셋을 아직 못 불러왔으면 현재 값으로 임시 옵션을 넣는다.
-                안 그러면 select가 첫 항목을 고른 것처럼 보인다. */}
-            {presets.length === 0 && <option value={config.query.id}>불러오는 중…</option>}
+            <option value="__custom__">직접 구성</option>
+            {presets.length === 0 && !isCustom && (
+              <option value={presetQuery?.id ?? ''}>
+                {presetsError ? '불러오지 못했습니다' : '불러오는 중…'}
+              </option>
+            )}
             {presets.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -96,89 +229,118 @@ export function LinearConfigForm({ config, onChange }: WidgetConfigFormProps<Lin
             ))}
           </select>
           {preset && <span className="text-caption text-text-tertiary">{preset.description}</span>}
+          {presetsError && (
+            <div className="flex flex-wrap items-center gap-2 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+              <span>{presetsError}</span>
+              <button
+                type="button"
+                onClick={() => void loadPresets()}
+                className="rounded border border-danger-muted px-1.5 py-0.5 text-text-primary"
+              >
+                쿼리 목록 다시 시도
+              </button>
+            </div>
+          )}
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-caption text-text-secondary">정렬</span>
-          <select
-            value={config.sort ?? 'updatedAt'}
-            onChange={(e) => onChange({ ...config, sort: e.target.value as LinearSort })}
-            className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5
-                       text-body text-text-primary"
-          >
-            <option value="updatedAt">최근 업데이트순</option>
-            <option value="createdAt">최근 생성순</option>
-          </select>
-          {/* **없는 선택지를 왜 안 만들었는지 적는다.** 우선순위·마감일 정렬을
-              찾다가 없어서 "빠뜨렸나" 하는 것을 막는다. */}
-          <span className="text-caption text-text-tertiary leading-relaxed-ko">
-            Linear API가 제공하는 정렬은 이 둘뿐입니다. 우선순위·마감일 정렬은 Linear 웹에서 보세요.
-          </span>
-        </label>
-      </Section>
-
-      {/* 범위 — 프리셋 전부에 적용된다. */}
-      <Section>
-        <div className="flex flex-col gap-1.5">
-          <span className="flex items-center gap-2">
-            <span className="text-caption text-text-secondary">팀 범위</span>
-            <button
-              type="button"
-              onClick={() => void loadTeams(true)}
-              disabled={refreshing}
-              title="팀 목록 새로고침"
-              className="rounded p-0.5 text-text-quaternary hover:text-text-secondary
-                         disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent"
+        <div className="grid grid-cols-2 gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-caption text-text-secondary">정렬 필드</span>
+            <select
+              aria-label="정렬 필드"
+              value={config.sort ?? 'updatedAt'}
+              onChange={(e) => onChange({ ...config, sort: e.target.value as LinearSort })}
+              className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5 text-body text-text-primary"
             >
-              <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
-            </button>
-            {fetchedAt && (
-              <span className="text-caption text-text-quaternary">
-                {relativeTime(fetchedAt, new Date(now))}
-              </span>
-            )}
-          </span>
-
-          {teamsError && (
-            <p className="rounded bg-danger-muted px-2 py-1 text-caption text-danger">
-              {teamsError}
-            </p>
-          )}
-
-          {!teamsError && teams.length === 0 && (
-            <p className="text-caption text-text-tertiary leading-relaxed-ko">
-              팀이 없습니다. 설정에서 Linear API 키를 먼저 저장한 뒤 ↻를 누르세요.
-            </p>
-          )}
-
-          {teams.length > 0 && (
-            <>
-              <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded border border-border-subtle bg-surface-inset p-1.5">
-                {teams.map((team) => (
-                  <li key={team.id}>
-                    <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-surface-raised">
-                      <input
-                        type="checkbox"
-                        checked={selectedTeams.includes(team.id)}
-                        onChange={() => toggleTeam(team.id)}
-                        className="accent-accent"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-body text-text-primary">
-                        {team.name}
-                      </span>
-                      <span className="ticket-key shrink-0 text-text-quaternary">{team.key}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              <span className="text-caption text-text-tertiary leading-relaxed-ko">
-                아무것도 고르지 않으면 전체 팀입니다. 고른 순서가 아래 <b>팀별 묶기</b>의 그룹
-                순서가 됩니다.
-              </span>
-            </>
-          )}
+              <option value="updatedAt">최근 수정</option>
+              <option value="createdAt">최근 생성</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-caption text-text-secondary">정렬 방향</span>
+            <select
+              aria-label="정렬 방향"
+              value={config.sortDirection ?? 'descending'}
+              onChange={(e) =>
+                onChange({ ...config, sortDirection: e.target.value as LinearSortDirection })
+              }
+              className="rounded border border-border-subtle bg-surface-inset px-2 py-2.5 text-body text-text-primary"
+            >
+              <option value="descending">최신순</option>
+              <option value="ascending">오래된순</option>
+            </select>
+          </label>
         </div>
+        <span className="text-caption text-text-tertiary leading-relaxed-ko">
+          Linear API가 제공하는 정렬은 생성일과 수정일뿐입니다.
+        </span>
       </Section>
+
+      {isCustom ? (
+        <Section>
+          <CustomQueryFields
+            filter={filter}
+            teams={teams}
+            globalMetadata={metadata}
+            teamMetadata={teamMetadata}
+            onChange={updateFilter}
+            refreshing={refreshing}
+            onRefreshGlobal={() => void loadMetadata(null, true)}
+            onRefreshTeam={(teamId) => void loadMetadata(teamId, true)}
+            onTeamToggle={(id) => {
+              const nextTeamIds = selectedCustomTeams.includes(id)
+                ? selectedCustomTeams.filter((teamId) => teamId !== id)
+                : [...selectedCustomTeams, id]
+              updateFilter(
+                pruneTeamDependentSelections(
+                  { ...filter, teamIds: nextTeamIds },
+                  nextTeamIds,
+                  teamMetadata,
+                ),
+              )
+              if (!teamMetadata[id]) void loadMetadata(id, false)
+            }}
+          />
+          {!valid && isEmptyCustomFilter(filter) && (
+            <p className="mt-3 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+              조건을 하나 이상 선택하세요
+            </p>
+          )}
+        </Section>
+      ) : (
+        <TeamScope
+          teams={teams}
+          selected={config.teams ?? []}
+          error={metadataError}
+          fetchedAt={metadata?.teams.fetchedAt ?? null}
+          refreshing={refreshing}
+          now={now}
+          truncated={metadata?.teams.truncated ?? false}
+          onRefresh={() => void loadMetadata(null, true)}
+          onToggle={togglePresetTeam}
+        />
+      )}
+
+      {isCustom && metadataError && (
+        <div className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded bg-danger-muted px-2 py-1 text-caption text-danger">
+          <span>{metadataError}</span>
+          <button
+            type="button"
+            onClick={() => void loadMetadata(metadataErrorTeamId, true)}
+            disabled={refreshing}
+            className="rounded border border-danger-muted px-1.5 py-0.5 text-text-primary disabled:opacity-40"
+          >
+            다시 시도
+          </button>
+        </div>
+      )}
+      {isCustom && (
+        <MetadataWarnings
+          metadata={metadata}
+          teamMetadata={teamMetadata}
+          teamIds={selectedCustomTeams}
+        />
+      )}
 
       <Section>
         <label className="flex items-center gap-2">
@@ -190,12 +352,6 @@ export function LinearConfigForm({ config, onChange }: WidgetConfigFormProps<Lin
           />
           <span className="text-body text-text-primary">팀별로 묶어서 보기</span>
         </label>
-        {(config.groupByTeam ?? true) && (
-          <span className="text-caption text-text-tertiary">
-            그룹 순서는 위 <b>팀 범위</b>에서 고른 순서를 따릅니다. 범위를 지정하지 않으면 최근
-            갱신순입니다.
-          </span>
-        )}
       </Section>
 
       <Section last>
@@ -217,6 +373,102 @@ export function LinearConfigForm({ config, onChange }: WidgetConfigFormProps<Lin
       </Section>
     </div>
   )
+}
+
+function TeamScope({
+  teams,
+  selected,
+  error,
+  fetchedAt,
+  refreshing,
+  now,
+  truncated,
+  onRefresh,
+  onToggle,
+}: {
+  teams: LinearTeam[]
+  selected: string[]
+  error: string | null
+  fetchedAt: string | null
+  refreshing: boolean
+  now: number
+  truncated: boolean
+  onRefresh: () => void
+  onToggle: (id: string) => void
+}) {
+  return (
+    <Section>
+      <div className="flex flex-col gap-1.5">
+        <span className="flex items-center gap-2">
+          <span className="text-caption text-text-secondary">팀 범위</span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label="팀 목록 새로고침"
+            className="rounded p-0.5 text-text-quaternary hover:text-text-secondary disabled:opacity-40"
+          >
+            <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+          {fetchedAt && (
+            <span className="text-caption text-text-quaternary">
+              {relativeTime(fetchedAt, new Date(now))}
+            </span>
+          )}
+        </span>
+        {error && (
+          <p className="rounded bg-danger-muted px-2 py-1 text-caption text-danger">{error}</p>
+        )}
+        {truncated && <p className="text-caption text-stale">API 상한으로 일부만 표시됩니다</p>}
+        {teams.length === 0 ? (
+          <p className="text-caption text-text-tertiary">
+            팀이 없습니다. 메타데이터를 새로고침하세요.
+          </p>
+        ) : (
+          <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded border border-border-subtle bg-surface-inset p-1.5">
+            {teams.map((team) => (
+              <li key={team.id}>
+                <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5">
+                  <input
+                    type="checkbox"
+                    aria-label={team.name}
+                    checked={selected.includes(team.id)}
+                    onChange={() => onToggle(team.id)}
+                    className="accent-accent"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-body text-text-primary">
+                    {team.name}
+                  </span>
+                  <span className="ticket-key shrink-0 text-text-quaternary">{team.key}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+function MetadataWarnings({
+  metadata,
+  teamMetadata,
+  teamIds,
+}: {
+  metadata: LinearGlobalMetadata | null
+  teamMetadata: Record<string, LinearTeamMetadata>
+  teamIds: string[]
+}) {
+  const lists = [
+    metadata?.teams,
+    metadata?.labels,
+    ...teamIds.flatMap((id) => {
+      const team = teamMetadata[id]
+      return team ? [team.states, team.members, team.projects] : []
+    }),
+  ]
+  if (!lists.some((list) => list?.truncated)) return null
+  return <p className="mx-3 mt-3 text-caption text-stale">API 상한으로 일부만 표시됩니다</p>
 }
 
 function Section({ last, children }: { last?: boolean; children: React.ReactNode }) {
@@ -255,8 +507,7 @@ function NumberField({
           const n = Number.parseInt(e.target.value, 10)
           if (!Number.isNaN(n)) onChange(Math.min(Math.max(n, min), max))
         }}
-        className="w-28 rounded border border-border-subtle bg-surface-inset px-2 py-1.5
-                   text-body text-text-primary"
+        className="w-28 rounded border border-border-subtle bg-surface-inset px-2 py-1.5 text-body text-text-primary"
       />
       {hint && <span className="text-caption text-text-tertiary">{hint}</span>}
     </label>

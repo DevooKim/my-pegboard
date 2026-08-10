@@ -24,10 +24,24 @@
 //! 위젯을 훑어 다시 허용한다. `Files` 위젯은 파일을 하나도 빠뜨리면 안 되는데,
 //! 빠진 그 한 장만 안 보이므로 눈으로는 거의 못 잡는다. 그래서 테스트가 있다.
 
-use tauri::scope::fs::Scope;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
+use tauri::scope::fs::{Pattern, Scope};
 
 use super::types::AlbumSource;
 use crate::storage::board::{BoardFile, WidgetType};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AlbumScopePathKind {
+    Directory,
+    File,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AlbumScopePath {
+    pub path: String,
+    pub kind: AlbumScopePathKind,
+}
 
 /// board.json에서 앨범 위젯의 소스를 전부 뽑는다.
 ///
@@ -49,6 +63,107 @@ pub fn album_sources(board: &BoardFile) -> Vec<AlbumSource> {
         .collect()
 }
 
+fn scope_paths_for_source(source: &AlbumSource) -> Vec<AlbumScopePath> {
+    let kind = if source.is_folder() {
+        AlbumScopePathKind::Directory
+    } else {
+        AlbumScopePathKind::File
+    };
+
+    source
+        .paths()
+        .into_iter()
+        .map(|path| AlbumScopePath {
+            path: path.to_string(),
+            kind: kind.clone(),
+        })
+        .collect()
+}
+
+/// Return the exact path/kind membership restored at app startup.
+///
+/// The kind is part of membership: allowing a path as a directory is not the
+/// same permission as allowing that path as one file. Keeping this pure lets
+/// board import detect a relaunch requirement without touching the live scope.
+pub fn album_scope_membership(board: &BoardFile) -> Vec<AlbumScopePath> {
+    let mut paths = Vec::new();
+    for source in album_sources(board) {
+        for path in scope_paths_for_source(&source) {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+pub fn album_scope_membership_changed(old: &BoardFile, new: &BoardFile) -> bool {
+    let old_membership: HashSet<_> = album_scope_membership(old).into_iter().collect();
+    let new_membership: HashSet<_> = album_scope_membership(new).into_iter().collect();
+    old_membership != new_membership
+}
+
+/// Validate the escaped literal patterns Tauri would build, without
+/// constructing or mutating an app-owned scope.
+pub fn validate_album_scope_paths(board: &BoardFile) -> Result<(), String> {
+    for membership in album_scope_membership(board) {
+        let path = Path::new(&membership.path);
+        if membership.path.trim().is_empty() {
+            return Err("앨범 경로가 비어 있습니다".to_string());
+        }
+        if !path.is_absolute() {
+            return Err(format!(
+                "앨범 경로는 절대 경로여야 합니다: {}",
+                membership.path
+            ));
+        }
+
+        let normalized: PathBuf = path.components().collect();
+        let literal = Pattern::escape(&normalized.to_string_lossy());
+        Pattern::new(&literal).map_err(|error| {
+            format!(
+                "앨범 경로 권한 패턴을 만들 수 없습니다 ({}): {error}",
+                membership.path
+            )
+        })?;
+
+        if membership.kind == AlbumScopePathKind::Directory {
+            let child_pattern = if literal.ends_with(MAIN_SEPARATOR) {
+                format!("{literal}*")
+            } else {
+                format!("{literal}{MAIN_SEPARATOR}*")
+            };
+            Pattern::new(&child_pattern).map_err(|error| {
+                format!(
+                    "앨범 폴더 권한 패턴을 만들 수 없습니다 ({}): {error}",
+                    membership.path
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Return stable, unique warnings for album paths that disappeared after an
+/// export. Missing paths are warnings rather than import failures: the user may
+/// reconnect an external disk or restore a folder later.
+pub fn missing_path_warnings(board: &BoardFile) -> Vec<crate::storage::board::AlbumPathWarning> {
+    let mut seen = HashSet::new();
+    album_sources(board)
+        .into_iter()
+        .flat_map(|source| {
+            source
+                .paths()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|path| !std::path::Path::new(path).exists())
+        .filter(|path| seen.insert(path.clone()))
+        .map(|path| crate::storage::board::AlbumPathWarning { path })
+        .collect()
+}
+
 /// 소스 하나를 스코프에 허용한다.
 ///
 /// - `Folder` → `allow_directory(path, false)` — **비재귀**다. 스캔이 비재귀이므로
@@ -56,22 +171,33 @@ pub fn album_sources(board: &BoardFile) -> Vec<AlbumSource> {
 /// - `Files` → 각 파일마다 `allow_file`. 디렉터리를 열면 고르지 않은 형제
 ///   파일까지 읽히므로 파일 단위로 준다.
 ///
-/// 실패한 경로는 로그로만 남기고 나머지를 계속 허용한다. 한 경로가 사라졌다고
-/// 다른 위젯의 사진까지 안 보이게 만들지 않는다.
-pub fn allow_source(scope: &Scope, source: &AlbumSource) {
-    match source {
-        AlbumSource::Folder { path } => {
-            if let Err(e) = scope.allow_directory(path, false) {
-                tracing::warn!(path = %path, error = %e, "앨범 폴더를 스코프에 허용하지 못했습니다");
-            }
+/// 실패한 경로도 모두 시도한 뒤 오류를 반환한다. 폴더/파일 선택 커맨드는
+/// 스코프와 스캔을 같은 Rust 경계에서 처리하므로 부분 허용을 성공으로 삼지 않는다.
+pub fn allow_source(scope: &Scope, source: &AlbumSource) -> Result<(), String> {
+    allow_paths(scope, &scope_paths_for_source(source))
+}
+
+fn allow_path(scope: &Scope, path: &AlbumScopePath) -> Result<(), String> {
+    let result = match path.kind {
+        AlbumScopePathKind::Directory => scope.allow_directory(&path.path, false),
+        AlbumScopePathKind::File => scope.allow_file(&path.path),
+    };
+    result.map_err(|error| format!("{}: {error}", path.path))
+}
+
+fn allow_paths(scope: &Scope, paths: &[AlbumScopePath]) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for path in paths {
+        if let Err(error) = allow_path(scope, path) {
+            errors.push(format!(
+                "앨범 경로를 스코프에 허용하지 못했습니다 ({error})"
+            ));
         }
-        AlbumSource::Files { paths } => {
-            for path in paths {
-                if let Err(e) = scope.allow_file(path) {
-                    tracing::warn!(path = %path, error = %e, "앨범 사진을 스코프에 허용하지 못했습니다");
-                }
-            }
-        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 
@@ -82,7 +208,9 @@ pub fn allow_source(scope: &Scope, source: &AlbumSource) {
 pub fn restore_scopes(scope: &Scope, board: &BoardFile) {
     let sources = album_sources(board);
     for source in &sources {
-        allow_source(scope, source);
+        if let Err(error) = allow_source(scope, source) {
+            tracing::warn!(error = %error, "앨범 위젯 경로를 스코프에 복원하지 못했습니다");
+        }
     }
     if !sources.is_empty() {
         tracing::info!(count = sources.len(), "앨범 위젯 경로를 스코프에 복원");

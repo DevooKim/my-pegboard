@@ -17,10 +17,10 @@ async jiraPresets() : Promise<Preset[]> {
 },
 /**
  * 저장된 필터 목록. 설정창 쿼리 셀렉트를 열 때 **1회** 부른다 (DECISIONS 11.1).
- * 
+ *
  * **앱 시작 경로에 넣지 않는다.** 위젯을 그리는 데 필요 없는 호출이고
  * (config에 name이 캐시돼 있다), 시작 1초 목표를 이런 것들이 깎는다.
- * 
+ *
  * [`JiraCallError`]를 쓰는 이유: 설정창의 단발 호출이라 `stale`(직전 성공 데이터)이
  * 늘 `None`이 되는 [`JiraWidgetError`]는 맞지 않는다.
  */
@@ -86,7 +86,7 @@ async jiraSaveCredentials(baseUrl: string, email: string, apiToken: string) : Pr
 },
 /**
  * 위젯 하나의 데이터를 가져온다.
- * 
+ *
  * 흐름: 캐시 즉시 반환이 아니라 **네트워크 시도 → 실패 시 캐시로 폴백**.
  * 앱 시작 시의 0ms 표시는 별도 커맨드([`jira_cached`])가 담당한다 —
  * 두 경로를 나눠야 프론트가 "캐시부터 그리고 갱신" 순서를 제어할 수 있다.
@@ -101,7 +101,7 @@ async jiraFetch(widgetId: string, config: JiraWidgetConfig) : Promise<Result<Jir
 },
 /**
  * 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
- * 
+ *
  * **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
  * Jira 웹과의 결정적 차이(DECISIONS 17장).
  */
@@ -171,7 +171,7 @@ async jiraMyself() : Promise<Result<JiraIdentity, JiraCallError>> {
 },
 /**
  * 티켓 생성. 우리가 하는 유일한 쓰기 (DECISIONS 11.5).
- * 
+ *
  * 실패 처리는 5.6의 결정 트리를 그대로 따른다. 핵심은 **400 계열만 자동 재시도**한다는 것.
  * 네트워크·타임아웃·5xx는 요청이 닿았는지 알 수 없으므로 재시도하면 티켓이 두 개가 되고,
  * 우리에겐 지우는 기능이 없다.
@@ -186,12 +186,12 @@ async jiraCreateIssue(input: CreateIssueInput) : Promise<Result<CreatedIssue, Ji
 },
 /**
  * 이 티켓에서 지금 실행할 수 있는 전이 목록.
- * 
+ *
  * **캐시하지 않는다.** 전이 가능성은 상태가 바뀌면 즉시 낡는다 —
  * 방금 '완료'로 옮긴 티켓에 '완료로 이동'을 다시 보여주는 것보다
  * 조회 한 번이 싸다. 프론트가 30초 TTL 메모리 캐시를 갖는 것은
  * 팝오버를 연달아 여닫을 때의 중복 호출만 막기 위해서고, 그 이상은 아니다.
- * 
+ *
  * **빈 Vec은 에러가 아니다.** 권한이 없거나 워크플로우 끝단이면 Jira가
  * 200 + 빈 배열을 준다. 화면이 "가능한 전이가 없습니다"를 말한다.
  */
@@ -205,13 +205,13 @@ async jiraTransitions(issueKey: string) : Promise<Result<JiraTransition[], JiraC
 },
 /**
  * 상태 전이 실행. 티켓 생성과 함께 우리가 하는 두 번째 쓰기다.
- * 
+ *
  * **자동 재시도가 없다.** 전이는 멱등이 아니어서 같은 요청이 두 번 나가면
  * 워크플로우를 두 칸 움직일 수 있고, 우리에겐 되돌리는 기능이 없다.
  * 생성(`jira_create_issue`)이 400만 재시도하는 것과 같은 이유이며,
  * 여기서는 그 400조차 재시도하지 않는다 — 400이면 필수 필드가 걸렸다는 뜻이고
  * 그건 폼 없이는 못 채운다. 재시도 판단은 사람이 팝오버에서 한다.
- * 
+ *
  * 성공 후 목록 갱신은 프론트가 한다. **낙관적 업데이트를 하지 않는다** —
  * `to_status_name`은 알지만 워크플로우 후처리(자동 담당자 변경 등)는
  * 예측할 수 없어서, 우리가 그린 값이 서버와 다를 수 있다.
@@ -262,13 +262,13 @@ async githubDeleteToken() : Promise<Result<null, string>> {
 },
 /**
  * `gh` CLI에 로그인된 토큰을 가져와 키체인에 복사한다.
- * 
+ *
  * # 왜 복사인가 (런타임 의존이 아니라)
- * 
+ *
  * gh를 매번 부르면 gh 로그아웃·재설치·PATH 변경이 전부 조용한 실패가 된다.
  * 앱 밖에서 일어나는 일이라 원인을 알 수 없다. 한 번 복사해두면 그 뒤로는
  * gh가 사라져도 앱이 돈다.
- * 
+ *
  * 대가: gh가 토큰을 갱신해도 우리 사본은 낡는다. 그때는 401이 나고,
  * 사용자가 버튼을 다시 누르면 된다 — **드러나는 실패**다.
  */
@@ -304,7 +304,7 @@ async githubFetch(widgetId: string, config: GithubWidgetConfig) : Promise<Result
 },
 /**
  * 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
- * 
+ *
  * **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
  * 이 앱의 존재 이유다 (DECISIONS 17장).
  */
@@ -318,7 +318,7 @@ async githubCached(widgetId: string) : Promise<Result<GithubWidgetData | null, s
 },
 /**
  * 저장소 목록. 설정창의 필터·순서 UI를 채운다.
- * 
+ *
  * 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
  */
 async githubRepos(refresh: boolean) : Promise<Result<GithubRepoList, string>> {
@@ -367,7 +367,7 @@ async linearDeleteToken() : Promise<Result<null, string>> {
 },
 /**
  * 키가 실제로 동작하는지 확인. 설정창의 [확인] 버튼.
- * 
+ *
  * `viewer { id name }` 한 방이다 — 이슈를 조회하지 않는다. 확인의 목적은
  * "키가 유효한가"이고, 이슈가 0건인 것은 실패가 아니다.
  */
@@ -392,7 +392,7 @@ async linearFetch(widgetId: string, config: LinearWidgetConfig) : Promise<Result
 },
 /**
  * 디스크 캐시만 읽는다. 네트워크를 건드리지 않으므로 즉시 반환된다.
- * 
+ *
  * **앱 시작 시 이것을 먼저 부른다.** 0ms에 실제 데이터를 그리는 것이
  * 이 앱의 존재 이유다 (DECISIONS 17장).
  */
@@ -404,12 +404,28 @@ async linearCached(widgetId: string) : Promise<Result<LinearWidgetData | null, s
     else return { status: "error", error: e  as any };
 }
 },
+async linearMetadata(teamId: string | null, refresh: boolean) : Promise<Result<LinearMetadataResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("linear_metadata", { teamId, refresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async linearCreateIssue(input: LinearCreateIssueInput) : Promise<Result<LinearIssue, LinearCreateFailure>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("linear_create_issue", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * 이슈 본문(markdown). 상세 모달이 골격을 그린 뒤에 채운다.
- * 
+ *
  * **목록 쿼리에 본문을 넣지 않은 이유:** 30건의 본문을 다 받으면 페이로드가
  * 몇 배가 되고 그중 읽는 것은 열어본 하나다 (CLAUDE.md: 필요한 필드만 남긴다).
- * 
+ *
  * **디스크에 캐시하지 않는다** — 낡은 본문보다 잠깐 비는 편이 정직하다
  * (Jira 상세와 같은 판단, DECISIONS 11.4 D2).
  */
@@ -422,27 +438,14 @@ async linearIssue(issueId: string) : Promise<Result<LinearIssueDetail, LinearCal
 }
 },
 /**
- * 팀 목록. 설정 폼의 범위 UI를 채운다.
- * 
- * 캐시가 있으면 캐시를 준다. `refresh: true`면 네트워크에서 다시 받는다.
- */
-async linearTeams(refresh: boolean) : Promise<Result<LinearTeamList, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("linear_teams", { refresh }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * 한 팀의 워크플로우 상태 목록. 상태 변경 팝오버를 채운다.
- * 
+ *
  * # Jira와 모델이 다르다 (DECISIONS 25.5)
- * 
+ *
  * Jira는 `/issue/{key}/transitions`로 **그 티켓에서 지금 갈 수 있는 곳**을
  * 받는다. Linear는 팀의 상태 목록을 받아 그중 하나를 지정한다 — 전이 개념이
  * 없고, 그래서 **필수 필드 문제도 없다**(`stateId`만 보내면 된다).
- * 
+ *
  * **이슈 단위가 아니라 팀 단위 조회**라서 목록 30건이 같은 팀이면 요청 한 번이다.
  * 프론트가 팀 id로 30초 메모리 캐시를 나눈다.
  */
@@ -456,12 +459,12 @@ async linearTeamStates(teamId: string) : Promise<Result<LinearWorkflowState[], L
 },
 /**
  * 이슈 상태 변경. **우리가 Linear에 하는 유일한 쓰기다.**
- * 
+ *
  * **자동 재시도가 없다.** `issueUpdate`는 멱등이 아니다 — 같은 요청이 두 번
  * 나가는 것 자체는 상태를 한 번만 바꾸지만(목표 상태를 지정하므로), 응답을
  * 못 받은 상황에서 다시 보내면 그 사이 사람이 바꾼 값을 덮을 수 있다.
  * Jira 전이와 같은 판단이고, 재시도는 사람이 팝오버에서 한다.
- * 
+ *
  * 성공 후 목록 갱신은 프론트가 한다. **낙관적 업데이트를 하지 않는다** —
  * Linear의 자동화(상태가 바뀌면 담당자를 붙이는 등)를 예측할 수 없다.
  */
@@ -524,10 +527,10 @@ async todoRemove(id: string) : Promise<Result<TodoItem[], string>> {
 },
 /**
  * 과거의 미완료 항목을 `today`로 옮긴다.
- * 
+ *
  * `today`를 프론트가 넘기는 이유: 자정 넘김 감지와 "과거를 보는 중에는 미룬다"는
  * 판단이 전부 UI 조건이다(`todos.rs`의 `carry_over` 주석). Rust는 시계를 모른다.
- * 
+ *
  * 멱등이다 — 이월 직후 다시 불러도 빈 report가 온다. 앱 시작과 자정 감지가
  * 몇 초 차이로 겹쳐도 안전한 이유다.
  */
@@ -541,7 +544,7 @@ async todoCarryOver(today: string) : Promise<Result<CarryOverResult, string>> {
 },
 /**
  * 같은 날짜 안에서 항목 순서를 바꾼다 (드래그).
- * 
+ *
  * `to_index`는 **그 날짜 목록 안의 위치**다. 전체 배열 인덱스가 아니다 —
  * 화면은 하루치만 보여주므로 프론트가 아는 것도 그 안의 순서뿐이다.
  * 전체 배열에서의 자리 계산은 `TodoStore`가 한다.
@@ -556,7 +559,7 @@ async todoReorder(id: string, toIndex: number) : Promise<Result<TodoItem[], stri
 },
 /**
  * 폴더를 고른다. 다이얼로그를 취소하면 `None`.
- * 
+ *
  * `async`인 이유: `blocking_pick_folder`는 메인 스레드에서 부르면 교착한다.
  * Tauri는 `async` 커맨드를 별도 스레드에서 돌리므로 여기서는 안전하다
  * (플러그인 문서의 예시가 정확히 이 형태다).
@@ -582,10 +585,10 @@ async albumPickFiles(widgetId: string) : Promise<Result<AlbumScan | null, string
 },
 /**
  * 저장된 소스를 다시 훑는다. 새로고침 버튼과 설정 저장 직후에 부른다.
- * 
+ *
  * **스코프도 여기서 다시 허용한다.** 재시작 복원(`lib.rs`)이 이미 했더라도
  * 한 번 더 하는 것은 무해하고, 빠뜨리는 경로가 하나 줄어든다.
- * 
+ *
  * 실패하면 에러 문자열을 준다. **캐시된 사진은 프론트가 계속 들고 있다** —
  * 위젯이 목록을 비우지 않는 것은 이 앱의 공통 약속이다.
  */
@@ -599,7 +602,7 @@ async albumRescan(widgetId: string, source: AlbumSource) : Promise<Result<AlbumS
 },
 /**
  * 디스크 캐시만 읽는다. 네트워크도 파일시스템도 건드리지 않으므로 즉시 반환된다.
- * 
+ *
  * **앱 시작 시 이것을 먼저 부른다.** 0ms에 첫 장을 그리는 것이 이 앱의
  * 존재 이유다(DECISIONS 17). 외장 디스크가 잠들어 있으면 재스캔이 수 초
  * 걸리는데, 그동안 지난 사진이 보여야 배경으로서 고장나지 않는다.
@@ -627,6 +630,30 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async boardExport() : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_export") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async boardImportPreview() : Promise<Result<BoardImportCandidate | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_import_preview") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async boardImportApply(candidate: BoardExportFile, mode: BoardImportMode) : Promise<Result<BoardImportApplyResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("board_import_apply", { candidate, mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -640,15 +667,16 @@ async boardSave(file: BoardFile) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
+export type AlbumPathWarning = { path: string }
 /**
  * 사진 한 장.
- * 
+ *
  * **파일명·촬영일·EXIF를 담지 않는다.** 이 위젯은 기분 전환용 배경이고,
  * 사진을 제대로 보려면 미리보기 앱이 낫다 (DECISIONS 24). 프론트에 필요한
  * 것은 절대 경로 하나뿐이다 — `convertFileSrc()`가 그것으로 `asset:` URL을
  * 만든다.
  */
-export type AlbumPhoto = { 
+export type AlbumPhoto = {
 /**
  * 절대 경로. 프론트는 이걸 `convertFileSrc()`에 넣는다.
  */
@@ -656,45 +684,45 @@ path: string }
 /**
  * 스캔 결과.
  */
-export type AlbumScan = { photos: AlbumPhoto[]; 
+export type AlbumScan = { photos: AlbumPhoto[];
 /**
  * 상한(1000장)을 넘겨 **버린** 장수.
- * 
+ *
  * 0이 아니면 위젯이 "N장은 표시하지 않음"을 그린다. 조용히 자르면
  * 사용자는 없는 사진을 계속 기다린다 (CLAUDE.md 대전제 2).
  */
-skipped: number; 
+skipped: number;
 /**
  * 스캔한 소스. 프론트가 에러 화면에 경로를 적는 데 쓴다.
  */
 source: AlbumSource }
 /**
  * 사진을 어디서 가져오나.
- * 
+ *
  * 폴더 하나 또는 파일 목록, 둘뿐이다. **"고정 한 장" 모드를 따로 만들지 않는다** —
  * `Files`에 하나만 담으면 자연히 그게 된다. 모드를 늘리면 설정 UI가 늘고
  * 사용자가 "지금 어느 모드지"를 기억해야 한다.
  */
-export type AlbumSource = 
+export type AlbumSource =
 /**
  * 폴더 하나. 비재귀로 훑는다.
  */
-{ kind: "folder"; path: string } | 
+{ kind: "folder"; path: string } |
 /**
  * 사용자가 직접 고른 파일들. 순서는 스캔이 파일명순으로 다시 정한다.
  */
 { kind: "files"; paths: string[] }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
- * 
+ *
  * GitHub/Jira의 봉투와 달리 `total`이 없다 — 사진 장수는 `photos.len()`이
  * 곧 전부이고, 상한을 넘긴 몫은 `skipped`가 말한다.
  */
-export type AlbumWidgetData = { photos: AlbumPhoto[]; 
+export type AlbumWidgetData = { photos: AlbumPhoto[];
 /**
  * 상한을 넘겨 버린 장수. 0이 아니면 위젯이 화면에 적는다.
  */
-skipped: number; fetchedAt: string; 
+skipped: number; fetchedAt: string;
 /**
  * 디스크 캐시에서 왔는가. NAS가 잠들어 있는 동안 이게 true다.
  */
@@ -703,42 +731,60 @@ fromCache: boolean }
  * `allowedValues` 항목. Jira는 필드 종류마다 다른 모양을 주므로
  * 공통분모(id/value/name)만 뽑고 원본은 `raw`로 남긴다.
  */
-export type AllowedValue = { id: string | null; 
+export type AllowedValue = { id: string | null;
 /**
  * 화면에 보일 문자열. `name` → `value` → `id` 순으로 찾는다.
  */
 label: string | null }
-export type AppInfo = { version: string; 
+export type AppInfo = { version: string;
 /**
  * 유휴 메모리 목표 150MB 대비 실측치를 설정창에 노출하기 위한 자리.
  * 실제 측정은 후속 작업.
  */
 memory_bytes: number | null }
 export type Board = { id: string; name: string; widgets?: Widget[] }
+/**
+ * The only file shape that leaves the app for board transfer.
+ * Deliberately does not contain `TodoFile`, caches, connections, or secrets.
+ * Those stores are owned by separate files/services and are not part of board
+ * settings. Unknown envelope fields are rejected on import so a hand-edited
+ * file cannot smuggle another store into this boundary.
+ */
+export type BoardExportFile = { formatVersion: number; exportedAt: string; board: BoardFile }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
+export type BoardImportApplyResult = { board: BoardFile; orphanCacheCleanupWarning: string | null; signal: BoardImportSignal | null }
+/**
+ * Candidate returned by the preview command. The UI sends the exact typed
+ * `file` back when the user confirms; it never reconstructs settings locally.
+ */
+export type BoardImportCandidate = { file: BoardExportFile; preview: BoardImportPreview }
+export type BoardImportMode = "replace" | "merge"
+export type BoardImportPreview = { boardCount: number; widgetCount: number; widgetCounts: BoardImportWidgetCount[]; formatVersion: number; boardSchemaVersion: number; albumPathWarnings: AlbumPathWarning[] }
+export type BoardImportSignal = "relaunchRequired"
+export type BoardImportWidgetCount = { widgetType: string; count: number }
 /**
  * One item's before-state, enough to put it back.
  */
-export type CarriedItem = { id: string; 
+export type CarriedItem = { id: string;
 /**
  * The date it was on before the sweep.
  */
-fromDate: string; 
+fromDate: string;
 /**
  * The date it landed on (always the `today` passed to the sweep).
  */
-toDate: string; 
+toDate: string;
 /**
  * `carried_count` before the increment.
  */
 previousCarriedCount: number }
 /**
  * Result of a carry-over sweep.
- * 
+ *
  * DECISIONS 13: 자동 실행 + 되돌리기 가능. This carries enough state for the
  * caller to offer an undo, and to decide whether to say anything at all.
  */
-export type CarryOverReport = { carried: CarriedItem[]; 
+export type CarryOverReport = { carried: CarriedItem[];
 /**
  * Distinct source dates the items came from, ascending. Lets the UI say
  * "3일치 항목을 가져왔습니다" after a weekend.
@@ -746,10 +792,10 @@ export type CarryOverReport = { carried: CarriedItem[];
 sourceDates: string[]; targetDate: string }
 /**
  * 이월 결과 + 갱신된 전체 목록.
- * 
+ *
  * 둘을 함께 주는 이유: 프론트가 목록을 다시 요청하는 왕복을 없애고,
  * 옮긴 개수와 목록이 **같은 시점의 상태**임을 보장한다.
- * 
+ *
  * `TodoStore::undo_carry_over`는 남아 있지만 노출하지 않는다 — 되돌리기 UI를
  * 걷어냈기 때문이다(2026-08-03). 이월이 이동이라 되돌릴 필요가 적고,
  * 자동 이월 자체를 끌 수 있게 되면서 "원치 않는 이월"이라는 상황이 사라졌다.
@@ -758,30 +804,30 @@ export type CarryOverResult = { items: TodoItem[]; report: CarryOverReport }
 /**
  * CI 종합 상태. GraphQL `statusCheckRollup.state`.
  */
-export type CheckState = "success" | "failure" | "pending" | 
+export type CheckState = "success" | "failure" | "pending" |
 /**
  * `ERROR` / `EXPECTED` — 성공도 실패도 아닌 것들.
  */
 "other"
 /**
  * 티켓 생성 요청. 최소 폼 + createmeta로 알아낸 추가 필드 (DECISIONS 11.3).
- * 
+ *
  * `extra_fields`가 있는 이유: 프로젝트마다 필수 필드가 다르므로(XYZ의 `reporter`)
  * 컴파일 타임에 필드 목록을 고정할 수 없다.
  */
-export type CreateIssueInput = { 
+export type CreateIssueInput = {
 /**
  * 프로젝트 키 (`ABC`, `XYZ`, …)
  */
-projectKey: string; 
+projectKey: string;
 /**
  * 이슈타입 **id** (`10082`). 이름이 아니라 id다 — 같은 이름의 타입이 여럿일 수 있다.
  */
-issueTypeId: string; summary: string; 
+issueTypeId: string; summary: string;
 /**
  * ADF 문서. 프론트가 만들어 보낸다.
  */
-description?: JsonValue | null; 
+description?: JsonValue | null;
 /**
  * createmeta가 요구한 나머지 필드. `{"reporter": {"id": "..."}}` 형태 그대로.
  */
@@ -793,19 +839,19 @@ export type CreateMeta = { fields: CreateMetaField[] }
 /**
  * createmeta가 알려주는 필드 하나 (DECISIONS 11.3).
  */
-export type CreateMetaField = { 
+export type CreateMetaField = {
 /**
  * `summary`, `reporter`, `customfield_10011` …
  */
-fieldId: string; name: string; required: boolean; 
+fieldId: string; name: string; required: boolean;
 /**
  * **`true`면 폼에 그리지 않는다.** 서버가 기본값을 채운다.
  */
-hasDefaultValue: boolean; 
+hasDefaultValue: boolean;
 /**
  * `string` | `user` | `priority` | `array` | `option` …
  */
-schemaType: string | null; 
+schemaType: string | null;
 /**
  * 드롭다운을 추가 API 호출 없이 채울 수 있다 (DECISIONS 11.3 "부수 발견").
  */
@@ -817,39 +863,39 @@ export type CreatedIssue = { id: string; key: string; self?: string | null }
 /**
  * 목록 한 줄. **화면이 그리는 모양 그대로**다.
  */
-export type GithubItem = { 
+export type GithubItem = {
 /**
  * `owner/name#123` — 목록에서 유일하다. React key로 쓴다.
  */
-id: string; number: number; title: string; 
+id: string; number: number; title: string;
 /**
  * `owner/name`. 화면이 좁으면 `owner/`를 버리므로 나누지 않고 통째로 준다.
  */
-repository: string; 
+repository: string;
 /**
  * 클릭하면 열 주소.
  */
-url: string; author: string | null; 
+url: string; author: string | null;
 /**
  * PR인가. false면 Issue다.
  */
-isPullRequest: boolean; state: ItemState; 
+isPullRequest: boolean; state: ItemState;
 /**
  * PR만. 리뷰가 요청되지 않았으면 `None`(실측: `reviewDecision`이 null).
  */
-review: ReviewState | null; 
+review: ReviewState | null;
 /**
  * PR만. CI를 안 돌리는 저장소면 `None`.
  */
-ci: CheckState | null; 
+ci: CheckState | null;
 /**
  * PR만. 변경 규모.
  */
-additions: number | null; deletions: number | null; 
+additions: number | null; deletions: number | null;
 /**
  * ISO 8601. "2일 전" 표시와 정렬에 쓴다.
  */
-updatedAt: string; 
+updatedAt: string;
 /**
  * 코멘트 수. 0이면 화면에 그리지 않는다.
  */
@@ -857,76 +903,76 @@ comments: number }
 /**
  * 프리셋 정의. 정적 테이블이므로 `&'static str`.
  */
-export type GithubPreset = { 
+export type GithubPreset = {
 /**
  * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
  */
 id: string; name: string; description: string; query: string }
 /**
  * 위젯 config에 저장되는 쿼리. 프리셋이거나 생 검색 문자열이거나.
- * 
+ *
  * 프리셋을 문자열로 굳혀 저장하지 않는 이유는 Jira와 같다 — id로 저장하면
  * 나중에 프리셋 정의를 고쳤을 때 이미 배치된 위젯도 같이 고쳐진다.
  */
-export type GithubQuery = 
+export type GithubQuery =
 /**
  * 프리셋 id. 알 수 없는 id면 [`GithubQuery::to_search`]가 `None`을 준다.
  */
-{ kind: "preset"; id: string } | 
+{ kind: "preset"; id: string } |
 /**
  * 탈출구. 사용자가 직접 쓴 검색 문자열을 **그대로** 보낸다.
- * 
+ *
  * 검증하지 않는다. 틀리면 GitHub이 우리보다 나은 메시지를 준다.
  */
 { kind: "raw"; query: string }
 /**
  * 설정창 저장소 목록의 한 줄.
  */
-export type GithubRepo = { 
+export type GithubRepo = {
 /**
  * `owner/name`. 설정에 저장되는 식별자다.
  */
-nameWithOwner: string; 
+nameWithOwner: string;
 /**
  * 최근 푸시 시각(ISO 8601). 목록 정렬 기준 — 70여 개를 알파벳순으로
  * 늘어놓으면 지금 일하는 저장소를 찾아야 한다.
  */
-pushedAt: string | null; isPrivate: boolean; isArchived: boolean; 
+pushedAt: string | null; isPrivate: boolean; isArchived: boolean;
 /**
  * 소유자 로그인(`owner/name`의 앞부분). 조직 필터가 이걸로 묶는다.
- * 
+ *
  * `name_with_owner`에서 잘라 쓸 수도 있지만, 조직 여부는 거기서 알 수
  * 없으므로 어차피 따로 받아야 한다. 같이 둔다.
  */
-owner?: string; 
+owner?: string;
 /**
  * 소유자가 조직인가. GraphQL `owner.__typename == "Organization"`.
- * 
+ *
  * 기존 캐시에는 이 필드가 없다 → `serde(default)`로 false가 된다.
  * 조직 목록이 비어 보이면 사용자가 ↻로 갱신하면 채워진다.
  */
 isOrganization?: boolean }
 export type GithubRepoList = { repos: GithubRepo[]; fetchedAt: string | null }
-export type GithubWidgetConfig = { 
+export type GithubWidgetConfig = {
 /**
  * 사용자가 붙인 위젯 이름. 비어 있으면 쿼리 이름을 쓴다.
  */
-title?: string | null; query: GithubQuery; maxResults: number; 
+title?: string | null; query: GithubQuery; maxResults: number;
 /**
  * 저장소 범위. 빈 목록이면 전체.
- * 
+ *
  * 쿼리와 분리하는 이유는 Jira의 `projects`와 같다 — 프리셋이든 생 쿼리든
  * 똑같이 적용돼야 하고, 프리셋마다 저장소별 변종을 만드는 것은 조합 폭발이다.
  */
-repos?: string[]; 
+repos?: string[];
 /**
  * 조직 범위. 빈 목록이면 전체.
- * 
+ *
  * `repos`와 **합집합**이다(실측). GitHub 검색에서 `org:x repo:o/a`는
  * "x 조직 **또는** o/a"이지 교집합이 아니다. 설정 UI가 둘을 동시에 쓰지
  * 않도록 안내한다.
  */
-orgs?: string[]; 
+orgs?: string[];
 /**
  * 저장소별로 묶어서 보여줄까. 기본 켬.
  */
@@ -934,64 +980,64 @@ groupByRepo?: boolean; refreshSecs?: number }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  */
-export type GithubWidgetData = { items: GithubItem[]; 
+export type GithubWidgetData = { items: GithubItem[];
 /**
  * 전체 건수. GitHub은 Jira와 달리 총계를 준다 — "217건 중 30건"이 가능하다.
  */
-total: number; fetchedAt: string; 
+total: number; fetchedAt: string;
 /**
  * 디스크 캐시에서 왔는가. true면 갱신이 실패했거나 아직 안 끝났다.
  */
 fromCache: boolean }
-export type GithubWidgetError = { 
+export type GithubWidgetError = {
 /**
  * `transient` | `permanent` — 프론트가 재시도 UI를 고르는 축.
  */
-kind: string; message: string; 
+kind: string; message: string;
 /**
  * 401 여부. 전역 배너를 한 번만 띄우기 위한 신호 (DECISIONS 16장).
  */
-isAuthFailure: boolean; retryAfterSecs: number | null; 
+isAuthFailure: boolean; retryAfterSecs: number | null;
 /**
  * 실패했지만 직전 성공 데이터가 있으면 함께 준다. 목록을 비우지 않기 위해.
  */
 stale: GithubWidgetData | null }
 /**
  * 항목의 상태. PR과 Issue를 한 축에 모았다.
- * 
+ *
  * `Draft`를 따로 두는 이유: GraphQL은 `isDraft`를 `state`와 **별도 필드**로
  * 준다(실측). 화면에서는 초안이 열림과 다른 아이콘이라 여기서 합쳐둔다.
  */
-export type ItemState = "open" | 
+export type ItemState = "open" |
 /**
  * PR만.
  */
-"draft" | 
+"draft" |
 /**
  * PR만.
  */
 "merged" | "closed"
 /**
  * 모달·폼에서 쓰는 단발 호출 실패.
- * 
+ *
  * [`JiraWidgetError`]와 나눠 둔 이유: 저쪽은 위젯 봉투라 `stale`(직전 성공 데이터)을
  * 들고 다닌다. 모달은 캐시하지 않으므로(D2) 그 필드가 늘 `None`이 되고,
  * 프론트가 "있을 수도 있는 값"을 매번 확인하게 만든다.
  */
-export type JiraCallError = { 
+export type JiraCallError = {
 /**
  * `transient` | `permanent` — 프론트가 [다시 시도]를 보일지 고르는 축.
  */
-kind: string; 
+kind: string;
 /**
  * Jira 원문 그대로. 우리가 고쳐 쓰지 않는다.
  */
-message: string; 
+message: string;
 /**
  * 401. 전역 배너 1회 규칙의 트리거 (DECISIONS 16장).
  */
 isAuthFailure: boolean; retryAfterSecs: number | null }
-export type JiraComment = { id: string; author: JiraUser | null; created: string | null; updated: string | null; 
+export type JiraComment = { id: string; author: JiraUser | null; created: string | null; updated: string | null;
 /**
  * ADF 본문. 설명과 동일하게 그대로 통과.
  */
@@ -999,15 +1045,15 @@ body: JsonValue | null }
 /**
  * 상세 모달의 코멘트 영역.
  */
-export type JiraCommentsView = { 
+export type JiraCommentsView = {
 /**
  * **시간 오름차순(대화 순서)으로 정렬된 최신 20건.**
- * 
+ *
  * Jira에 `orderBy=-created`로 요청해 최신 20건을 받고 여기서 뒤집는다.
  * 정렬 책임을 프론트에 넘기지 않는다 — 화면이 데이터를 재가공하기 시작하면
  * "Rust가 데이터의 주인"이라는 경계가 흐려진다.
  */
-comments: JiraComment[]; total: number; 
+comments: JiraComment[]; total: number;
 /**
  * `total`이 받아온 개수보다 많은가. "이전 N개는 Jira에서" 링크를 띄울지.
  */
@@ -1021,18 +1067,18 @@ export type JiraConnectionInfo = { configured: boolean; baseUrl: string | null }
 /**
  * 생성 실패. [`JiraCallError`]에 "티켓이 생겼을 수도 있다"는 축이 더 붙는다.
  */
-export type JiraCreateFailure = { kind: string; message: string; isAuthFailure: boolean; 
+export type JiraCreateFailure = { kind: string; message: string; isAuthFailure: boolean;
 /**
  * 요청이 Jira에 닿았는지 알 수 없다 → 티켓이 만들어졌을 수 있다.
- * 
+ *
  * 프론트는 이때 [생성] 버튼을 잠그고 "Jira에서 확인하세요"를 띄운다.
  * 생성은 멱등이 아니고 우리에겐 삭제 기능이 없다.
  */
-possiblyCreated: boolean; 
+possiblyCreated: boolean;
 /**
  * 400 재조회 결과, 우리가 채울 수 없는 필수 필드.
  */
-missingFields: CreateMetaField[]; 
+missingFields: CreateMetaField[];
 /**
  * 자동 재시도를 실제로 했는가 (로그·표시용).
  */
@@ -1040,75 +1086,75 @@ retried: boolean }
 /**
  * 생성 폼·설정창이 공유하는 프로젝트 목록.
  */
-export type JiraCreateOptions = { projects: JiraProjectWithTypes[]; 
+export type JiraCreateOptions = { projects: JiraProjectWithTypes[];
 /**
  * ISO 8601. ↻ 버튼 옆의 "3일 전" 표시용.
  */
-fetchedAt: string | null; 
+fetchedAt: string | null;
 /**
  * 디스크 캐시에서 온 것인가.
  */
 fromCache: boolean }
 /**
  * 설정창 쿼리 셀렉트의 "저장된 필터" 항목.
- * 
+ *
  * `/rest/api/3/filter/search?expand=jql` 응답에서 우리가 쓰는 부분만 남긴다.
  * (Rust가 파싱하고 필요한 필드만 IPC로 넘긴다 — CLAUDE.md 아키텍처)
  */
-export type JiraFilter = { 
+export type JiraFilter = {
 /**
  * Jira의 숫자 필터 id. `filter = <id>`로 JQL에 들어간다.
  */
-id: string; name: string; 
+id: string; name: string;
 /**
  * 필터의 JQL. **위젯이 이 값을 저장하지 않는다** — 설정창에서
  * "이 필터가 무엇을 보는지" 미리보기로만 쓴다. 위젯이 굳혀 저장하면
  * Jira에서 필터를 고쳤을 때 따라가지 못한다.
- * 
+ *
  * `expand=jql`을 안 붙이면 오지 않으므로 없을 수 있다.
  */
-jql?: string | null; 
+jql?: string | null;
 /**
  * 내가 만든 필터인가. 남이 공유해준 필터와 구분해 보여주기 위한 값이다.
  */
 ownerIsMe?: boolean }
 /**
  * 설정창 "연결 테스트" 결과. `/myself` 응답에서 뽑는다.
- * 
+ *
  * `Deserialize`는 아래에 손으로 구현했다 (`avatarUrls` 맵 접기).
  */
-export type JiraIdentity = { accountId: string; displayName?: string; 
+export type JiraIdentity = { accountId: string; displayName?: string;
 /**
  * 사이트 개인정보 설정에 따라 숨겨질 수 있다. 없다고 실패가 아니다.
  */
 emailAddress?: string | null; avatarUrl?: string | null }
 /**
  * 목록 위젯 행 하나. **여기 필드를 늘리기 전에 [`LIST_FIELDS`]와 페이로드 크기를 생각할 것.**
- * 
+ *
  * `Deserialize`는 파일 아래쪽에 손으로 구현했다 — Jira의 `{key, fields:{...}}` 중첩을
  * 평평하게 펴고 `avatarUrls` 맵을 URL 하나로 접어야 하기 때문.
  */
-export type JiraIssue = { 
+export type JiraIssue = {
 /**
  * `PROJ-123`. 사용자에게 보이는 유일한 식별자이자 우리 캐시 키.
  */
-key: string; summary: string; status: JiraStatus | null; 
+key: string; summary: string; status: JiraStatus | null;
 /**
  * 담당자 없음은 흔하다. 백로그 티켓 대부분이 그렇다.
  */
-assignee: JiraUser | null; 
+assignee: JiraUser | null;
 /**
  * 우선순위 스킴을 끈 프로젝트에서는 null.
  */
-priority: JiraPriority | null; issueType: JiraIssueType | null; 
+priority: JiraPriority | null; issueType: JiraIssueType | null;
 /**
  * ISO 8601 + 오프셋 (`2026-07-29T14:03:11.482+0900`). 기본 정렬 축.
  */
-updated: string | null; created: string | null; 
+updated: string | null; created: string | null;
 /**
  * `2026-07-27` (시각 없음). 실측 9/22만 채워져 있다.
  */
-dueDate: string | null; parent: JiraParent | null; 
+dueDate: string | null; parent: JiraParent | null;
 /**
  * 활성 스프린트 하나. 여러 개면 첫 번째.
  */
@@ -1116,23 +1162,23 @@ sprint: JiraSprint | null }
 /**
  * 상세 모달용. 목록 필드 + 보고자·라벨·생성일·ADF 설명 (DECISIONS 11.4).
  */
-export type JiraIssueDetail = { key: string; summary: string; status: JiraStatus | null; assignee: JiraUser | null; reporter: JiraUser | null; priority: JiraPriority | null; issueType: JiraIssueType | null; updated: string | null; created: string | null; 
+export type JiraIssueDetail = { key: string; summary: string; status: JiraStatus | null; assignee: JiraUser | null; reporter: JiraUser | null; priority: JiraPriority | null; issueType: JiraIssueType | null; updated: string | null; created: string | null;
 /**
  * 라벨 없음은 `null`이 아니라 `[]`로 정규화한다 — 프론트 분기 하나를 없앤다.
  */
-labels: string[]; 
+labels: string[];
 /**
  * ADF 문서 그대로. 설명이 비어 있으면 `None`.
  */
-description: JsonValue | null; 
+description: JsonValue | null;
 /**
  * `2026-07-27` (시각 없음).
  */
-dueDate: string | null; 
+dueDate: string | null;
 /**
  * 상위 항목. 모달 안에서 이 티켓으로 전환할 수 있다.
  */
-parent: JiraParent | null; 
+parent: JiraParent | null;
 /**
  * 활성 스프린트 하나.
  */
@@ -1141,18 +1187,18 @@ export type JiraIssueType = { name: string; iconUrl?: string | null; subtask?: b
 /**
  * 생성 폼의 이슈타입 선택지. `/project/search?expand=issueTypes` 응답 항목.
  */
-export type JiraIssueTypeOption = { id: string; name: string; description?: string | null; iconUrl?: string | null; 
+export type JiraIssueTypeOption = { id: string; name: string; description?: string | null; iconUrl?: string | null;
 /**
  * 하위작업 타입은 `parent`가 필수라 생성 폼에서 제외한다.
  */
-subtask?: boolean; 
+subtask?: boolean;
 /**
  * -1 하위작업 / 0 표준 / 1 에픽. Jira가 주지 않으면 0으로 본다.
  */
 hierarchyLevel?: number }
 /**
  * 상위 항목. 팀 관리형에서는 에픽이고, 하위 작업이면 부모 티켓이다.
- * 
+ *
  * 구 `customfield_10014`(에픽 링크)는 쓰지 않는다 — 실측 결과 `parent`가
  * 20/22, 에픽 링크가 6/22로 `parent` 쪽이 훨씬 잘 채워져 있다.
  */
@@ -1161,40 +1207,40 @@ export type JiraPriority = { name: string; iconUrl?: string | null }
 /**
  * 프로젝트 선택 드롭다운 한 항목.
  */
-export type JiraProject = { 
+export type JiraProject = {
 /**
  * `ABC`. JQL에 그대로 들어가는 값이다.
  */
 key: string; name: string }
 /**
  * 프로젝트 + 그 프로젝트에서 만들 수 있는 이슈타입.
- * 
+ *
  * 실측(2026-07-31): `action=create`와 `action=view`가 같은 5개를 준다.
  * 그래서 목록 하나로 설정창(조회 범위)과 생성 폼을 모두 채운다.
  */
 export type JiraProjectWithTypes = { key: string; name: string; issueTypes?: JiraIssueTypeOption[] }
 /**
  * 위젯 config에 저장되는 쿼리. 프리셋·저장된 필터·생 JQL 셋 중 하나.
- * 
+ *
  * 프리셋을 JQL 문자열로 굳혀 저장하지 않는 이유: 나중에 프리셋 정의를 고치면
  * 이미 배치된 위젯들도 같이 고쳐져야 한다. id로 저장하면 그게 공짜다.
  */
-export type JiraQuery = 
+export type JiraQuery =
 /**
  * 프리셋 id. 알 수 없는 id면 [`JiraQuery::to_jql`]가 `None`을 준다.
  */
-{ kind: "preset"; id: string } | 
+{ kind: "preset"; id: string } |
 /**
  * Jira에 저장된 필터 (DECISIONS 11.1 — 후속 후보였던 것).
- * 
+ *
  * **JQL을 복사해 굳히지 않는다.** 프리셋과 같은 이유다 — Jira에서 필터를
  * 고치면 위젯도 따라 고쳐지는 것이 "저장된 필터를 쓴다"의 의미다.
  * 대신 `filter = <id>`를 보낸다 ([`JiraQuery::to_jql`] 참고).
  */
-{ kind: "savedFilter"; id: string; name: string } | 
+{ kind: "savedFilter"; id: string; name: string } |
 /**
  * 탈출구. 사용자가 직접 쓴 JQL을 **그대로** 보낸다.
- * 
+ *
  * 검증하지 않는다 — 우리가 JQL 파서를 쓸 이유가 없고, 틀리면 Jira가
  * 훨씬 나은 에러 메시지를 준다 (DECISIONS 16장, 400은 원문 보존).
  */
@@ -1202,73 +1248,73 @@ export type JiraQuery =
 /**
  * 스프린트 하나. Jira는 배열로 주지만(과거 스프린트 포함) 표시에는 활성 것 하나면 된다.
  */
-export type JiraSprint = { name: string; 
+export type JiraSprint = { name: string;
 /**
  * `active` | `closed` | `future`
  */
 state?: string | null }
-export type JiraStatus = { name: string; 
+export type JiraStatus = { name: string;
 /**
  * 워크플로우가 이상하게 설정된 프로젝트에서 누락될 수 있다.
  */
 statusCategory?: JiraStatusCategory | null }
 /**
  * 상태 카테고리. 색을 칠하는 근거는 상태 **이름**이 아니라 이것이다.
- * 
+ *
  * 상태 이름은 프로젝트마다 다르다("완료"/"Done"/"배포됨"). `statusCategory.key`는
  * `new` / `indeterminate` / `done` 세 가지로 고정이라 위젯이 믿을 수 있는 유일한 축이다.
  */
-export type JiraStatusCategory = { 
+export type JiraStatusCategory = {
 /**
  * `new` | `indeterminate` | `done` (Jira가 보장하는 고정 키)
  */
-key: string; 
+key: string;
 /**
  * `blue-gray` | `yellow` | `green` — 표시용 힌트
  */
 colorName?: string | null; name?: string | null }
 /**
  * 이 티켓에서 지금 실행할 수 있는 상태 전이 하나 (DECISIONS 11.5 개정).
- * 
+ *
  * **워크플로우는 프로젝트마다 다르므로 목록을 하드코딩하지 않는다.**
  * 실측(2026-08-06): EDU 5개 / DTH 7개로 개수도 이름도 다르다.
- * 
+ *
  * Jira 응답에는 `hasScreen`·`isGlobal`·`isConditional`·`isLooped` 등이 더 있지만
  * 우리가 그리는 UI(팝오버 목록 한 줄)에 필요한 것만 남긴다. IPC 페이로드를
  * 줄이는 것이 이 앱의 기본 규칙이다(CLAUDE.md "필요한 필드만 남겨서").
  */
-export type JiraTransition = { 
+export type JiraTransition = {
 /**
  * 전이 실행 시 POST 본문에 넣는 id. **상태 id가 아니다.**
  */
-id: string; 
+id: string;
 /**
  * 전이 버튼 이름. Jira 웹에서 보이는 그 문구다.
  */
-name: string; 
+name: string;
 /**
  * 이 전이를 실행하면 도달하는 상태 이름.
- * 
+ *
  * `name`과 다를 수 있다 — Jira에서 전이 이름과 목표 상태 이름은 별개다
  * (실측한 두 프로젝트에서는 우연히 같았다). 화면에는 도달 상태를 우선해
  * 보여준다. 사용자가 알고 싶은 것은 "누르면 무엇이 되는가"이기 때문.
  */
-toStatusName: string | null; 
+toStatusName: string | null;
 /**
  * `new` | `indeterminate` | `done`. 배지 색의 근거.
- * 
+ *
  * `Option`인 이유: 워크플로우가 이상하게 설정된 프로젝트에서 `to.statusCategory`가
  * 누락될 수 있다. [`JiraStatus`]가 같은 이유로 이미 `Option`이다.
  */
-toStatusCategory: string | null; 
+toStatusCategory: string | null;
 /**
  * **사용자가 채워야 하는 필수 필드가 이 전이에 걸려 있는가.**
- * 
+ *
  * `true`면 앱에서 실행하지 않고 브라우저 링크로 바꾼다 (DECISIONS 11.5 개정).
  * 판정은 생성 폼과 같은 규칙이다 — `required: true`이면서
  * `hasDefaultValue != true`인 필드가 하나라도 있으면 참.
  * `hasDefaultValue: true`는 서버가 채우므로 폼이 필요 없다(EDU reporter 사례).
- * 
+ *
  * 계산을 Rust에서 하는 이유: 프론트가 Jira의 필드 스키마를 알 필요가 없다.
  * 이 축 하나만 알면 UI를 고를 수 있다.
  */
@@ -1276,233 +1322,247 @@ hasRequiredFields: boolean }
 /**
  * 사용자. 식별자는 **`accountId`** — 이메일/username이 아니다 (GDPR 이후 Cloud 정책).
  */
-export type JiraUser = { accountId: string; 
+export type JiraUser = { accountId: string;
 /**
  * 드물게 비어 있다(비활성/삭제된 계정). 그래도 항상 문자열은 온다.
  */
-displayName?: string; 
+displayName?: string;
 /**
  * 48x48 아바타 URL. 아바타가 없는 계정이 실제로 있다.
  */
 avatarUrl?: string | null }
-export type JiraWidgetConfig = { 
+export type JiraWidgetConfig = {
 /**
  * 사용자가 붙인 위젯 이름. 비어 있으면 쿼리 이름을 쓴다.
  */
-title?: string | null; query: JiraQuery; 
+title?: string | null; query: JiraQuery;
 /**
  * DECISIONS 11.2 — 기본 30건.
  */
-maxResults: number; 
+maxResults: number;
 /**
  * 프로젝트 키로 범위를 좁힌다. 빈 목록이면 전체.
- * 
+ *
  * 쿼리와 분리해서 두는 이유: 프리셋이든 생 JQL이든 똑같이 적용돼야 한다.
  * 프리셋마다 프로젝트별 변종을 만드는 것은 조합 폭발이다.
  */
-projects?: string[]; 
+projects?: string[];
 /**
  * 자동 새로고침 주기(초). **0이면 자동 갱신하지 않는다** — 수동 새로고침만.
- * 
+ *
  * 위젯마다 다르다(DECISIONS 11.2). 프론트에서 1분 미만으로 내려오지
  * 않도록 막지만, 손으로 고친 board.json에 대비해 여기서도 보정한다.
  */
-refreshSecs?: number; 
+refreshSecs?: number;
 /**
  * 목록에 표시할 열. 비어 있으면 기본 세트.
  */
-columns?: string[] | null; 
+columns?: string[] | null;
 /**
  * 정렬 기준. **프리셋에만 적용된다** — 생 JQL의 ORDER BY는 사용자 몫이다.
  */
 sortField?: SortField | null; sortDirection?: SortDirection | null }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
- * 
+ *
  * 로딩/에러 상태를 명시적으로 담는 이유: TanStack Query를 쓰지 않기로 했으므로
  * (DECISIONS 5장) 그것이 공짜로 주던 `isLoading`/`isError`를 직접 모델링해야 한다.
  */
-export type JiraWidgetData = { issues: JiraIssue[]; 
+export type JiraWidgetData = { issues: JiraIssue[];
 /**
  * 실제로 네트워크에서 가져온 시각. 캐시 히트면 과거 시각이다 — "N분 전 데이터" 표시용.
  */
-fetchedAt: string; 
+fetchedAt: string;
 /**
  * 이 응답이 디스크 캐시에서 왔는가. true면 갱신이 실패했거나 아직 안 끝났다는 뜻.
  */
 fromCache: boolean }
-export type JiraWidgetError = { 
+export type JiraWidgetError = {
 /**
  * `transient` | `permanent` — 프론트가 재시도 UI를 고르는 축.
  */
-kind: string; message: string; 
+kind: string; message: string;
 /**
  * 401 여부. 전역 배너를 한 번만 띄우기 위한 신호(DECISIONS 16장).
  */
-isAuthFailure: boolean; retryAfterSecs: number | null; 
+isAuthFailure: boolean; retryAfterSecs: number | null;
 /**
  * 실패했지만 직전 성공 데이터가 있으면 함께 준다. 목록을 비우지 않기 위해서.
  */
 stale: JiraWidgetData | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
+export type LinearAssigneeFilter = "any" | "viewer" | "unassigned"
 /**
  * 모달·팝오버에서 쓰는 단발 호출 실패.
- * 
+ *
  * [`LinearWidgetError`]와 나눠 둔 이유는 Jira의 `JiraCallError`와 같다 —
  * 저쪽은 위젯 봉투라 `stale`을 들고 다니는데, 팝오버는 캐시하지 않으므로
  * 그 필드가 늘 `None`이 되고 프론트가 "있을 수도 있는 값"을 매번 확인하게 된다.
  */
-export type LinearCallError = { kind: string; 
+export type LinearCallError = { kind: string;
 /**
  * Linear 원문 그대로. 우리가 고쳐 쓰지 않는다.
  */
 message: string; isAuthFailure: boolean; retryAfterSecs: number | null }
+export type LinearCreateFailure = { kind: string; message: string; isAuthFailure: boolean; possiblyCreated: boolean; checkUrl: string }
+export type LinearCreateIssueInput = { teamId: string; title: string; description: string | null; stateId: string | null; assigneeId: string | null; priority: number | null; projectId: string | null }
+export type LinearCustomFilter = { teamIds?: string[]; assignee?: LinearAssigneeFilter; stateTypes?: string[]; projectIds?: string[]; labelIds?: string[]; priorities?: number[]; createdFrom?: string | null; createdTo?: string | null; updatedFrom?: string | null; updatedTo?: string | null }
+export type LinearGlobalMetadata = { teams: LinearMetadataList<LinearTeam>; viewer: LinearUserOption | null; labels: LinearMetadataList<LinearLabelOption> }
 /**
  * 목록 한 줄. **화면이 그리는 모양 그대로**다.
  */
-export type LinearIssue = { 
+export type LinearIssue = {
 /**
  * Linear 내부 UUID. `issueUpdate(id:)`가 이걸 받는다.
  * **화면에 보여주지 않는다** — 사람이 읽는 식별자는 `identifier`다.
  */
-id: string; 
+id: string;
 /**
  * `ENG-123`. 목록에서 유일하므로 React key로도 쓸 수 있지만, 이론적으로
  * 팀 이름이 바뀌면 달라질 수 있어 key는 `id`를 쓴다.
  */
-identifier: string; title: string; 
+identifier: string; title: string;
 /**
  * 클릭하면 열 주소. Linear가 완성된 URL을 준다 — 우리가 조립하지 않는다.
  */
-url: string; 
+url: string;
 /**
  * 상태. **팀마다 다르다** — 이름·색·개수 전부.
  */
-state: LinearState; 
+state: LinearState;
 /**
  * **`priorityLabel`을 그대로 쓴다.** `priority` 정수(0~4)의 의미를
  * 실측하지 못했으므로 숫자를 해석하지 않는다 (25.3).
  * 0을 "없음"으로 가정하면 틀렸을 때 조용히 잘못된 배지를 그린다.
  */
-priorityLabel: string; 
+priorityLabel: string;
 /**
  * 정수 우선순위. **정렬·표시에 쓰지 않는다.** 나중에 실측한 뒤 판단할
  * 재료로만 남긴다 — 지금 쓰면 모르는 것을 아는 척하는 것이다.
  */
-priority: number; 
+priority: number;
 /**
  * 담당자 이름. 미할당이면 `None`.
  */
-assignee: string | null; assigneeAvatarUrl: string | null; 
+assignee: string | null; assigneeAvatarUrl: string | null;
 /**
  * 팀 이름(`Engineering`). 그룹 헤더에 쓴다.
  */
-teamName: string; 
+teamName: string;
 /**
  * 팀 id. **상태 변경 팝오버가 이 팀의 상태 목록을 조회한다.**
  * 같은 팀 이슈들이 목록을 공유하므로 프론트가 이 값으로 캐시를 나눈다.
  */
-teamId: string; 
+teamId: string;
 /**
  * 프로젝트 이름. 프로젝트에 속하지 않은 이슈가 흔하다.
  */
-projectName: string | null; 
+projectName: string | null;
 /**
  * `YYYY-MM-DD` 또는 ISO 8601. Linear가 무엇을 주는지 실측하지 못했다 —
  * 프론트가 두 모양 모두 견디게 만들어 뒀다.
  */
-dueDate: string | null; 
+dueDate: string | null;
 /**
  * 스토리 포인트. 팀이 추정을 안 쓰면 `None`.
  */
-estimate: number | null; 
+estimate: number | null;
 /**
  * ISO 8601. "2일 전" 표시와 정렬에 쓴다.
  */
-updatedAt: string; createdAt: string; 
+updatedAt: string; createdAt: string;
 /**
  * 라벨 이름. 없으면 빈 배열.
  */
 labels: string[] }
 /**
  * 상세 모달이 나중에 채우는 부분.
- * 
+ *
  * 목록이 이미 가진 값(제목·상태·담당자·팀·날짜)은 여기 없다 — 모달 골격을
  * **0ms에** 그리는 재료는 목록에서 오고, 이 조회는 본문만 채운다
  * (Jira 상세와 같은 구조, DECISIONS 11.4 D2 / 25.6).
  */
-export type LinearIssueDetail = { id: string; identifier: string; 
+export type LinearIssueDetail = { id: string; identifier: string;
 /**
  * **markdown이다.** Jira의 ADF와 다르므로 ADF 렌더러를 재사용할 수 없다.
  * 프론트의 `markdown/` 렌더러가 의존성 0으로 그린다 (DECISIONS 25.6).
  */
-description: string | null; 
+description: string | null;
 /**
  * `sammy/eng-142-redirect`. 브랜치를 만들 때 복사해 쓴다.
  */
 branchName: string | null }
+export type LinearLabelOption = { id: string; name: string; color: string }
+export type LinearMetadataList<T> = { items: T[]; fetchedAt: string | null; truncated: boolean }
+export type LinearMetadataResponse = { global: LinearGlobalMetadata; team: LinearTeamMetadata | null; refreshError: LinearCallError | null }
 /**
  * 프리셋 정의. 정적 테이블이므로 `&'static str`.
  */
-export type LinearPreset = { 
+export type LinearPreset = {
 /**
  * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
  */
-id: string; name: string; description: string; scope: PresetScope; 
+id: string; name: string; description: string; scope: PresetScope;
 /**
  * 완료된 이슈를 제외하는가.
  */
 openOnly: boolean }
+export type LinearProjectOption = { id: string; name: string; teamId: string }
 /**
  * 위젯 config에 저장되는 쿼리.
- * 
+ *
  * **프리셋 id만 저장한다.** 필터 JSON을 굳혀 저장하지 않는 이유는 Jira·GitHub과
  * 같다 — id로 저장하면 나중에 프리셋 정의를 고쳤을 때 이미 배치된 위젯도 같이
  * 고쳐진다.
- * 
+ *
  * `enum`을 유지하는 이유: 나중에 "저장된 뷰(`customView`)" 같은 갈래가 생길
  * 자리다. Jira가 프리셋 → 저장된 필터로 늘어난 것과 같은 모양이 될 것이다.
  */
-export type LinearQuery = 
+export type LinearQuery =
 /**
- * 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 `None`을 준다.
+ * 프리셋 id. 알 수 없는 id면 [`LinearQuery::to_filter`]가 오류를 준다.
  */
-{ kind: "preset"; id: string }
+{ kind: "preset"; id: string } |
+/**
+ * 타입화된 AND 조건. GraphQL JSON을 직접 저장하지 않는다.
+ */
+{ kind: "custom"; filter: LinearCustomFilter }
 /**
  * 정렬. **스키마가 주는 것이 이 둘뿐이다.**
- * 
+ *
  * `PaginationOrderBy`에는 `createdAt`과 `updatedAt`만 있다. Jira처럼
  * 우선순위·마감일 정렬을 만들 수 없고, **설정 UI에 없는 정렬을 만들지 않는다** —
  * 클라이언트에서 다시 정렬하면 "30건 중에서만" 정렬한 것이라 거짓이 된다
  * (DECISIONS 25.3).
  */
-export type LinearSort = 
+export type LinearSort =
 /**
  * 기본값. "지금 뭐가 움직였나"가 이 앱의 목적이다.
  */
 "updatedAt" | "createdAt"
+export type LinearSortDirection = "descending" | "ascending"
 /**
  * 워크플로우 상태.
- * 
+ *
  * # `type`을 색의 근거로 쓰지 않는다
- * 
+ *
  * Jira는 `statusCategory.key`가 `new`/`indeterminate`/`done` 셋으로 고정이라
  * 색을 그것으로 골랐다. Linear의 `WorkflowState.type`은 공개 스키마의 값은
  * 확인했지만 **실제 응답을 실측하지 못했다**(25.3). 그래서 **`color`를 쓴다** — 스키마가 상태마다
  * 색을 주므로 우리가 매핑을 발명할 필요가 없고, Linear에서 보던 색과 같아진다.
- * 
+ *
  * `type`은 그래도 담아 보낸다. 완료 여부 같은 판단이 나중에 필요해질 수 있고,
  * **모르는 값이 와도 문자열이라 아무것도 깨지지 않는다.**
  */
-export type LinearState = { 
+export type LinearState = {
 /**
  * 상태 id. `issueUpdate(input: { stateId })`가 받는 값.
  */
-id: string; name: string; 
+id: string; name: string;
 /**
  * `#rgb`/`#rrggbb`. 배지 색의 유일한 근거다.
  */
-color: string; 
+color: string;
 /**
  * 스키마상 `String!`. 값의 종류를 모르므로 **분기하지 않는다.**
  */
@@ -1510,28 +1570,29 @@ typeName: string }
 /**
  * 설정창 팀 목록의 한 줄.
  */
-export type LinearTeam = { id: string; 
+export type LinearTeam = { id: string;
 /**
  * `ENG`. 화면이 짧게 보여줄 때 쓴다.
  */
 key: string; name: string }
-export type LinearTeamList = { teams: LinearTeam[]; fetchedAt: string | null }
-export type LinearWidgetConfig = { 
+export type LinearTeamMetadata = { teamId: string; states: LinearMetadataList<LinearWorkflowState>; members: LinearMetadataList<LinearUserOption>; projects: LinearMetadataList<LinearProjectOption> }
+export type LinearUserOption = { id: string; name: string; avatarUrl: string | null }
+export type LinearWidgetConfig = {
 /**
  * 사용자가 붙인 위젯 이름. 비어 있으면 프리셋 이름을 쓴다.
  */
-title?: string | null; query: LinearQuery; maxResults: number; 
+title?: string | null; query: LinearQuery; maxResults: number;
 /**
  * 팀 범위. 빈 목록이면 전체.
- * 
+ *
  * 쿼리와 분리하는 이유는 Jira의 `projects`·GitHub의 `repos`와 같다 —
  * 프리셋마다 팀별 변종을 만드는 것은 조합 폭발이다.
  */
-teams?: string[]; 
+teams?: string[];
 /**
  * **정렬은 두 종뿐이다.** `PaginationOrderBy`가 그것만 준다 (DECISIONS 25.3).
  */
-sort?: LinearSort; 
+sort?: LinearSort; sortDirection?: LinearSortDirection;
 /**
  * 팀별로 묶어서 보여줄까. 기본 켬.
  */
@@ -1539,39 +1600,39 @@ groupByTeam?: boolean; refreshSecs?: number }
 /**
  * 위젯 데이터 봉투. 프론트의 `WidgetEnvelope<T>`와 짝을 이룬다.
  */
-export type LinearWidgetData = { issues: LinearIssue[]; 
+export type LinearWidgetData = { issues: LinearIssue[];
 /**
  * 다음 페이지가 있는가. **총 건수는 없다** — Linear 커넥션이 `totalCount`를
  * 주지 않으므로 GitHub처럼 "217건 중 30건"을 만들 수 없다.
  * 그래서 "N건까지 표시" 쪽으로만 알린다(Jira와 같은 처지).
  */
-hasMore?: boolean; fetchedAt: string; 
+hasMore?: boolean; fetchedAt: string;
 /**
  * 디스크 캐시에서 왔는가. true면 갱신이 실패했거나 아직 안 끝났다.
  */
 fromCache: boolean }
-export type LinearWidgetError = { 
+export type LinearWidgetError = {
 /**
  * `transient` | `permanent` — 프론트가 재시도 UI를 고르는 축.
  */
-kind: string; message: string; 
+kind: string; message: string;
 /**
  * 401 여부. 전역 배너를 한 번만 띄우기 위한 신호 (DECISIONS 16장).
  */
-isAuthFailure: boolean; retryAfterSecs: number | null; 
+isAuthFailure: boolean; retryAfterSecs: number | null;
 /**
  * 실패했지만 직전 성공 데이터가 있으면 함께 준다. 목록을 비우지 않기 위해.
  */
 stale: LinearWidgetData | null }
 /**
  * 상태 변경 팝오버를 채우는 한 줄.
- * 
+ *
  * Jira의 `JiraTransition`과 **모델이 다르다.** Jira는 "지금 실행 가능한 전이"를
  * 서버가 계산해 주는데, Linear는 "이 팀에 있는 상태 전부"다. 어디로든 갈 수 있고
  * 필수 필드 개념이 없다 — `has_required_fields`에 해당하는 필드가 없는 이유다
  * (DECISIONS 25.5).
  */
-export type LinearWorkflowState = { id: string; name: string; color: string; typeName: string; 
+export type LinearWorkflowState = { id: string; name: string; color: string; typeName: string;
 /**
  * 팀이 정한 표시 순서. Rust가 이 값으로 정렬해서 준다 —
  * 정렬 책임을 화면에 넘기지 않는다.
@@ -1580,15 +1641,15 @@ position: number }
 /**
  * 프리셋 정의. 정적 테이블이므로 `&'static str`.
  */
-export type Preset = { 
+export type Preset = {
 /**
  * 저장되는 안정적 식별자. **한번 정하면 바꾸지 않는다** (기존 위젯이 깨진다).
  */
-id: string; 
+id: string;
 /**
  * 설정 UI에 보이는 이름.
  */
-name: string; 
+name: string;
 /**
  * 이 프리셋이 무엇을 보여주는지 한 줄 설명.
  */
@@ -1596,15 +1657,15 @@ description: string; jql: string }
 /**
  * 어느 커넥션에서 이슈를 가져오는가.
  */
-export type PresetScope = 
+export type PresetScope =
 /**
  * `viewer { assignedIssues(...) }`
  */
-"viewerAssigned" | 
+"viewerAssigned" |
 /**
  * `viewer { createdIssues(...) }`
  */
-"viewerCreated" | 
+"viewerCreated" |
 /**
  * 최상위 `issues(filter: ...)`. 팀 범위와 함께 쓴다.
  */
@@ -1616,29 +1677,29 @@ export type ReviewState = "approved" | "changesRequested" | "reviewRequired"
 export type SortDirection = "asc" | "desc"
 /**
  * 프리셋에 적용할 정렬 기준.
- * 
+ *
  * **생 JQL에는 적용하지 않는다.** 사용자가 쓴 JQL에 이미 `ORDER BY`가 있으면
  * 우리가 덧붙일 수 없고, 없더라도 정렬은 그 JQL의 일부로 사용자가 정할 몫이다.
  */
 export type SortField = "updated" | "created" | "due" | "priority" | "key"
-export type TodoItem = { id: string; text: string; done: boolean; 
+export type TodoItem = { id: string; text: string; done: boolean;
 /**
  * The date this item currently sits on. Carry-over mutates this field.
  */
-date: string; 
+date: string;
 /**
  * The date it was first created. Never changes — it is what makes
  * "N일째" meaningful after several carries.
  */
-originDate: string; 
+originDate: string;
 /**
  * How many times this item has been carried forward.
  */
 carriedCount: number }
-export type Widget = { id: string; type: WidgetType; layout: WidgetLayout; 
+export type Widget = { id: string; type: WidgetType; layout: WidgetLayout;
 /**
  * Type-specific settings — JQL, GitHub query, refresh interval, and so on.
- * 
+ *
  * Deliberately untyped. DECISIONS 4: 위젯 하나 = 프론트 폴더 하나 + Rust
  * provider 하나. If this module named every provider's config type, adding
  * a widget would mean editing storage, which is exactly the coupling the
@@ -1648,7 +1709,7 @@ export type Widget = { id: string; type: WidgetType; layout: WidgetLayout;
 config?: JsonValue }
 /**
  * Grid position. DECISIONS 2: 12-column grid, so `x + w <= 12`.
- * 
+ *
  * Not enforced here — react-grid-layout owns collision and compaction, and a
  * store that rejected layouts RGL considers valid would fight it.
  */
@@ -1657,16 +1718,16 @@ export type WidgetLayout = { x: number; y: number; w: number; h: number }
  * Widget type. DECISIONS 3 caps instances per type, not overall — Todo widgets
  * are free while Jira widgets cost API quota.
  */
-export type WidgetType = "jira" | "github" | "todo" | 
+export type WidgetType = "jira" | "github" | "todo" |
 /**
  * Spike: iframe widget. Without this variant `board_save` rejects the whole
  * board file, so a web widget would vanish on restart.
  */
-"web" | 
+"web" |
 /**
  * Local photo album — a mood background, not a viewer (DECISIONS 24).
  */
-"album" | 
+"album" |
 /**
  * Linear issues — read + status change + detail modal (DECISIONS 25).
  */

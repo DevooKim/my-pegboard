@@ -17,6 +17,7 @@
 //! [`BoardStore::save`] is plain and synchronous, and writes every time it is
 //! called. **Callers must debounce.**
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,7 @@ use crate::storage::migrate::{load_or_default, Loaded, Migration, MigrationSet};
 pub const BOARD_FILE: &str = "board.json";
 pub const BOARD_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_BOARD_ID: &str = "default";
+pub const BOARD_EXPORT_FORMAT_VERSION: u32 = 1;
 
 /// Only v1 exists. When v2 arrives, add the struct change and register the
 /// function here — the walk in [`MigrationSet::migrate`] picks it up.
@@ -204,6 +206,276 @@ impl BoardFile {
     }
 }
 
+/// The only file shape that leaves the app for board transfer.
+/// Deliberately does not contain `TodoFile`, caches, connections, or secrets.
+/// Those stores are owned by separate files/services and are not part of board
+/// settings. Unknown envelope fields are rejected on import so a hand-edited
+/// file cannot smuggle another store into this boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BoardExportFile {
+    pub format_version: u32,
+    pub exported_at: String,
+    pub board: BoardFile,
+}
+
+impl BoardExportFile {
+    pub fn new(board: BoardFile, exported_at: String) -> Self {
+        Self {
+            format_version: BOARD_EXPORT_FORMAT_VERSION,
+            exported_at,
+            board,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum BoardImportMode {
+    Replace,
+    Merge,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumPathWarning {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardImportWidgetCount {
+    pub widget_type: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardImportPreview {
+    pub board_count: usize,
+    pub widget_count: usize,
+    pub widget_counts: Vec<BoardImportWidgetCount>,
+    pub format_version: u32,
+    pub board_schema_version: u32,
+    pub album_path_warnings: Vec<AlbumPathWarning>,
+}
+
+/// Candidate returned by the preview command. The UI sends the exact typed
+/// `file` back when the user confirms; it never reconstructs settings locally.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardImportCandidate {
+    pub file: BoardExportFile,
+    pub preview: BoardImportPreview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum BoardImportSignal {
+    RelaunchRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardImportApplyResult {
+    pub board: BoardFile,
+    pub orphan_cache_cleanup_warning: Option<String>,
+    pub signal: Option<BoardImportSignal>,
+}
+
+/// Validate an untrusted board transfer before it can reach `BoardStore`.
+pub fn validate_import(file: &BoardExportFile) -> StorageResult<()> {
+    if file.format_version > BOARD_EXPORT_FORMAT_VERSION {
+        return Err(StorageError::FutureExportVersion {
+            found: file.format_version,
+            supported: BOARD_EXPORT_FORMAT_VERSION,
+        });
+    }
+    if file.format_version != BOARD_EXPORT_FORMAT_VERSION {
+        return Err(StorageError::InvalidImport {
+            reason: format!("지원하지 않는 export 형식 버전 {}", file.format_version),
+        });
+    }
+    validate_sensitive_configs(&file.board)?;
+    validate_board_file(&file.board)
+}
+
+/// Reject sensitive values at the actual export boundary. Provider configs are
+/// intentionally opaque to storage, so this defensive walk prevents a future
+/// provider from accidentally placing credentials, Todo data, or API caches in
+/// a board config and then exporting them.
+pub fn validate_export(board: &BoardFile) -> StorageResult<()> {
+    validate_sensitive_configs(board)
+}
+
+fn validate_sensitive_configs(board: &BoardFile) -> StorageResult<()> {
+    for current_board in &board.boards {
+        for widget in &current_board.widgets {
+            reject_sensitive_config_keys(&widget.config)?;
+        }
+    }
+    Ok(())
+}
+
+fn reject_sensitive_config_keys(value: &Value) -> StorageResult<()> {
+    match value {
+        Value::Object(fields) => {
+            for (key, value) in fields {
+                let normalized = key
+                    .chars()
+                    .filter(char::is_ascii_alphanumeric)
+                    .flat_map(char::to_lowercase)
+                    .collect::<String>();
+                if is_sensitive_config_key(&normalized) {
+                    return Err(StorageError::InvalidExport { key: key.clone() });
+                }
+                reject_sensitive_config_keys(value)?;
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                reject_sensitive_config_keys(value)?;
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+    Ok(())
+}
+
+fn is_sensitive_config_key(normalized: &str) -> bool {
+    normalized.contains("token")
+        || normalized.contains("apikey")
+        || normalized.contains("email")
+        || normalized.contains("password")
+        || normalized.contains("secret")
+        || normalized.contains("credential")
+        || normalized.contains("cache")
+        || normalized.starts_with("todo")
+}
+
+pub fn validate_board_file(board: &BoardFile) -> StorageResult<()> {
+    if board.version > BOARD_SCHEMA_VERSION {
+        return Err(StorageError::FutureBoardVersion {
+            found: board.version,
+            supported: BOARD_SCHEMA_VERSION,
+        });
+    }
+    if board.version != BOARD_SCHEMA_VERSION {
+        return Err(StorageError::InvalidImport {
+            reason: format!("지원하지 않는 board 스키마 버전 {}", board.version),
+        });
+    }
+    if board.boards.is_empty() {
+        return Err(StorageError::EmptyImport);
+    }
+    if board.board(&board.active_board_id).is_none() {
+        return Err(StorageError::InvalidImport {
+            reason: format!("활성 보드 {}를 찾을 수 없습니다", board.active_board_id),
+        });
+    }
+
+    let mut board_ids = HashSet::new();
+    let mut widget_ids = HashSet::new();
+    for current_board in &board.boards {
+        if current_board.id.trim().is_empty() {
+            return Err(StorageError::InvalidImport {
+                reason: "보드 ID가 비어 있습니다".to_string(),
+            });
+        }
+        if !board_ids.insert(&current_board.id) {
+            return Err(StorageError::DuplicateBoard {
+                id: current_board.id.clone(),
+            });
+        }
+        for widget in &current_board.widgets {
+            if !widget_ids.insert(&widget.id) {
+                return Err(StorageError::DuplicateWidget {
+                    id: widget.id.clone(),
+                });
+            }
+            let limit = widget.widget_type.instance_limit();
+            let current = current_board.count_of(widget.widget_type);
+            if current > limit {
+                return Err(StorageError::WidgetLimitReached {
+                    widget_type: widget.widget_type.to_string(),
+                    limit,
+                    current,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Build the complete post-import file without touching disk or app state.
+pub fn build_import_result<F>(
+    current: &BoardFile,
+    imported: &BoardFile,
+    mode: BoardImportMode,
+    mut new_id: F,
+) -> StorageResult<BoardFile>
+where
+    F: FnMut() -> String,
+{
+    validate_board_file(imported)?;
+    match mode {
+        BoardImportMode::Replace => Ok(imported.clone()),
+        BoardImportMode::Merge => {
+            let mut result = current.clone();
+            validate_board_file(&result)?;
+            let mut names = result
+                .boards
+                .iter()
+                .map(|board| board.name.clone())
+                .collect::<HashSet<_>>();
+
+            for source_board in &imported.boards {
+                let board_id = new_id();
+                let name = unique_import_name(&source_board.name, &mut names);
+                let widgets = source_board
+                    .widgets
+                    .iter()
+                    .cloned()
+                    .map(|mut widget| {
+                        widget.id = new_id();
+                        widget
+                    })
+                    .collect();
+                result.boards.push(Board {
+                    id: board_id,
+                    name,
+                    widgets,
+                });
+            }
+
+            result.active_board_id = result
+                .boards
+                .get(current.boards.len())
+                .map(|board| board.id.clone())
+                .ok_or_else(|| StorageError::InvalidImport {
+                    reason: "병합할 보드가 없습니다".to_string(),
+                })?;
+            result.version = BOARD_SCHEMA_VERSION;
+            validate_board_file(&result)?;
+            Ok(result)
+        }
+    }
+}
+
+fn unique_import_name(base: &str, names: &mut HashSet<String>) -> String {
+    if names.insert(base.to_string()) {
+        return base.to_string();
+    }
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{base} (가져옴 {suffix})");
+        if names.insert(candidate.clone()) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
 /// Reads and writes `board.json`.
 ///
 /// Holds the parsed document in memory; mutations are in-memory until
@@ -252,6 +524,23 @@ impl BoardStore {
     /// module docs.
     pub fn save(&self) -> StorageResult<()> {
         write_json_atomic(&self.path, &self.data)
+    }
+
+    /// Validate and persist a complete replacement before swapping memory.
+    pub fn replace_atomically(&mut self, next: BoardFile) -> StorageResult<()> {
+        self.replace_atomically_with(next, write_json_atomic)
+    }
+
+    /// Testable seam for proving save-before-swap behavior without changing the
+    /// production atomic writer or touching an app data directory.
+    pub fn replace_atomically_with<F>(&mut self, next: BoardFile, writer: F) -> StorageResult<()>
+    where
+        F: FnOnce(&Path, &BoardFile) -> StorageResult<()>,
+    {
+        validate_board_file(&next)?;
+        writer(&self.path, &next)?;
+        self.data = next;
+        Ok(())
     }
 
     /// Add a widget to a board, enforcing the DECISIONS 3 instance cap.

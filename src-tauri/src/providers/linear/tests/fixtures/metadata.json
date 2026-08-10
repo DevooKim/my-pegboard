@@ -1,0 +1,44 @@
+{
+  "data": {
+    "viewer": {
+      "id": "viewer-1",
+      "name": "Sammy Kim",
+      "displayName": "Sammy",
+      "avatarUrl": "https://cdn.example/avatar.png"
+    },
+    "teams": {
+      "nodes": [
+        { "id": "team-eng", "key": "ENG", "name": "Engineering" }
+      ],
+      "pageInfo": { "hasNextPage": false }
+    },
+    "issueLabels": {
+      "nodes": [
+        { "id": "label-bug", "name": "Bug", "color": "#eb5757" }
+      ],
+      "pageInfo": { "hasNextPage": true }
+    },
+    "team": {
+      "id": "team-eng",
+      "states": {
+        "nodes": [
+          { "id": "state-todo", "name": "Todo", "color": "#8a8f98", "type": "unstarted", "position": 0.0 },
+          { "id": "state-backlog", "name": "Backlog", "color": "#8a8f98", "type": "triage", "position": 1.0 }
+        ],
+        "pageInfo": { "hasNextPage": false }
+      },
+      "members": {
+        "nodes": [
+          { "id": "viewer-1", "name": "sammy-kim", "displayName": "Sammy", "avatarUrl": null }
+        ],
+        "pageInfo": { "hasNextPage": false }
+      },
+      "projects": {
+        "nodes": [
+          { "id": "project-auth", "name": "Authentication", "team": { "id": "team-eng" } }
+        ],
+        "pageInfo": { "hasNextPage": false }
+      }
+    }
+  }
+}

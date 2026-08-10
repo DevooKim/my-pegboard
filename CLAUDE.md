@@ -215,10 +215,11 @@ src-tauri/src/
 ## Linear
 
 - **GraphQL API만.** `https://api.linear.app/graphql` (REST가 없다 — 선택이 아니다)
-- **조작 범위: 읽기 + 상태 변경 + 상세.** GitHub과 달리 상세 모달이 있다 —
-  사용자 결정이다 (DECISIONS 25.1). **생성은 없다.**
-- 위젯 타입은 **하나**. 쿼리는 **프리셋 4종뿐, 직접 입력 없음** —
-  Linear 필터는 문자열이 아니라 `IssueFilter` **JSON 객체**라 탈출구가 함정이 된다
+- **조작 범위: 읽기 + 생성 + 상태 변경 + 상세.** GitHub과 달리 상세 모달이 있고,
+  생성은 각 Linear 위젯 헤더에서만 시작한다 (DECISIONS 25.1).
+- 위젯 타입은 **하나**. 쿼리는 프리셋 또는 타입 기반 핵심 필터 UI다 —
+  생 GraphQL/`IssueFilter` JSON, 중첩 AND·OR 그룹은 허용하지 않는다. 조건은 AND로
+  결합하고 한 필드의 다중 선택만 OR 의미를 가진다
 - 프리셋은 전부 `viewer` 기반 (accountId 조회 왕복 없음)
 
 **⚠️⚠️ 이 위젯은 실제 응답을 한 번도 받지 못한 채 만들어졌다.**
@@ -239,6 +240,9 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 - **정렬은 `updatedAt`·`createdAt` 둘뿐이다.** `PaginationOrderBy`가 그것만 준다 →
   우선순위·마감일 정렬을 만들 수 없고, **클라이언트에서 다시 정렬하지 않는다**
   (30건만 받은 것을 정렬하면 설정 UI가 거짓말을 한다)
+- 정렬 방향은 서버 페이지네이션으로 처리한다. 내림차순은 `first/after`, 오름차순은
+  `last/before`이며, 오름차순 응답은 Rust에서 한 번 뒤집는다. 예전 config의 방향
+  누락은 내림차순으로 읽는다
 - **총 건수를 주지 않는다** (`totalCount` 없음). "217건 중 30건"을 만들 수 없다 —
   GitHub과 다르고 Jira 신규 검색과 같다
 - `priority` 정수 0~4의 의미를 모른다 → **`priorityLabel` 문자열을 그대로 표시.**
@@ -259,6 +263,16 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 상태를 바뀌었다고 보고한다.
 
 **`issueUpdate`는 멱등이 아니다 → 자동 재시도 금지.** 낙관적 업데이트도 없다.
+
+**이슈 생성:** 팀·제목은 필수이며 설명·상태·담당자·우선순위·프로젝트를 선택할 수
+있다. 성공해도 목록에 낙관적으로 삽입하지 않고 생성된 이슈 상세 골격을 즉시 연다.
+생성 IPC는 자동 재시도하지 않는다. 네트워크·timeout·5xx는 `possiblyCreated`로
+표시하고 입력을 유지한 채 제출을 잠가 `Linear에서 확인`만 제공한다. 명시적 거부와
+인증 실패는 원문을 표시하고 사용자가 의도적으로 다시 제출할 수 있다.
+
+**메타데이터:** `linear_meta.json` v2는 전역 팀·라벨과 팀별 상태·멤버·프로젝트를
+캐시한다. 캐시는 먼저 표시하고 refresh는 명시적으로 누를 때만 한다. API 상한은
+`truncated`로, refresh 실패는 stale cache와 오류를 함께 보여준다.
 
 **`description`은 markdown이다** (Jira는 ADF). **markdown 라이브러리를 추가하지
 않는다** — ADF도 의존성 0으로 직접 그렸다. `widgets/linear/markdown/`이 파서와
@@ -329,6 +343,14 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 "어제는 됐는데 오늘 아침에 안 된다"로만 나타난다.
 `providers/album/tests/mod.rs`의 `restore_covers_every_path…`가 이걸 막는다.
 
+**Tauri 2.11.5 scope의 import 경계:** 허용 패턴은 런타임에서 제거할 수 없다.
+`forbid_*`는 허용보다 우선하는 영구 금지 패턴이므로 revoke 용도로 쓰지 않는다.
+board import는 live global asset scope를 전혀 건드리지 않고, 가져온 모든 앨범
+경로를 Tauri escaped pattern과 동등한 순수 검증 경로로 확인한 뒤 원자 저장한다.
+membership이 달라지면 typed `relaunchRequired` 신호를 반환해 설정 UI에 재시작을
+표시한다. `@tauri-apps/plugin-process`의 `relaunch`는 사용자가 명시적 재시작
+버튼을 누른 경우에만 호출한다.
+
 **앨범을 만진 뒤에는 반드시 앱을 껐다 켜서 사진이 여전히 뜨는지 본다.**
 브라우저 dev 서버에는 `asset:`이 없어 원리적으로 확인할 수 없다.
 
@@ -352,8 +374,8 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 | Jira 상태 변경(transition) | **있음** — 배지 → 팝오버. 필수 필드가 걸린 전이만 브라우저로 (DECISIONS 11.5 개정) |
 | Jira 전이의 필수 필드 폼 | **안 만든다.** 필드 타입별 렌더러가 다시 필요해진다 → 브라우저 링크로 대체 |
 | 이미지 첨부 렌더링 | 인증 URL 재요청 필요, 보류 |
-| Linear 이슈 생성·코멘트 | **안 만든다.** 조작 범위는 읽기+상태변경+상세 (DECISIONS 25.1) |
-| Linear 생 필터 입력 | **안 만든다.** 필터가 JSON 객체라 탈출구가 함정이 된다 (25.2) |
+| Linear 이슈 생성·코멘트 | **생성 있음.** 헤더의 고정 7개 필드, no-retry·possibly-created 규칙. 코멘트는 없음 (DECISIONS 25.1) |
+| Linear 생 필터 입력 | **안 만든다.** 타입 기반 핵심 필터 UI만 허용하고 raw JSON·중첩 AND/OR는 제외 (25.2) |
 | Linear 실제 응답 검증 | **미완.** API 키가 없어 스키마만 보고 만들었다 (25.7) |
 | 앨범 재귀 스캔·EXIF·썸네일 | **의도적으로 없음** (DECISIONS 24.1 / 24.5) |
 | PWA | **폐기됨** (Tauri로 대체) |
@@ -380,6 +402,15 @@ Todo가 1개인 이유: 모든 Todo 위젯이 같은 `todos.json`을 읽는다. 
   탭에는 **위젯 수만** 표시한다 (보드 데이터만으로 정확히 아는 유일한 정보)
 - `activeBoardId`도 저장 대상이다. `persist.ts`의 구독 조건에서 빼면
   "탭을 옮겨두고 재시작했는데 첫 보드가 뜬다"가 된다
+
+### 보드 설정 Import/Export
+
+- export는 보드·레이아웃·위젯 설정만 담는다. 토큰·이메일·API 키·Todo 원본 데이터·API 응답 캐시를 넣지 않는다.
+- 파일 다이얼로그, JSON 파싱/검증, 미리보기, 교체/병합, 원자적 저장은 Rust가 소유한다. React는 preview를 표시하고 최종 확인만 요청한다.
+- 교체는 가져온 `BoardFile` 전체를 사용하고, 병합은 가져온 모든 보드/위젯 ID를 새 UUID로 재발급한다. 이름 충돌은 결정적으로 `업무 (가져옴 2)` 형식으로 푼다.
+- 앨범 경로는 보존하되 존재하지 않는 폴더/파일은 미리보기에서 모두 경고한다. 경로 누락은 import 거부 사유가 아니다.
+- apply 전에는 pending debounced board save를 flush한다. 순수 앨범 scope pattern 검증과 디스크 원자 저장 성공 후에만 메모리 교체·고아 캐시 정리를 한다. import 중 live asset scope는 변이하지 않으며 membership 변경 시 재시작 신호를 표시한다. 성공한 Rust 반환 파일은 Zustand에 한 번만 반영하고 디바운스 저장을 다시 예약하지 않는다.
+- 이 기능은 실제 Tauri 앱/OS 다이얼로그/live API/브라우저 수동 테스트 없이 pure helper, 임시 디렉토리, IPC mock으로 검증한다.
 
 ---
 

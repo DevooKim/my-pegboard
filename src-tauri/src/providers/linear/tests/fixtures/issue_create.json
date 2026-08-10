@@ -1,0 +1,24 @@
+{
+  "data": {
+    "issueCreate": {
+      "success": true,
+      "issue": {
+        "id": "issue-143",
+        "identifier": "ENG-143",
+        "title": "로그인 수정",
+        "url": "https://linear.app/acme/issue/ENG-143/login-fix",
+        "priority": 2,
+        "priorityLabel": "High",
+        "estimate": 3,
+        "dueDate": null,
+        "updatedAt": "2026-08-10T05:00:00Z",
+        "createdAt": "2026-08-10T05:00:00Z",
+        "state": { "id": "state-todo", "name": "Todo", "color": "#8a8f98", "type": "unstarted" },
+        "assignee": { "id": "viewer-1", "name": "sammy", "displayName": "Sammy", "avatarUrl": null },
+        "team": { "id": "team-eng", "key": "ENG", "name": "Engineering" },
+        "project": { "name": "Authentication" },
+        "labels": { "nodes": [{ "name": "bug" }] }
+      }
+    }
+  }
+}

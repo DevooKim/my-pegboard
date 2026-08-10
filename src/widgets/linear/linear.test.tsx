@@ -350,6 +350,54 @@ function deferred<T>() {
 }
 
 describe('IssueDetailModal', () => {
+  it('브랜치 복사 실패를 헤더에 남긴다', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    Object.assign(navigator, { clipboard: { writeText } })
+    linearIssue.mockResolvedValue({
+      status: 'ok',
+      data: {
+        id: 'uuid-1',
+        identifier: 'ENG-142',
+        description: null,
+        branchName: 'feature/eng-142',
+      },
+    })
+
+    render(<IssueDetailModal issue={issue()} onClose={vi.fn()} />)
+
+    const branchButton = await screen.findByTitle('브랜치 이름 복사: feature/eng-142')
+    fireEvent.click(branchButton)
+
+    expect(await screen.findByText('복사하지 못했습니다')).toBeInTheDocument()
+  })
+
+  it('브랜치 복사 타이머를 언마운트 때 정리한다', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    linearIssue.mockResolvedValue({
+      status: 'ok',
+      data: {
+        id: 'uuid-1',
+        identifier: 'ENG-142',
+        description: null,
+        branchName: 'feature/eng-142',
+      },
+    })
+
+    const view = render(<IssueDetailModal issue={issue()} onClose={vi.fn()} />)
+    const branchButton = await screen.findByTitle('브랜치 이름 복사: feature/eng-142')
+    vi.useFakeTimers()
+    await act(async () => {
+      fireEvent.click(branchButton)
+      await Promise.resolve()
+    })
+    expect(writeText).toHaveBeenCalledWith('feature/eng-142')
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    await act(async () => vi.advanceTimersByTimeAsync(1_500))
+  })
+
   it('먼저 연 이슈의 늦은 응답을 다음 이슈에 붙이지 않는다', async () => {
     const first = deferred<Awaited<ReturnType<typeof linearIssue>>>()
     const second = deferred<Awaited<ReturnType<typeof linearIssue>>>()
@@ -575,12 +623,21 @@ describe('StatePopover', () => {
 // ─────────────────────────── 데이터 훅 ───────────────────────────
 
 /** 훅을 시험하기 위한 최소 컴포넌트. envelope의 상태와 건수만 찍는다. */
-function HookProbe({ widgetId = 'l1', refreshMs = 0 }: { widgetId?: string; refreshMs?: number }) {
-  const { envelope } = useLinearData(widgetId, config(), refreshMs)
+function HookProbe({
+  widgetId = 'l1',
+  refreshMs = 0,
+  widgetConfig = config(),
+}: {
+  widgetId?: string
+  refreshMs?: number
+  widgetConfig?: LinearWidgetConfig
+}) {
+  const { envelope } = useLinearData(widgetId, widgetConfig, refreshMs)
   return (
     <div>
       <span data-testid="status">{envelope.status}</span>
       <span data-testid="count">{envelope.data?.issues.length ?? -1}</span>
+      <span data-testid="identifier">{envelope.data?.issues[0]?.identifier ?? ''}</span>
     </div>
   )
 }
@@ -785,6 +842,122 @@ describe('useLinearData', () => {
     expect(linearFetch).toHaveBeenCalledTimes(1)
   })
 
+  it('설정이 바뀌면 이전 조회가 끝나지 않아도 새 설정을 즉시 조회한다', async () => {
+    const oldRequest = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    const newRequest = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    linearFetch.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+
+    const probe = render(
+      <HookProbe widgetConfig={config({ query: { kind: 'preset', id: 'assigned-to-me' } })} />,
+    )
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(1))
+
+    probe.rerender(
+      <HookProbe widgetConfig={config({ query: { kind: 'preset', id: 'created-by-me' } })} />,
+    )
+
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+    expect(linearFetch.mock.calls[1]?.[1].query).toEqual({
+      kind: 'preset',
+      id: 'created-by-me',
+    })
+
+    await act(async () => {
+      newRequest.resolve({
+        status: 'ok',
+        data: {
+          issues: [issue({ identifier: 'NEW-1' })],
+          hasMore: false,
+          fetchedAt: '2026-08-06T09:01:00Z',
+          fromCache: false,
+        },
+      })
+    })
+    await waitFor(() => expect(screen.getByTestId('identifier')).toHaveTextContent('NEW-1'))
+
+    await act(async () => {
+      oldRequest.resolve({
+        status: 'ok',
+        data: {
+          issues: [issue({ identifier: 'OLD-1' })],
+          hasMore: false,
+          fetchedAt: '2026-08-06T09:00:00Z',
+          fromCache: false,
+        },
+      })
+    })
+
+    expect(screen.getByTestId('identifier')).toHaveTextContent('NEW-1')
+    expect(screen.getByTestId('identifier')).not.toHaveTextContent('OLD-1')
+  })
+
+  it('새 설정을 불러오는 동안 기존에 유효한 목록은 유지한다', async () => {
+    linearFetch.mockResolvedValueOnce({
+      status: 'ok',
+      data: {
+        issues: [issue({ identifier: 'OLD-1' })],
+        hasMore: false,
+        fetchedAt: '2026-08-06T09:00:00Z',
+        fromCache: false,
+      },
+    })
+    const newRequest = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    linearFetch.mockReturnValueOnce(newRequest.promise)
+
+    const probe = render(<HookProbe />)
+    await waitFor(() => expect(screen.getByTestId('identifier')).toHaveTextContent('OLD-1'))
+
+    probe.rerender(
+      <HookProbe
+        widgetConfig={config({ maxResults: 10, query: { kind: 'preset', id: 'created-by-me' } })}
+      />,
+    )
+
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+    expect(screen.getByTestId('identifier')).toHaveTextContent('OLD-1')
+    expect(screen.getByTestId('count')).toHaveTextContent('1')
+
+    await act(async () => {
+      newRequest.resolve({
+        status: 'ok',
+        data: {
+          issues: [issue({ identifier: 'NEW-1' })],
+          hasMore: false,
+          fetchedAt: '2026-08-06T09:01:00Z',
+          fromCache: false,
+        },
+      })
+    })
+    await waitFor(() => expect(screen.getByTestId('identifier')).toHaveTextContent('NEW-1'))
+  })
+
+  it('설정 변경은 이전 세대의 재시도 대기를 기다리지 않는다', async () => {
+    vi.useFakeTimers()
+    const newRequest = deferred<Awaited<ReturnType<typeof linearFetch>>>()
+    linearFetch.mockResolvedValueOnce({
+      status: 'error',
+      error: {
+        kind: 'transient',
+        message: 'Network unavailable',
+        isAuthFailure: false,
+        retryAfterSecs: 60,
+        stale: null,
+      },
+    })
+    linearFetch.mockReturnValueOnce(newRequest.promise)
+
+    const probe = render(<HookProbe />)
+    await act(async () => {})
+    expect(linearFetch).toHaveBeenCalledTimes(1)
+
+    probe.rerender(
+      <HookProbe widgetConfig={config({ query: { kind: 'preset', id: 'created-by-me' } })} />,
+    )
+    await act(async () => {})
+
+    expect(linearFetch).toHaveBeenCalledTimes(2)
+  })
+
   /** 실패해도 Rust가 준 직전 데이터로 목록을 유지한다. */
   it('실패 시 stale 데이터를 받아 목록을 유지한다', async () => {
     linearFetch.mockResolvedValue({
@@ -823,6 +996,23 @@ describe('useLinearData', () => {
     await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(1))
 
     window.dispatchEvent(new CustomEvent('pegboard:linear-state-changed'))
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
+  })
+
+  it('생성 이벤트를 받으면 다시 조회한다', async () => {
+    linearFetch.mockResolvedValue({
+      status: 'ok',
+      data: {
+        issues: [issue()],
+        hasMore: false,
+        fetchedAt: '2026-08-06T09:00:00Z',
+        fromCache: false,
+      },
+    })
+
+    render(<HookProbe />)
+    await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(1))
+    window.dispatchEvent(new CustomEvent('pegboard:linear-created'))
     await waitFor(() => expect(linearFetch).toHaveBeenCalledTimes(2))
   })
 

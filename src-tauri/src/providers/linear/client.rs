@@ -36,12 +36,16 @@
 
 use std::time::Duration;
 
+use chrono::Utc;
+
 use super::error::{body_says_rate_limited, classify_status, LinearError, LinearResult};
-use super::presets::{apply_team_scope, LinearSort, PresetScope};
+use super::presets::{apply_team_scope, LinearSort, LinearSortDirection, PresetScope};
 use super::types::{
-    GqlEnvelope, IssueDetailData, IssueNode, IssueUpdateData, IssuesData, LinearIssue,
-    LinearIssueDetail, LinearIssuePage, LinearTeam, LinearViewer, LinearWorkflowState,
-    TeamStatesData, TeamsData, ViewerData, ViewerIssuesData,
+    GlobalMetadataData, GqlEnvelope, IssueCreateData, IssueDetailData, IssueNode, IssueUpdateData,
+    IssuesData, LinearCreateIssueInput, LinearGlobalMetadata, LinearIssue, LinearIssueDetail,
+    LinearIssuePage, LinearLabelOption, LinearMetadataList, LinearProjectOption, LinearTeam,
+    LinearTeamMetadata, LinearViewer, LinearWorkflowState, PageInfo, ProjectMetadataNode,
+    StateNode, TeamMetadataData, TeamStatesData, TeamsData, UserNode, ViewerData, ViewerIssuesData,
 };
 use serde_json::{json, Value};
 
@@ -55,6 +59,46 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 /// 항목 수에 비례하고 단일 쿼리 상한이 10,000점이라, 우리 쿼리의 필드 수를
 /// 고려해 100에서 자른다. 위젯이 100줄 넘게 보여줄 일도 없다.
 const MAX_FIRST: u32 = 100;
+
+fn pagination_args(direction: LinearSortDirection, limit: u32) -> Value {
+    let limit = limit.clamp(1, MAX_FIRST);
+    match direction {
+        LinearSortDirection::Descending => json!({
+            "first": limit,
+            "after": null,
+            "last": null,
+            "before": null,
+        }),
+        LinearSortDirection::Ascending => json!({
+            "first": null,
+            "after": null,
+            "last": limit,
+            "before": null,
+        }),
+    }
+}
+
+fn finish_page(
+    mut issues: Vec<LinearIssue>,
+    page_info: Option<PageInfo>,
+    direction: LinearSortDirection,
+) -> LinearIssuePage {
+    if direction == LinearSortDirection::Ascending {
+        issues.reverse();
+    }
+    let next_cursor = match direction {
+        LinearSortDirection::Descending => page_info
+            .filter(|page| page.has_next_page)
+            .and_then(|page| page.end_cursor),
+        LinearSortDirection::Ascending => page_info
+            .filter(|page| page.has_previous_page)
+            .and_then(|page| page.start_cursor),
+    };
+    LinearIssuePage {
+        issues,
+        next_cursor,
+    }
+}
 
 /// 이슈 목록의 공통 필드 조각.
 ///
@@ -91,11 +135,11 @@ const ISSUE_FIELDS: &str = r#"
 fn viewer_issues_query(connection: &str, order_by: &str) -> String {
     format!(
         r#"
-query($filter: IssueFilter, $first: Int!, $after: String) {{
+query($filter: IssueFilter, $first: Int, $after: String, $last: Int, $before: String) {{
   viewer {{
-    issues: {connection}(filter: $filter, first: $first, after: $after, orderBy: {order_by}) {{
+    issues: {connection}(filter: $filter, first: $first, after: $after, last: $last, before: $before, orderBy: {order_by}) {{
       nodes {{{ISSUE_FIELDS}}}
-      pageInfo {{ hasNextPage endCursor }}
+      pageInfo {{ hasNextPage endCursor hasPreviousPage startCursor }}
     }}
   }}
 }}
@@ -107,10 +151,10 @@ query($filter: IssueFilter, $first: Int!, $after: String) {{
 fn all_issues_query(order_by: &str) -> String {
     format!(
         r#"
-query($filter: IssueFilter, $first: Int!, $after: String) {{
-  issues(filter: $filter, first: $first, after: $after, orderBy: {order_by}) {{
+query($filter: IssueFilter, $first: Int, $after: String, $last: Int, $before: String) {{
+  issues(filter: $filter, first: $first, after: $after, last: $last, before: $before, orderBy: {order_by}) {{
     nodes {{{ISSUE_FIELDS}}}
-    pageInfo {{ hasNextPage endCursor }}
+    pageInfo {{ hasNextPage endCursor hasPreviousPage startCursor }}
   }}
 }}
 "#
@@ -122,6 +166,40 @@ const TEAMS_QUERY: &str = r#"
 query {
   teams(first: 100) {
     nodes { id key name }
+  }
+}
+"#;
+
+const GLOBAL_METADATA_QUERY: &str = r#"
+query {
+  viewer { id name displayName avatarUrl }
+  teams(first: 100) {
+    nodes { id key name }
+    pageInfo { hasNextPage }
+  }
+  issueLabels(first: 100) {
+    nodes { id name color }
+    pageInfo { hasNextPage }
+  }
+}
+"#;
+
+const TEAM_METADATA_QUERY: &str = r#"
+query($teamId: String!) {
+  team(id: $teamId) {
+    id
+    states(first: 50) {
+      nodes { id name color type position }
+      pageInfo { hasNextPage }
+    }
+    members(first: 100) {
+      nodes { id name displayName avatarUrl }
+      pageInfo { hasNextPage }
+    }
+    projects(first: 100) {
+      nodes { id name team { id } }
+      pageInfo { hasNextPage }
+    }
   }
 }
 "#;
@@ -185,6 +263,19 @@ mutation($id: String!, $stateId: String!) {
 }
 "#;
 
+fn issue_create_mutation() -> String {
+    format!(
+        r#"
+mutation($input: IssueCreateInput!) {{
+  issueCreate(input: $input) {{
+    success
+    issue {{ {ISSUE_FIELDS} }}
+  }}
+}}
+"#
+    )
+}
+
 /// Linear API 키. **Debug에 절대 노출하지 않는다** (CLAUDE.md: 마스킹 필수).
 #[derive(Clone)]
 pub struct LinearCredentials {
@@ -226,10 +317,7 @@ impl LinearClient {
         Self::with_timeout(credentials, DEFAULT_TIMEOUT)
     }
 
-    pub fn with_timeout(
-        credentials: LinearCredentials,
-        timeout: Duration,
-    ) -> LinearResult<Self> {
+    pub fn with_timeout(credentials: LinearCredentials, timeout: Duration) -> LinearResult<Self> {
         let http = reqwest::Client::builder()
             .timeout(timeout)
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
@@ -275,7 +363,10 @@ impl LinearClient {
         // 헤더는 본문을 읽기 전에 챙긴다 (본문 읽기가 소유권을 가져간다).
         let reset_at_ms = rate_limit_reset_ms(&response);
 
-        let body = response.text().await.unwrap_or_default();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| body_read_error(context, error))?;
 
         if !(200..300).contains(&status) {
             return Err(classify_status(
@@ -333,23 +424,18 @@ impl LinearClient {
         filter: &Value,
         team_ids: &[String],
         sort: LinearSort,
-        first: u32,
+        direction: LinearSortDirection,
+        limit: u32,
     ) -> LinearResult<LinearIssuePage> {
-        let first = first.clamp(1, MAX_FIRST);
         let filter = apply_team_scope(filter, team_ids);
         let order_by = sort.as_str();
-
-        let variables = json!({
-            "filter": filter,
-            "first": first,
-            "after": Value::Null,
-        });
+        let mut variables = pagination_args(direction, limit);
+        variables["filter"] = filter;
 
         let connection = match scope.viewer_connection() {
             Some(name) => {
                 let query = viewer_issues_query(name, order_by);
-                let data: ViewerIssuesData =
-                    self.graphql(&query, variables, "이슈 목록").await?;
+                let data: ViewerIssuesData = self.graphql(&query, variables, "이슈 목록").await?;
                 data.viewer.and_then(|v| v.issues)
             }
             None => {
@@ -377,15 +463,7 @@ impl LinearClient {
             .filter_map(IssueNode::flatten)
             .collect();
 
-        let next_cursor = connection
-            .page_info
-            .filter(|p| p.has_next_page)
-            .and_then(|p| p.end_cursor);
-
-        Ok(LinearIssuePage {
-            issues,
-            next_cursor,
-        })
+        Ok(finish_page(issues, connection.page_info, direction))
     }
 
     /// 팀 목록. 설정창의 범위 UI를 채운다.
@@ -407,6 +485,33 @@ impl LinearClient {
             .collect())
     }
 
+    pub async fn global_metadata(&self) -> LinearResult<LinearGlobalMetadata> {
+        let data: GlobalMetadataData = self
+            .graphql(GLOBAL_METADATA_QUERY, json!({}), "Linear 메타데이터")
+            .await?;
+        let fetched_at = Utc::now();
+        let mut metadata = flatten_global_metadata(data)?;
+        metadata.teams.fetched_at = Some(fetched_at);
+        metadata.labels.fetched_at = Some(fetched_at);
+        Ok(metadata)
+    }
+
+    pub async fn team_metadata(&self, team_id: &str) -> LinearResult<LinearTeamMetadata> {
+        let data: TeamMetadataData = self
+            .graphql(
+                TEAM_METADATA_QUERY,
+                json!({ "teamId": team_id }),
+                "Linear 팀 메타데이터",
+            )
+            .await?;
+        let fetched_at = Utc::now();
+        let mut metadata = flatten_team_metadata(data, team_id)?;
+        metadata.states.fetched_at = Some(fetched_at);
+        metadata.members.fetched_at = Some(fetched_at);
+        metadata.projects.fetched_at = Some(fetched_at);
+        Ok(metadata)
+    }
+
     /// 한 팀의 워크플로우 상태 목록. 상태 변경 팝오버를 채운다.
     ///
     /// **`position` 순으로 정렬해서 준다.** 정렬 책임을 화면에 넘기지 않는다 —
@@ -414,11 +519,7 @@ impl LinearClient {
     /// 순서다.
     pub async fn team_states(&self, team_id: &str) -> LinearResult<Vec<LinearWorkflowState>> {
         let data: TeamStatesData = self
-            .graphql(
-                TEAM_STATES_QUERY,
-                json!({ "teamId": team_id }),
-                "상태 목록",
-            )
+            .graphql(TEAM_STATES_QUERY, json!({ "teamId": team_id }), "상태 목록")
             .await?;
 
         let Some(states) = data.team.and_then(|t| t.states) else {
@@ -467,17 +568,46 @@ impl LinearClient {
         }
     }
 
+    pub async fn create_issue(&self, input: &LinearCreateIssueInput) -> LinearResult<LinearIssue> {
+        let team_id = input.team_id.trim();
+        if team_id.is_empty() {
+            return Err(LinearError::BadRequest {
+                message: "Linear 이슈 생성: 팀을 선택하세요".to_owned(),
+            });
+        }
+        let title = input.title.trim();
+        if title.is_empty() {
+            return Err(LinearError::BadRequest {
+                message: "Linear 이슈 생성: 제목을 입력하세요".to_owned(),
+            });
+        }
+        if input.priority.is_some_and(|priority| priority > 4) {
+            return Err(LinearError::BadRequest {
+                message: "Linear 이슈 생성: 우선순위는 0부터 4까지만 가능합니다".to_owned(),
+            });
+        }
+
+        let mut normalized = input.clone();
+        normalized.team_id = team_id.to_owned();
+        normalized.title = title.to_owned();
+        let query = issue_create_mutation();
+        let data: IssueCreateData = self
+            .graphql(
+                &query,
+                json!({ "input": normalized.to_graphql_input() }),
+                "이슈 생성",
+            )
+            .await?;
+        flatten_issue_create(data)
+    }
+
     /// 이슈 본문(markdown). 상세 모달이 골격을 그린 뒤에 채운다.
     ///
     /// **디스크에 캐시하지 않는다** — 낡은 본문을 보여줄 바에는 잠깐 비는 편이
     /// 정직하다 (Jira 상세와 같은 판단, DECISIONS 11.4 D2).
     pub async fn issue_detail(&self, issue_id: &str) -> LinearResult<LinearIssueDetail> {
         let data: IssueDetailData = self
-            .graphql(
-                ISSUE_DETAIL_QUERY,
-                json!({ "id": issue_id }),
-                "이슈 상세",
-            )
+            .graphql(ISSUE_DETAIL_QUERY, json!({ "id": issue_id }), "이슈 상세")
             .await?;
 
         let issue = data.issue.ok_or_else(|| LinearError::NotFound {
@@ -510,6 +640,12 @@ impl LinearClient {
     }
 }
 
+fn body_read_error(context: &str, error: impl std::fmt::Display) -> LinearError {
+    LinearError::Network {
+        message: format!("{context}: 응답 본문을 읽지 못했습니다: {error}"),
+    }
+}
+
 /// `Authorization` 헤더 값.
 ///
 /// **키를 그대로 쓴다.** 별도 함수로 뽑은 이유는 테스트가 이 형태를 고정할 수
@@ -517,6 +653,218 @@ impl LinearClient {
 /// 드러나는 종류의 실패다.
 pub fn auth_header_value(credentials: &LinearCredentials) -> String {
     credentials.api_key.clone()
+}
+
+#[cfg(test)]
+fn decode_global_metadata(body: &str) -> LinearResult<LinearGlobalMetadata> {
+    let envelope: GqlEnvelope<GlobalMetadataData> =
+        serde_json::from_str(body).map_err(|error| LinearError::Decode {
+            message: format!("Linear 메타데이터: {error}"),
+        })?;
+    if !envelope.errors.is_empty() {
+        return Err(LinearError::GraphqlErrors {
+            message: envelope
+                .errors
+                .iter()
+                .map(|error| error.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+        });
+    }
+    let data = envelope.data.ok_or_else(|| LinearError::Decode {
+        message: "Linear 메타데이터: data가 비어 있습니다".to_owned(),
+    })?;
+    flatten_global_metadata(data)
+}
+
+#[cfg(test)]
+fn decode_team_metadata(body: &str, team_id: &str) -> LinearResult<LinearTeamMetadata> {
+    let envelope: GqlEnvelope<TeamMetadataData> =
+        serde_json::from_str(body).map_err(|error| LinearError::Decode {
+            message: format!("Linear 팀 메타데이터: {error}"),
+        })?;
+    if !envelope.errors.is_empty() {
+        return Err(LinearError::GraphqlErrors {
+            message: envelope
+                .errors
+                .iter()
+                .map(|error| error.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+        });
+    }
+    let data = envelope.data.ok_or_else(|| LinearError::Decode {
+        message: "Linear 팀 메타데이터: data가 비어 있습니다".to_owned(),
+    })?;
+    flatten_team_metadata(data, team_id)
+}
+
+fn flatten_global_metadata(data: GlobalMetadataData) -> LinearResult<LinearGlobalMetadata> {
+    let teams = data.teams.ok_or_else(|| LinearError::Decode {
+        message: "Linear 메타데이터: 응답에 teams가 없습니다".to_owned(),
+    })?;
+    let labels = data.issue_labels.ok_or_else(|| LinearError::Decode {
+        message: "Linear 메타데이터: 응답에 issueLabels가 없습니다".to_owned(),
+    })?;
+
+    Ok(LinearGlobalMetadata {
+        teams: LinearMetadataList {
+            items: teams
+                .nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|team| team.into_team())
+                .collect(),
+            fetched_at: None,
+            truncated: teams
+                .page_info
+                .is_some_and(|page_info| page_info.has_next_page),
+        },
+        viewer: data.viewer.and_then(UserNode::into_user_option),
+        labels: LinearMetadataList {
+            items: labels
+                .nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|label| {
+                    Some(LinearLabelOption {
+                        id: label.id?,
+                        name: label.name?,
+                        color: label.color.unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            fetched_at: None,
+            truncated: labels
+                .page_info
+                .is_some_and(|page_info| page_info.has_next_page),
+        },
+    })
+}
+
+fn flatten_team_metadata(
+    data: TeamMetadataData,
+    requested_team_id: &str,
+) -> LinearResult<LinearTeamMetadata> {
+    let team = data.team.ok_or_else(|| LinearError::Decode {
+        message: format!("Linear 팀 메타데이터: 팀 응답이 없습니다: {requested_team_id}"),
+    })?;
+    let states = team.states.ok_or_else(|| LinearError::Decode {
+        message: format!("Linear 팀 메타데이터: states가 없습니다: {requested_team_id}"),
+    })?;
+    let members = team.members.ok_or_else(|| LinearError::Decode {
+        message: format!("Linear 팀 메타데이터: members가 없습니다: {requested_team_id}"),
+    })?;
+    let projects = team.projects.ok_or_else(|| LinearError::Decode {
+        message: format!("Linear 팀 메타데이터: projects가 없습니다: {requested_team_id}"),
+    })?;
+
+    let mut state_items: Vec<_> = states
+        .nodes
+        .into_iter()
+        .flatten()
+        .filter_map(StateNode::into_workflow_state)
+        .collect();
+    state_items.sort_by(|left, right| left.position.total_cmp(&right.position));
+
+    let mut member_items: Vec<_> = members
+        .nodes
+        .into_iter()
+        .flatten()
+        .filter_map(UserNode::into_user_option)
+        .collect();
+    member_items.sort_by_key(|member| member.name.to_lowercase());
+
+    let mut project_items: Vec<_> = projects
+        .nodes
+        .into_iter()
+        .flatten()
+        .filter_map(|project: ProjectMetadataNode| {
+            Some(LinearProjectOption {
+                id: project.id?,
+                name: project.name?,
+                team_id: project
+                    .team
+                    .and_then(|team| team.id)
+                    .unwrap_or_else(|| requested_team_id.to_owned()),
+            })
+        })
+        .collect();
+    project_items.sort_by_key(|project| project.name.to_lowercase());
+
+    Ok(LinearTeamMetadata {
+        team_id: team.id.unwrap_or_else(|| requested_team_id.to_owned()),
+        states: LinearMetadataList {
+            items: state_items,
+            fetched_at: None,
+            truncated: states
+                .page_info
+                .is_some_and(|page_info| page_info.has_next_page),
+        },
+        members: LinearMetadataList {
+            items: member_items,
+            fetched_at: None,
+            truncated: members
+                .page_info
+                .is_some_and(|page_info| page_info.has_next_page),
+        },
+        projects: LinearMetadataList {
+            items: project_items,
+            fetched_at: None,
+            truncated: projects
+                .page_info
+                .is_some_and(|page_info| page_info.has_next_page),
+        },
+    })
+}
+
+fn flatten_issue_create(data: IssueCreateData) -> LinearResult<LinearIssue> {
+    let payload = data.issue_create.ok_or_else(|| LinearError::Decode {
+        message: "이슈 생성: 응답에 issueCreate가 없습니다".to_owned(),
+    })?;
+    match payload.success {
+        Some(false) => Err(LinearError::BadRequest {
+            message: "Linear가 이슈 생성을 거절했습니다 (success: false)".to_owned(),
+        }),
+        Some(true) => {
+            payload
+                .issue
+                .and_then(IssueNode::flatten)
+                .ok_or_else(|| LinearError::Decode {
+                    message: "이슈 생성: 성공 응답에 issue가 없거나 읽을 수 없습니다".to_owned(),
+                })
+        }
+        None => Err(LinearError::Decode {
+            message: "이슈 생성: 응답에 success가 없습니다".to_owned(),
+        }),
+    }
+}
+
+#[cfg(test)]
+fn decode_issue_create(body: &str) -> LinearResult<LinearIssue> {
+    let envelope: GqlEnvelope<IssueCreateData> =
+        serde_json::from_str(body).map_err(|error| LinearError::Decode {
+            message: format!("이슈 생성: {error}"),
+        })?;
+    if !envelope.errors.is_empty() {
+        let message = envelope
+            .errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        if body_says_rate_limited(body) {
+            return Err(LinearError::RateLimited {
+                message,
+                retry_after_secs: None,
+            });
+        }
+        return Err(LinearError::GraphqlErrors { message });
+    }
+    let data = envelope.data.ok_or_else(|| LinearError::Decode {
+        message: "이슈 생성: data가 비어 있습니다".to_owned(),
+    })?;
+    flatten_issue_create(data)
 }
 
 /// rate limit 리셋 시각(UTC epoch **밀리초**).
@@ -593,6 +941,9 @@ pub(crate) mod query_exports {
     //! 쿼리는 문자열 상수라 오타가 컴파일에 안 잡힌다. 최소한 **필수 필드가
     //! 쿼리에 들어 있는지**는 고정해둔다 — `team { id }`가 빠지면 상태 변경
     //! 팝오버가 조용히 아무것도 못 그린다.
+    use super::{LinearIssue, LinearIssuePage, LinearSortDirection};
+    use serde_json::Value;
+
     pub(crate) fn viewer_issues(connection: &str, order_by: &str) -> String {
         super::viewer_issues_query(connection, order_by)
     }
@@ -601,4 +952,46 @@ pub(crate) mod query_exports {
     }
     pub(crate) const TEAM_STATES: &str = super::TEAM_STATES_QUERY;
     pub(crate) const ISSUE_UPDATE: &str = super::ISSUE_UPDATE_STATE_MUTATION;
+    pub(crate) const GLOBAL_METADATA: &str = super::GLOBAL_METADATA_QUERY;
+    pub(crate) const TEAM_METADATA: &str = super::TEAM_METADATA_QUERY;
+    pub(crate) fn issue_create() -> String {
+        super::issue_create_mutation()
+    }
+
+    pub(crate) fn parse_global_metadata(
+        body: &str,
+    ) -> super::super::error::LinearResult<super::super::types::LinearGlobalMetadata> {
+        super::decode_global_metadata(body)
+    }
+
+    pub(crate) fn parse_team_metadata(
+        body: &str,
+    ) -> super::super::error::LinearResult<super::super::types::LinearTeamMetadata> {
+        super::decode_team_metadata(body, "team-eng")
+    }
+
+    pub(crate) fn parse_issue_create(
+        body: &str,
+    ) -> super::super::error::LinearResult<super::super::types::LinearIssue> {
+        super::decode_issue_create(body)
+    }
+
+    pub(crate) fn body_read_error(
+        context: &str,
+        message: &str,
+    ) -> super::super::error::LinearError {
+        super::body_read_error(context, message)
+    }
+
+    pub(crate) fn pagination_args(direction: LinearSortDirection, limit: u32) -> Value {
+        super::pagination_args(direction, limit)
+    }
+
+    pub(crate) fn finish_page(
+        issues: Vec<LinearIssue>,
+        page_info: Option<super::super::types::PageInfo>,
+        direction: LinearSortDirection,
+    ) -> LinearIssuePage {
+        super::finish_page(issues, page_info, direction)
+    }
 }
