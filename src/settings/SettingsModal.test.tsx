@@ -108,7 +108,7 @@ describe('SettingsModal board transfer', () => {
     vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: candidate })
     vi.mocked(commands.boardImportApply).mockResolvedValue({
       status: 'ok',
-      data: boardFile as never,
+      data: { board: boardFile, orphanCacheCleanupWarning: null } as never,
     })
     renderBoardTab()
 
@@ -134,5 +134,27 @@ describe('SettingsModal board transfer', () => {
     fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
 
     expect(await screen.findByText('저장할 수 없습니다')).toBeInTheDocument()
+  })
+
+  it('keeps a cache cleanup warning visible after the board was applied successfully', async () => {
+    const replaceFromImport = vi.fn()
+    useBoardStore.setState({ replaceFromImport })
+    vi.mocked(commands.boardImportPreview).mockResolvedValue({ status: 'ok', data: candidate })
+    vi.mocked(commands.boardImportApply).mockResolvedValue({
+      status: 'ok',
+      data: {
+        board: boardFile,
+        orphanCacheCleanupWarning: '보드는 저장됐지만 고아 캐시 정리에 실패했습니다',
+      } as never,
+    })
+
+    renderBoardTab()
+    fireEvent.click(screen.getByRole('button', { name: '가져오기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '교체 적용' }))
+
+    await waitFor(() => expect(replaceFromImport).toHaveBeenCalledWith(boardFile))
+    expect(
+      await screen.findByText('보드는 저장됐지만 고아 캐시 정리에 실패했습니다'),
+    ).toBeInTheDocument()
   })
 })

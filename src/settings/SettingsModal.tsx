@@ -120,6 +120,7 @@ function BoardSection() {
     { kind: 'idle' } | { kind: 'ok'; path: string } | { kind: 'error'; message: string }
   >({ kind: 'idle' })
   const [importError, setImportError] = useState<string | null>(null)
+  const [importWarning, setImportWarning] = useState<string | null>(null)
   const [busy, setBusy] = useState<'export' | 'preview' | 'apply' | null>(null)
 
   const exportBoard = useCallback(async () => {
@@ -142,6 +143,7 @@ function BoardSection() {
   const previewImport = useCallback(async () => {
     setBusy('preview')
     setImportError(null)
+    setImportWarning(null)
     try {
       const result = await commands.boardImportPreview()
       if (result.status === 'error') {
@@ -161,6 +163,7 @@ function BoardSection() {
     if (!preview) return
     setBusy('apply')
     setImportError(null)
+    setImportWarning(null)
     try {
       const result = await commands.boardImportApply(preview.file, mode)
       if (result.status === 'error') {
@@ -170,7 +173,8 @@ function BoardSection() {
       // Rust and the existing frontend store share the same wire shape. The
       // generated JsonValue config is intentionally wider than the widget
       // registry's local config type, so this is the one IPC hydration seam.
-      replaceFromImport(result.data as never)
+      replaceFromImport(result.data.board as never)
+      setImportWarning(result.data.orphanCacheCleanupWarning)
       setPreview(null)
     } catch (error) {
       setImportError(errorMessage(error))
@@ -223,6 +227,9 @@ function BoardSection() {
         </button>
         {importError && (
           <p className="text-caption text-danger leading-relaxed-ko">{importError}</p>
+        )}
+        {importWarning && (
+          <p className="text-caption text-warning leading-relaxed-ko">{importWarning}</p>
         )}
       </div>
 

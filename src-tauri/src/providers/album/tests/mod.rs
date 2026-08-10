@@ -16,7 +16,7 @@ use tempfile::TempDir;
 
 use super::error::AlbumError;
 use super::scan::{is_image_file, scan, MAX_PHOTOS};
-use super::scope::album_sources;
+use super::scope::{album_sources, plan_scope_transition};
 use super::types::AlbumSource;
 
 fn touch(dir: &Path, name: &str) {
@@ -293,6 +293,51 @@ fn restore_covers_every_path_of_every_album_widget() {
             "/Volumes/NAS/사진",
         ]),
         "복원이 경로를 빠뜨렸다 — 재시작 후에만 안 뜨는 실패가 된다"
+    );
+}
+
+#[test]
+fn replace_transition_covers_every_new_path_and_revokes_removed_paths() {
+    let old = board_with(vec![
+        album_widget(
+            "old-folder",
+            json!({ "kind": "folder", "path": "/old/photos" }),
+        ),
+        album_widget(
+            "old-files",
+            json!({ "kind": "files", "paths": ["/old/a.jpg", "/keep/b.jpg"] }),
+        ),
+    ]);
+    let new = board_with(vec![
+        album_widget(
+            "new-folder",
+            json!({ "kind": "folder", "path": "/new/photos" }),
+        ),
+        album_widget(
+            "new-files",
+            json!({ "kind": "files", "paths": ["/keep/b.jpg", "/new/a.jpg", "/new/b.jpg"] }),
+        ),
+    ]);
+
+    let transition = plan_scope_transition(&old, &new);
+
+    assert_eq!(
+        transition
+            .to_allow
+            .iter()
+            .map(|path| path.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["/new/photos", "/keep/b.jpg", "/new/a.jpg", "/new/b.jpg"],
+        "every new folder and every file in Files sources must be covered"
+    );
+    assert_eq!(
+        transition
+            .to_revoke
+            .iter()
+            .map(|path| path.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["/old/photos", "/old/a.jpg"],
+        "replacement must remove paths absent from the new board while preserving shared Files paths"
     );
 }
 

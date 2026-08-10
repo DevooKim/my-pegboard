@@ -14,7 +14,8 @@ use crate::state::AppState;
 use crate::storage::atomic::write_json_atomic;
 use crate::storage::board::{
     build_import_result, validate_export, validate_import, BoardExportFile, BoardFile,
-    BoardImportCandidate, BoardImportMode, BoardImportPreview, BoardImportWidgetCount,
+    BoardImportApplyResult, BoardImportCandidate, BoardImportMode, BoardImportPreview,
+    BoardImportWidgetCount,
 };
 use crate::storage::error::StorageResult;
 
@@ -161,25 +162,46 @@ pub fn board_import_apply(
     state: State<'_, AppState>,
     candidate: BoardExportFile,
     mode: BoardImportMode,
-) -> Result<BoardFile, String> {
+) -> Result<BoardImportApplyResult, String> {
     let mut store = state.board.lock().map_err(|_| "상태 잠금 실패")?;
     let next = apply_board_import(store.data(), &candidate, mode)?;
+
+    let transition = crate::providers::album::plan_scope_transition(store.data(), &next);
+    let scope = app.asset_protocol_scope();
+    crate::providers::album::allow_scope_paths(&scope, &transition)
+        .map_err(|e| format!("앨범 경로 권한을 적용할 수 없습니다: {e}"))?;
+
     store
         .replace_atomically(next.clone())
         .map_err(|e| format!("보드를 저장할 수 없습니다: {e}"))?;
 
-    // Only side effects after the board file is durably replaced. A failed
-    // import therefore leaves both board memory and cache files untouched.
-    crate::providers::album::restore_scopes(&app.asset_protocol_scope(), &next);
-    let ids = store.all_widget_ids();
-    if let Ok(cache) = state.cache.lock() {
-        if let Ok(removed) = cache.evict_orphans(&ids) {
-            if !removed.is_empty() {
-                tracing::info!(count = removed.len(), "고아 캐시 정리");
-            }
-        }
+    // Tauri's Scope has no remove-allowed-pattern API. Its forbid_* methods add
+    // deny patterns that take precedence over allows, which is the supported
+    // runtime revocation mechanism for paths no longer in the replacement.
+    if let Err(error) = crate::providers::album::revoke_scope_paths(&scope, &transition) {
+        tracing::warn!(error = %error, "앨범 경로 스코프를 완전히 철회하지 못했습니다");
     }
-    Ok(next)
+
+    let ids = store.all_widget_ids();
+    let orphan_cache_cleanup_warning = match state.cache.lock() {
+        Ok(cache) => match cache.evict_orphans(&ids) {
+            Ok(removed) => {
+                if !removed.is_empty() {
+                    tracing::info!(count = removed.len(), "고아 캐시 정리");
+                }
+                None
+            }
+            Err(error) => Some(format!(
+                "보드는 저장됐지만 고아 캐시를 정리하지 못했습니다: {error}"
+            )),
+        },
+        Err(_) => Some("보드는 저장됐지만 고아 캐시 정리를 위해 상태를 잠글 수 없습니다".into()),
+    };
+
+    Ok(BoardImportApplyResult {
+        board: next,
+        orphan_cache_cleanup_warning,
+    })
 }
 
 #[cfg(test)]

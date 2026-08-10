@@ -163,7 +163,7 @@ fn scan_and_cache(
     widget_id: &str,
     source: AlbumSource,
 ) -> Result<AlbumScan, String> {
-    allow_source(&app.asset_protocol_scope(), &source);
+    allow_source(&app.asset_protocol_scope(), &source)?;
 
     let result = scan(&source).map_err(|e| e.to_string())?;
 

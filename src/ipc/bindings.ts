@@ -647,7 +647,7 @@ async boardImportPreview() : Promise<Result<BoardImportCandidate | null, string>
     else return { status: "error", error: e  as any };
 }
 },
-async boardImportApply(candidate: BoardExportFile, mode: BoardImportMode) : Promise<Result<BoardFile, string>> {
+async boardImportApply(candidate: BoardExportFile, mode: BoardImportMode) : Promise<Result<BoardImportApplyResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_import_apply", { candidate, mode }) };
 } catch (e) {
@@ -752,6 +752,7 @@ export type Board = { id: string; name: string; widgets?: Widget[] }
  */
 export type BoardExportFile = { formatVersion: number; exportedAt: string; board: BoardFile }
 export type BoardFile = { version: number; activeBoardId: string; boards: Board[] }
+export type BoardImportApplyResult = { board: BoardFile; orphanCacheCleanupWarning: string | null }
 /**
  * Candidate returned by the preview command. The UI sends the exact typed
  * `file` back when the user confirms; it never reconstructs settings locally.

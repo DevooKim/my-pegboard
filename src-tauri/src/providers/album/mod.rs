@@ -22,5 +22,8 @@ mod tests;
 
 pub use error::{AlbumError, AlbumResult};
 pub use scan::{is_image_file, scan, IMAGE_EXTENSIONS, MAX_PHOTOS};
-pub use scope::{album_sources, allow_source, missing_path_warnings, restore_scopes};
+pub use scope::{
+    album_sources, allow_scope_paths, allow_source, missing_path_warnings, plan_scope_transition,
+    restore_scopes, revoke_scope_paths, AlbumScopePath, AlbumScopePathKind, AlbumScopeTransition,
+};
 pub use types::{AlbumPhoto, AlbumScan, AlbumSource};

@@ -30,6 +30,24 @@ use tauri::scope::fs::Scope;
 use super::types::AlbumSource;
 use crate::storage::board::{BoardFile, WidgetType};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlbumScopePathKind {
+    Directory,
+    File,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumScopePath {
+    pub path: String,
+    pub kind: AlbumScopePathKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlbumScopeTransition {
+    pub to_allow: Vec<AlbumScopePath>,
+    pub to_revoke: Vec<AlbumScopePath>,
+}
+
 /// board.json에서 앨범 위젯의 소스를 전부 뽑는다.
 ///
 /// `Scope`를 받지 않는 순수 함수로 뽑은 이유: 실제 Tauri 앱 없이 테스트할 수
@@ -48,6 +66,56 @@ pub fn album_sources(board: &BoardFile) -> Vec<AlbumSource> {
         .filter_map(|w| w.config.get("source"))
         .filter_map(|v| serde_json::from_value::<AlbumSource>(v.clone()).ok())
         .collect()
+}
+
+fn scope_paths_for_source(source: &AlbumSource) -> Vec<AlbumScopePath> {
+    let kind = if source.is_folder() {
+        AlbumScopePathKind::Directory
+    } else {
+        AlbumScopePathKind::File
+    };
+
+    source
+        .paths()
+        .into_iter()
+        .map(|path| AlbumScopePath {
+            path: path.to_string(),
+            kind: kind.clone(),
+        })
+        .collect()
+}
+
+fn scope_paths(board: &BoardFile) -> Vec<AlbumScopePath> {
+    let mut paths = Vec::new();
+    for source in album_sources(board) {
+        for path in scope_paths_for_source(&source) {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
+/// Derive the runtime permission transition without touching Tauri.
+///
+/// Every new path is returned in `to_allow`, even when it was already present,
+/// so import can prove and attempt complete coverage before the board is saved.
+/// A path is revoked only when its path and permission kind are absent from the
+/// replacement board. Files inside one `Files` source are compared separately;
+/// keeping one file must not revoke it just because a sibling was removed.
+pub fn plan_scope_transition(old: &BoardFile, new: &BoardFile) -> AlbumScopeTransition {
+    let old_paths = scope_paths(old);
+    let new_paths = scope_paths(new);
+    let to_revoke = old_paths
+        .into_iter()
+        .filter(|path| !new_paths.contains(path))
+        .collect();
+
+    AlbumScopeTransition {
+        to_allow: new_paths,
+        to_revoke,
+    }
 }
 
 /// Return stable, unique warnings for album paths that disappeared after an
@@ -77,22 +145,61 @@ pub fn missing_path_warnings(board: &BoardFile) -> Vec<crate::storage::board::Al
 /// - `Files` → 각 파일마다 `allow_file`. 디렉터리를 열면 고르지 않은 형제
 ///   파일까지 읽히므로 파일 단위로 준다.
 ///
-/// 실패한 경로는 로그로만 남기고 나머지를 계속 허용한다. 한 경로가 사라졌다고
-/// 다른 위젯의 사진까지 안 보이게 만들지 않는다.
-pub fn allow_source(scope: &Scope, source: &AlbumSource) {
-    match source {
-        AlbumSource::Folder { path } => {
-            if let Err(e) = scope.allow_directory(path, false) {
-                tracing::warn!(path = %path, error = %e, "앨범 폴더를 스코프에 허용하지 못했습니다");
-            }
+/// 실패한 경로도 모두 시도한 뒤 오류를 반환한다. import는 이 오류를 저장
+/// 전에 UI로 돌려보내므로, 일부만 허용된 보드를 성공으로 커밋하지 않는다.
+pub fn allow_source(scope: &Scope, source: &AlbumSource) -> Result<(), String> {
+    allow_paths(scope, &scope_paths_for_source(source))
+}
+
+fn allow_path(scope: &Scope, path: &AlbumScopePath) -> Result<(), String> {
+    let result = match path.kind {
+        AlbumScopePathKind::Directory => scope.allow_directory(&path.path, false),
+        AlbumScopePathKind::File => scope.allow_file(&path.path),
+    };
+    result.map_err(|error| format!("{}: {error}", path.path))
+}
+
+fn revoke_path(scope: &Scope, path: &AlbumScopePath) -> Result<(), String> {
+    let result = match path.kind {
+        AlbumScopePathKind::Directory => scope.forbid_directory(&path.path, false),
+        AlbumScopePathKind::File => scope.forbid_file(&path.path),
+    };
+    result.map_err(|error| format!("{}: {error}", path.path))
+}
+
+fn allow_paths(scope: &Scope, paths: &[AlbumScopePath]) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for path in paths {
+        if let Err(error) = allow_path(scope, path) {
+            errors.push(format!(
+                "앨범 경로를 스코프에 허용하지 못했습니다 ({error})"
+            ));
         }
-        AlbumSource::Files { paths } => {
-            for path in paths {
-                if let Err(e) = scope.allow_file(path) {
-                    tracing::warn!(path = %path, error = %e, "앨범 사진을 스코프에 허용하지 못했습니다");
-                }
-            }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+/// Allow all replacement paths. This must complete before board persistence.
+pub fn allow_scope_paths(scope: &Scope, transition: &AlbumScopeTransition) -> Result<(), String> {
+    allow_paths(scope, &transition.to_allow)
+}
+
+/// Revoke paths that no longer occur in the persisted board.
+pub fn revoke_scope_paths(scope: &Scope, transition: &AlbumScopeTransition) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for path in &transition.to_revoke {
+        if let Err(error) = revoke_path(scope, path) {
+            errors.push(format!("앨범 경로 스코프를 철회하지 못했습니다 ({error})"));
         }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 
@@ -103,7 +210,9 @@ pub fn allow_source(scope: &Scope, source: &AlbumSource) {
 pub fn restore_scopes(scope: &Scope, board: &BoardFile) {
     let sources = album_sources(board);
     for source in &sources {
-        allow_source(scope, source);
+        if let Err(error) = allow_source(scope, source) {
+            tracing::warn!(error = %error, "앨범 위젯 경로를 스코프에 복원하지 못했습니다");
+        }
     }
     if !sources.is_empty() {
         tracing::info!(count = sources.len(), "앨범 위젯 경로를 스코프에 복원");

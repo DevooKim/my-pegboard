@@ -269,6 +269,13 @@ pub struct BoardImportCandidate {
     pub preview: BoardImportPreview,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardImportApplyResult {
+    pub board: BoardFile,
+    pub orphan_cache_cleanup_warning: Option<String>,
+}
+
 /// Validate an untrusted board transfer before it can reach `BoardStore`.
 pub fn validate_import(file: &BoardExportFile) -> StorageResult<()> {
     if file.format_version > BOARD_EXPORT_FORMAT_VERSION {
@@ -282,6 +289,7 @@ pub fn validate_import(file: &BoardExportFile) -> StorageResult<()> {
             reason: format!("지원하지 않는 export 형식 버전 {}", file.format_version),
         });
     }
+    validate_sensitive_configs(&file.board)?;
     validate_board_file(&file.board)
 }
 
@@ -290,6 +298,10 @@ pub fn validate_import(file: &BoardExportFile) -> StorageResult<()> {
 /// provider from accidentally placing credentials, Todo data, or API caches in
 /// a board config and then exporting them.
 pub fn validate_export(board: &BoardFile) -> StorageResult<()> {
+    validate_sensitive_configs(board)
+}
+
+fn validate_sensitive_configs(board: &BoardFile) -> StorageResult<()> {
     for current_board in &board.boards {
         for widget in &current_board.widgets {
             reject_sensitive_config_keys(&widget.config)?;

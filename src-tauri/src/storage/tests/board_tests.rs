@@ -576,6 +576,30 @@ fn export_rejects_sensitive_widget_config_instead_of_serializing_it() {
 }
 
 #[test]
+fn import_rejects_the_same_sensitive_widget_config_keys_as_export() {
+    for key in [
+        "apiKey",
+        "accessToken",
+        "refreshToken",
+        "authToken",
+        "clientSecret",
+        "secretKey",
+        "emailAddress",
+        "credential",
+        "cachedResponse",
+        "TodoItems",
+    ] {
+        let mut board = BoardFile::default();
+        let mut jira = widget("sensitive", WidgetType::Jira);
+        jira.config = json!({ key: "must-not-enter-the-app" });
+        board.boards[0].widgets.push(jira);
+
+        let error = validate_import(&export(board)).unwrap_err();
+        assert!(error.to_string().contains(key), "{key} was not rejected");
+    }
+}
+
+#[test]
 fn import_rejects_future_versions_empty_boards_duplicate_ids_unknown_types_and_caps() {
     let mut future_format = export(BoardFile::default());
     future_format.format_version += 1;
