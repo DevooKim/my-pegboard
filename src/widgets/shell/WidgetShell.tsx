@@ -53,7 +53,7 @@ export function WidgetShell({
 
   return (
     <section
-      className="group relative flex h-full flex-col overflow-hidden rounded-lg border bg-surface-raised"
+      className="group/widget relative flex h-full flex-col overflow-hidden rounded-lg border bg-surface-raised"
       style={{
         borderColor: isStale ? 'var(--color-stale-border)' : 'var(--color-border-subtle)',
       }}
@@ -64,8 +64,8 @@ export function WidgetShell({
           headerMode === 'hover-overlay'
             ? `absolute inset-x-0 top-0 z-10 flex cursor-move items-center gap-2
                border-border-subtle border-b bg-surface-raised/95 px-2 py-1.5 opacity-0
-               transition-opacity duration-fast group-hover:opacity-100
-               group-focus-within:opacity-100`
+               transition-opacity duration-fast group-hover/widget:opacity-100
+               group-focus-within/widget:opacity-100`
             : `relative flex shrink-0 cursor-move items-center gap-2 border-border-subtle
                border-b px-2 py-1.5`
         }

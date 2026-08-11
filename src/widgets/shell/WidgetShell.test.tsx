@@ -29,9 +29,12 @@ describe('WidgetShell header mode', () => {
 
   it('호버 헤더는 본문 위에 겹치고 hover와 focus-within에서 나타난다', () => {
     const header = renderShell('hover-overlay')
+    const shell = header.closest('section')
+    expect(shell?.className).toContain('group/widget')
+    expect(shell?.classList.contains('group')).toBe(false)
     expect(header.className).toContain('absolute')
     expect(header.className).toContain('opacity-0')
-    expect(header.className).toContain('group-hover:opacity-100')
-    expect(header.className).toContain('group-focus-within:opacity-100')
+    expect(header.className).toContain('group-hover/widget:opacity-100')
+    expect(header.className).toContain('group-focus-within/widget:opacity-100')
   })
 })
