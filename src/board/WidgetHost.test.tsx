@@ -4,6 +4,7 @@ import type { LinearIssue } from '#/ipc/bindings'
 import type { WidgetInstance } from '#/widgets/types'
 
 const useLinearData = vi.fn()
+const openUrl = vi.fn()
 let linearConfigured = true
 
 vi.stubGlobal(
@@ -26,22 +27,30 @@ vi.mock('#/store/board', () => ({
     selector({ removeWidget: vi.fn(), boards: [], activeBoardId: null }),
 }))
 vi.mock('#/widgets/registry', () => ({
-  tryGetWidget: () => ({
-    label: 'Linear',
-    deriveTitle: () => 'Linear',
+  tryGetWidget: (type: string) => ({
+    label: type === 'linear' ? 'Linear' : type === 'web' ? '웹' : '앨범',
+    deriveTitle: () => (type === 'linear' ? 'Linear' : type === 'web' ? 'example.com' : '사진'),
     pollable: true,
     View: () => null,
   }),
 }))
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  openUrl: (...args: unknown[]) => openUrl(...args),
+}))
 vi.mock('#/widgets/shell/WidgetShell', () => ({
   WidgetShell: ({
+    title,
     actions,
     children,
+    headerMode,
   }: {
+    title: string
     actions?: React.ReactNode
     children: React.ReactNode
+    headerMode?: string
   }) => (
-    <section>
+    <section data-header-mode={headerMode ?? 'static'}>
+      <h2>{title}</h2>
       {actions}
       {children}
     </section>
@@ -115,6 +124,35 @@ function widget(): WidgetInstance {
   }
 }
 
+function webWidget(): WidgetInstance {
+  return {
+    id: 'web-1',
+    type: 'web',
+    layout: { x: 0, y: 0, w: 6, h: 12 },
+    config: {
+      title: '운영 화면',
+      url: 'https://example.com/dashboard',
+      zoom: 100,
+      refreshSecs: 0,
+      allowSession: true,
+      allowScroll: true,
+    },
+  }
+}
+
+function albumWidget(): WidgetInstance {
+  return {
+    id: 'album-1',
+    type: 'album',
+    layout: { x: 0, y: 0, w: 4, h: 8 },
+    config: {
+      title: null,
+      source: null,
+      intervalSecs: 10,
+    },
+  }
+}
+
 function createdIssue(): LinearIssue {
   return {
     id: 'issue-1',
@@ -160,5 +198,22 @@ describe('LinearHost creation entry', () => {
     linearConfigured = false
     render(<WidgetHost widget={widget()} />)
     expect(screen.queryByRole('button', { name: 'Linear 티켓 생성' })).toBeNull()
+  })
+})
+
+describe('specialized widget headers', () => {
+  it('웹 주소와 외부 열기 동작을 공통 헤더에 합친다', () => {
+    render(<WidgetHost widget={webWidget()} />)
+
+    expect(
+      screen.getByRole('heading', { name: 'https://example.com/dashboard' }),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '브라우저에서 열기' }))
+    expect(openUrl).toHaveBeenCalledWith('https://example.com/dashboard')
+  })
+
+  it('기존 앨범 설정도 호버 오버레이 헤더를 사용한다', () => {
+    const { container } = render(<WidgetHost widget={albumWidget()} />)
+    expect(container.querySelector('[data-header-mode="hover-overlay"]')).toBeInTheDocument()
   })
 })

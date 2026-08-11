@@ -78,24 +78,6 @@ export function WebView({ config }: WidgetViewProps<WebWidgetConfig, unknown>) {
 
   return (
     <div className="flex h-full flex-col">
-      {/*
-        상시 노출하는 탈출구. 감지 휴리스틱이 틀려도(빈 화면인데 오버레이가
-        안 뜨는 경우) 사용자가 막히지 않도록.
-      */}
-      <div className="flex shrink-0 items-center gap-1 border-border-subtle border-b px-2 py-1">
-        <span className="min-w-0 flex-1 truncate text-caption text-text-quaternary">{url}</span>
-        <button
-          type="button"
-          onClick={() => void openUrl(url)}
-          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-caption
-                     text-text-tertiary transition-colors duration-fast
-                     hover:bg-surface-inset hover:text-text-primary"
-        >
-          <ExternalLink size={11} />
-          브라우저에서 열기
-        </button>
-      </div>
-
       <div
         className="relative min-h-0 flex-1"
         style={{ overflow: config.allowScroll ? 'auto' : 'hidden' }}

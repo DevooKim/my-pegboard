@@ -36,6 +36,8 @@ export interface AlbumWidgetConfig {
   source: AlbumSource | null
   /** 순환 주기(초). **0이면 자동 순환 없음** (web 위젯 `refreshSecs: 0` 관례). */
   intervalSecs: number
+  /** 사진 위 헤더를 호버할 때만 보일지, 항상 공간을 차지할지. */
+  headerMode?: 'hover' | 'always'
 }
 
 export const albumWidget: WidgetDefinition<AlbumWidgetConfig> = {
@@ -49,6 +51,7 @@ export const albumWidget: WidgetDefinition<AlbumWidgetConfig> = {
     title: null,
     source: null,
     intervalSecs: DEFAULT_INTERVAL_SECS,
+    headerMode: 'hover',
   },
   // 사진은 가로가 길어야 대개 잘 맞는다. 4×8이면 12열 보드에서 세 개가 들어간다.
   defaultLayout: { w: 4, h: 8 },

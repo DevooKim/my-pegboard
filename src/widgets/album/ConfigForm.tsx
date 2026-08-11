@@ -67,6 +67,23 @@ export function AlbumConfigForm({ config, onChange }: WidgetConfigFormProps<Albu
                        text-body text-text-primary placeholder:text-text-quaternary"
           />
         </label>
+
+        <div className="flex flex-col gap-1">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={(config.headerMode ?? 'hover') === 'always'}
+              onChange={(e) =>
+                onChange({ ...config, headerMode: e.target.checked ? 'always' : 'hover' })
+              }
+              className="size-3.5 accent-accent"
+            />
+            <span className="text-caption text-text-secondary">헤더 항상 표시</span>
+          </label>
+          <span className="text-caption text-text-tertiary">
+            끄면 사진을 가득 보여주고 마우스를 올릴 때만 헤더가 나타납니다
+          </span>
+        </div>
       </Section>
 
       <Section>

@@ -28,7 +28,8 @@ vi.mock('#/store/board', () => ({
 
 // View는 위 mock에 의존하므로 mock 선언 뒤에 가져온다.
 const { AlbumView, __resetPlaybacks } = await import('./View')
-const { sourceLabel } = await import('./index')
+const { AlbumConfigForm } = await import('./ConfigForm')
+const { albumWidget, sourceLabel } = await import('./index')
 
 // ─────────────────────────────── 셔플 ───────────────────────────────
 
@@ -123,6 +124,10 @@ describe('재생 순서', () => {
 // ─────────────────────────── 제목 파생 ───────────────────────────
 
 describe('sourceLabel', () => {
+  it('새 앨범은 호버할 때 헤더를 표시한다', () => {
+    expect(albumWidget.defaultConfig.headerMode).toBe('hover')
+  })
+
   it('폴더는 마지막 조각만 쓴다', () => {
     // 전체 경로를 헤더에 넣으면 잘려서 `/Users/me/…`만 보인다.
     expect(sourceLabel({ kind: 'folder', path: '/Users/me/Pictures/여행' })).toBe('여행')
@@ -136,6 +141,16 @@ describe('sourceLabel', () => {
 
   it('아직 안 골랐으면 null', () => {
     expect(sourceLabel(null)).toBeNull()
+  })
+})
+
+describe('AlbumConfigForm', () => {
+  it('헤더를 항상 표시하도록 바꿀 수 있다', () => {
+    const onChange = vi.fn()
+    render(<AlbumConfigForm config={config({ headerMode: 'hover' })} onChange={onChange} />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '헤더 항상 표시' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ headerMode: 'always' }))
   })
 })
 

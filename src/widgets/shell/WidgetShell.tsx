@@ -22,6 +22,7 @@ export function WidgetShell({
   onConfigure,
   onRemove,
   actions,
+  headerMode = 'static',
   children,
 }: {
   title: string
@@ -31,6 +32,8 @@ export function WidgetShell({
   onRefresh: () => void
   onConfigure: () => void
   onRemove: () => void
+  /** 사진처럼 본문이 주인공인 위젯은 헤더를 본문 위에 겹쳐 필요할 때만 보인다. */
+  headerMode?: 'static' | 'hover-overlay'
   /**
    * 위젯 고유 동작. 공통 버튼(새로고침·설정·삭제) **왼쪽**에 놓인다.
    *
@@ -50,14 +53,22 @@ export function WidgetShell({
 
   return (
     <section
-      className="flex h-full flex-col overflow-hidden rounded-lg border bg-surface-raised"
+      className="group relative flex h-full flex-col overflow-hidden rounded-lg border bg-surface-raised"
       style={{
         borderColor: isStale ? 'var(--color-stale-border)' : 'var(--color-border-subtle)',
       }}
     >
       <header
         data-widget-drag-handle
-        className="relative flex shrink-0 cursor-move items-center gap-2 border-border-subtle border-b px-2 py-1.5"
+        className={
+          headerMode === 'hover-overlay'
+            ? `absolute inset-x-0 top-0 z-10 flex cursor-move items-center gap-2
+               border-border-subtle border-b bg-surface-raised/95 px-2 py-1.5 opacity-0
+               transition-opacity duration-fast group-hover:opacity-100
+               group-focus-within:opacity-100`
+            : `relative flex shrink-0 cursor-move items-center gap-2 border-border-subtle
+               border-b px-2 py-1.5`
+        }
       >
         <h2 className="min-w-0 flex-1 truncate text-caption text-text-secondary">{title}</h2>
 

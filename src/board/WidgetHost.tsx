@@ -1,4 +1,5 @@
-import { ArrowDownToLine, SquarePen } from 'lucide-react'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { ArrowDownToLine, ExternalLink, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   GithubWidgetConfig,
@@ -165,16 +166,24 @@ function WebHost({
   const [reloadKey, setReloadKey] = useState(0)
   if (!definition) return null
   const View = definition.View
+  const url = String((widget.config as { url?: unknown }).url ?? '').trim()
 
   return (
     <WidgetShell
-      title={definition.deriveTitle(widget.config)}
+      title={url || definition.deriveTitle(widget.config)}
       status="ready"
       fetchedAt={null}
       pollable
       onRefresh={() => setReloadKey((n) => n + 1)}
       onConfigure={onConfigure}
       onRemove={onRemove}
+      actions={
+        url ? (
+          <IconButton label="브라우저에서 열기" onClick={() => void openUrl(url)}>
+            <ExternalLink size={13} />
+          </IconButton>
+        ) : undefined
+      }
     >
       <View
         key={reloadKey}
@@ -230,6 +239,7 @@ function AlbumHost({
       onRefresh={refresh}
       onConfigure={onConfigure}
       onRemove={onRemove}
+      headerMode={(config.headerMode ?? 'hover') === 'hover' ? 'hover-overlay' : 'static'}
     >
       <View widgetId={widget.id} config={config} envelope={envelope} width={width} />
     </WidgetShell>
