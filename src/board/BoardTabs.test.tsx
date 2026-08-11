@@ -44,7 +44,7 @@ function reset() {
   useBoardStore.setState({
     version: BOARD_SCHEMA_VERSION,
     activeBoardId: DEFAULT_BOARD_ID,
-    boards: [{ id: DEFAULT_BOARD_ID, name: '업무', widgets: [] }],
+    boards: [{ id: DEFAULT_BOARD_ID, name: '업무', locked: false, widgets: [] }],
     hydrated: true,
   })
 }

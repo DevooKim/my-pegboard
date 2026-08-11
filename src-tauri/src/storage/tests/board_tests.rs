@@ -49,6 +49,31 @@ fn missing_file_yields_the_default_single_board() {
     assert!(!dir.path().join(BOARD_FILE).exists());
 }
 
+#[test]
+fn board_without_locked_field_defaults_to_unlocked() {
+    let file: BoardFile = serde_json::from_value(json!({
+        "version": 1,
+        "activeBoardId": "default",
+        "boards": [{ "id": "default", "name": "Board", "widgets": [] }]
+    }))
+    .unwrap();
+
+    assert!(!file.boards[0].locked);
+}
+
+#[test]
+fn board_lock_round_trips_through_json() {
+    let file: BoardFile = serde_json::from_value(json!({
+        "version": 1,
+        "activeBoardId": "default",
+        "boards": [{ "id": "default", "name": "Board", "locked": true, "widgets": [] }]
+    }))
+    .unwrap();
+
+    assert!(file.boards[0].locked);
+    assert_eq!(serde_json::to_value(file).unwrap()["boards"][0]["locked"], true);
+}
+
 /// DECISIONS 10 / 14: the on-disk shape is multi-board ready from day one so
 /// adding boards later needs no migration.
 #[test]
@@ -449,6 +474,7 @@ fn all_widget_ids_spans_every_board() {
     s.data_mut().boards.push(crate::storage::board::Board {
         id: "second".to_string(),
         name: "Second".to_string(),
+        locked: false,
         widgets: vec![widget("w3", WidgetType::Github)],
     });
 
@@ -465,6 +491,7 @@ fn remove_widget_finds_it_on_any_board() {
     s.data_mut().boards.push(crate::storage::board::Board {
         id: "second".to_string(),
         name: "Second".to_string(),
+        locked: false,
         widgets: vec![widget("w3", WidgetType::Github)],
     });
 
@@ -623,6 +650,7 @@ fn import_rejects_future_versions_empty_boards_duplicate_ids_unknown_types_and_c
     duplicate_widgets.boards.push(Board {
         id: "second".into(),
         name: "Second".into(),
+        locked: false,
         widgets: vec![widget("same", WidgetType::Jira)],
     });
     duplicate_widgets.boards[0]
@@ -665,6 +693,7 @@ fn merge_regenerates_ids_activates_first_imported_board_and_resolves_names() {
         boards: vec![Board {
             id: "existing".into(),
             name: "업무".into(),
+            locked: false,
             widgets: vec![widget("existing-widget", WidgetType::Jira)],
         }],
     };
@@ -675,11 +704,13 @@ fn merge_regenerates_ids_activates_first_imported_board_and_resolves_names() {
             Board {
                 id: "imported-a".into(),
                 name: "업무".into(),
+                locked: true,
                 widgets: vec![widget("imported-widget-a", WidgetType::Github)],
             },
             Board {
                 id: "imported-b".into(),
                 name: "업무".into(),
+                locked: false,
                 widgets: vec![widget("imported-widget-b", WidgetType::Todo)],
             },
         ],
@@ -700,6 +731,8 @@ fn merge_regenerates_ids_activates_first_imported_board_and_resolves_names() {
     assert_eq!(merged.boards[2].id, "new-3");
     assert_eq!(merged.boards[1].widgets[0].id, "new-2");
     assert_eq!(merged.boards[2].widgets[0].id, "new-4");
+    assert!(merged.boards[1].locked);
+    assert!(!merged.boards[2].locked);
     assert_eq!(current.boards[0].id, "existing");
     assert_eq!(current.boards[0].widgets[0].id, "existing-widget");
 }
@@ -742,6 +775,7 @@ fn album_path_warnings_report_each_missing_folder_or_file() {
         boards: vec![Board {
             id: DEFAULT_BOARD_ID.into(),
             name: "Board".into(),
+            locked: false,
             widgets: vec![
                 {
                     let mut album = widget("album", WidgetType::Album);

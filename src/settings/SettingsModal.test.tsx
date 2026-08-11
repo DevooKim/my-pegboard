@@ -47,7 +47,7 @@ function deferred<T>() {
 const boardFile: BoardFile = {
   version: 1,
   activeBoardId: 'imported',
-  boards: [{ id: 'imported', name: '업무', widgets: [] }],
+  boards: [{ id: 'imported', name: '업무', locked: false, widgets: [] }],
 }
 
 const candidate = {
@@ -70,7 +70,7 @@ function resetStore() {
   useBoardStore.setState({
     version: 1,
     activeBoardId: 'default',
-    boards: [{ id: 'default', name: 'Board', widgets: [] }],
+    boards: [{ id: 'default', name: 'Board', locked: false, widgets: [] }],
     hydrated: false,
     skipNextSave: false,
   })

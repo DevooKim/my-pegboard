@@ -22,7 +22,7 @@ const { bootstrap, flushPendingSaves } = await import('#/store/persist')
 const initialBoard = {
   version: 1,
   activeBoardId: 'default',
-  boards: [{ id: 'default', name: 'Board', widgets: [] }],
+  boards: [{ id: 'default', name: 'Board', locked: false, widgets: [] }],
 }
 
 function deferred<T>() {
@@ -48,7 +48,7 @@ describe('board persistence after import', () => {
     useBoardStore.setState({
       version: 1,
       activeBoardId: 'default',
-      boards: [{ id: 'default', name: 'Board', widgets: [] }],
+      boards: [{ id: 'default', name: 'Board', locked: false, widgets: [] }],
       hydrated: false,
       skipNextSave: false,
     })
@@ -64,7 +64,7 @@ describe('board persistence after import', () => {
     const imported = {
       version: 1,
       activeBoardId: 'imported',
-      boards: [{ id: 'imported', name: 'Imported', widgets: [] }],
+      boards: [{ id: 'imported', name: 'Imported', locked: false, widgets: [] }],
     }
 
     useBoardStore.getState().replaceFromImport(imported)
@@ -130,7 +130,7 @@ describe('board persistence after import', () => {
     const imported = {
       version: 1,
       activeBoardId: 'imported',
-      boards: [{ id: 'imported', name: 'Imported', widgets: [] }],
+      boards: [{ id: 'imported', name: 'Imported', locked: false, widgets: [] }],
     }
     const importAfterFlush = flushPendingSaves().then(() => {
       useBoardStore.getState().replaceFromImport(imported)

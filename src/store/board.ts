@@ -20,6 +20,7 @@ import type { WidgetInstance, WidgetType } from '#/widgets/types'
 export interface Board {
   id: string
   name: string
+  locked: boolean
   widgets: WidgetInstance[]
 }
 
@@ -61,10 +62,12 @@ interface BoardState {
   removeBoard: (id: string) => { ok: boolean }
   /** 탭 순서 변경. from 위치의 보드를 to 위치로 옮긴다 */
   moveBoard: (from: number, to: number) => void
+  /** 활성 여부와 무관하게 지정한 보드의 배치 잠금을 뒤집는다 */
+  toggleBoardLock: (id: string) => void
 }
 
 function emptyBoard(): Board {
-  return { id: DEFAULT_BOARD_ID, name: 'Board', widgets: [] }
+  return { id: DEFAULT_BOARD_ID, name: 'Board', locked: false, widgets: [] }
 }
 
 /**
@@ -92,7 +95,10 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     set({
       version: file.version,
       activeBoardId: file.activeBoardId,
-      boards: file.boards.length > 0 ? file.boards : [emptyBoard()],
+      boards:
+        file.boards.length > 0
+          ? file.boards.map((board) => ({ ...board, locked: board.locked ?? false }))
+          : [emptyBoard()],
       hydrated: true,
       skipNextSave: false,
     }),
@@ -101,7 +107,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     set({
       version: file.version,
       activeBoardId: file.activeBoardId,
-      boards: file.boards,
+      boards: file.boards.map((board) => ({ ...board, locked: board.locked ?? false })),
       hydrated: true,
       skipNextSave: true,
     }),
@@ -175,7 +181,10 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     const state = get()
     const id = crypto.randomUUID()
     set({
-      boards: [...state.boards, { id, name: nextBoardName(state.boards), widgets: [] }],
+      boards: [
+        ...state.boards,
+        { id, name: nextBoardName(state.boards), locked: false, widgets: [] },
+      ],
       // 만든 보드로 바로 옮긴다. 추가해두고 안 보여주면 만들어진 줄 모른다.
       activeBoardId: id,
     })
@@ -229,6 +238,13 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       boards.splice(to, 0, moved)
       return { boards }
     }),
+
+  toggleBoardLock: (id) =>
+    set((state) => ({
+      boards: state.boards.map((board) =>
+        board.id === id ? { ...board, locked: !board.locked } : board,
+      ),
+    })),
 }))
 
 /**

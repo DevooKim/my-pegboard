@@ -1,6 +1,6 @@
 [package]
 name = "my-pegboard"
-version = "0.7.1-beta"
+version = "0.7.2-beta"
 description = "페그보드처럼 위젯을 배치하는 개인용 데스크톱 대시보드"
 authors = ["Hyunwoo Kim"]
 edition = "2021"

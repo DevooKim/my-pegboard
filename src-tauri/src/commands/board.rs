@@ -221,6 +221,7 @@ mod tests {
                 boards: vec![Board {
                     id: DEFAULT_BOARD_ID.into(),
                     name: "Board".into(),
+                    locked: false,
                     widgets: vec![Widget {
                         id: "w1".into(),
                         widget_type: WidgetType::Album,

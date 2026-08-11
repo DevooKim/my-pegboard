@@ -30,7 +30,7 @@ function resetStore() {
   useBoardStore.setState({
     version: BOARD_SCHEMA_VERSION,
     activeBoardId: DEFAULT_BOARD_ID,
-    boards: [{ id: DEFAULT_BOARD_ID, name: 'Board', widgets: [] }],
+    boards: [{ id: DEFAULT_BOARD_ID, name: 'Board', locked: false, widgets: [] }],
     hydrated: false,
     skipNextSave: false,
   })
@@ -117,7 +117,7 @@ describe('board store', () => {
     const imported = {
       version: BOARD_SCHEMA_VERSION,
       activeBoardId: 'imported',
-      boards: [{ id: 'imported', name: '가져온 보드', widgets: [] }],
+      boards: [{ id: 'imported', name: '가져온 보드', locked: false, widgets: [] }],
     }
 
     useBoardStore.getState().replaceFromImport(imported)
@@ -155,6 +155,20 @@ describe('보드 CRUD', () => {
     expect(state.boards[1]?.id).toBe(id)
     expect(state.boards[1]?.widgets).toEqual([])
     expect(state.activeBoardId).toBe(id)
+  })
+
+  it('보드는 잠금 해제로 시작하고 한 보드만 잠근다', () => {
+    const { id } = useBoardStore.getState().addBoard()
+    expect(useBoardStore.getState().boards.map((board) => board.locked)).toEqual([false, false])
+
+    useBoardStore.getState().toggleBoardLock(id)
+
+    expect(useBoardStore.getState().boards.map((board) => board.locked)).toEqual([false, true])
+  })
+
+  it('보드 잠금 상태를 직렬화한다', () => {
+    useBoardStore.getState().toggleBoardLock(DEFAULT_BOARD_ID)
+    expect(serializeBoard(useBoardStore.getState()).boards[0]?.locked).toBe(true)
   })
 
   it('새 보드 이름은 겹치지 않는다 — 지웠다 다시 만들어도', () => {
@@ -297,6 +311,7 @@ describe('보드 CRUD', () => {
         {
           id: 'default',
           name: 'Board',
+          locked: false,
           widgets: [{ id: 'w1', type: 'jira', layout: { x: 0, y: 0, w: 4, h: 8 }, config: {} }],
         },
       ],

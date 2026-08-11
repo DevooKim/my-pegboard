@@ -17,7 +17,7 @@ export async function bootstrap(): Promise<void> {
     useBoardStore.getState().hydrate({
       version: 1,
       activeBoardId: 'default',
-      boards: [{ id: 'default', name: 'Board', widgets: [] }],
+      boards: [{ id: 'default', name: 'Board', locked: false, widgets: [] }],
     })
     return
   }
@@ -31,7 +31,7 @@ export async function bootstrap(): Promise<void> {
     useBoardStore.getState().hydrate({
       version: 1,
       activeBoardId: 'default',
-      boards: [{ id: 'default', name: 'Board', widgets: [] }],
+      boards: [{ id: 'default', name: 'Board', locked: false, widgets: [] }],
     })
   }
 

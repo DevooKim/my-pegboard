@@ -170,7 +170,7 @@ function WebHost({
 
   return (
     <WidgetShell
-      title={url || definition.deriveTitle(widget.config)}
+      title={definition.deriveTitle(widget.config)}
       status="ready"
       fetchedAt={null}
       pollable

@@ -122,6 +122,11 @@ export function AlbumView({
 
   const index = currentIndex(playback)
   const photo = index === null ? null : photos[index]
+  const countVisibility =
+    (config.headerMode ?? 'hover') === 'hover'
+      ? `top-8 opacity-0 transition-opacity duration-fast group-hover/widget:opacity-100
+         group-focus-within/widget:opacity-100`
+      : 'top-1'
 
   /**
    * 깨진/사라진 장을 만나면 **즉시 다음 장으로 넘긴다.**
@@ -228,8 +233,8 @@ export function AlbumView({
       {/* 폭이 아주 좁으면 장수 표시가 사진을 잡아먹는다. 240px부터만 그린다. */}
       {width >= 240 && photoCount > 1 && (
         <span
-          className="pointer-events-none absolute top-1 right-1 rounded bg-surface-raised/70 px-1.5
-                     py-0.5 text-caption text-text-tertiary tabular-nums"
+          className={`pointer-events-none absolute right-1 rounded bg-surface-raised/70 px-1.5
+                      py-0.5 text-caption text-text-tertiary tabular-nums ${countVisibility}`}
         >
           {playback.cursor + 1} / {photoCount}
         </span>

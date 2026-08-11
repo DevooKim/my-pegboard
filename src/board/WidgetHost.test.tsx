@@ -29,7 +29,12 @@ vi.mock('#/store/board', () => ({
 vi.mock('#/widgets/registry', () => ({
   tryGetWidget: (type: string) => ({
     label: type === 'linear' ? 'Linear' : type === 'web' ? '웹' : '앨범',
-    deriveTitle: () => (type === 'linear' ? 'Linear' : type === 'web' ? 'example.com' : '사진'),
+    deriveTitle: (config: { title?: string | null }) =>
+      type === 'linear'
+        ? 'Linear'
+        : type === 'web'
+          ? config.title?.trim() || 'example.com'
+          : '사진',
     pollable: true,
     View: () => null,
   }),
@@ -124,7 +129,7 @@ function widget(): WidgetInstance {
   }
 }
 
-function webWidget(): WidgetInstance {
+function webWidget(overrides: { title?: string | null } = {}): WidgetInstance {
   return {
     id: 'web-1',
     type: 'web',
@@ -136,6 +141,7 @@ function webWidget(): WidgetInstance {
       refreshSecs: 0,
       allowSession: true,
       allowScroll: true,
+      ...overrides,
     },
   }
 }
@@ -202,14 +208,17 @@ describe('LinearHost creation entry', () => {
 })
 
 describe('specialized widget headers', () => {
-  it('웹 주소와 외부 열기 동작을 공통 헤더에 합친다', () => {
+  it('웹 위젯 이름과 외부 열기 동작을 공통 헤더에 합친다', () => {
     render(<WidgetHost widget={webWidget()} />)
 
-    expect(
-      screen.getByRole('heading', { name: 'https://example.com/dashboard' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '운영 화면' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '브라우저에서 열기' }))
     expect(openUrl).toHaveBeenCalledWith('https://example.com/dashboard')
+  })
+
+  it('웹 위젯 이름이 없으면 호스트명을 표시한다', () => {
+    render(<WidgetHost widget={webWidget({ title: null })} />)
+    expect(screen.getByRole('heading', { name: 'example.com' })).toBeInTheDocument()
   })
 
   it('기존 앨범 설정도 호버 오버레이 헤더를 사용한다', () => {

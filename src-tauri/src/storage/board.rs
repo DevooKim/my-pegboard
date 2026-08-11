@@ -143,6 +143,8 @@ pub struct Board {
     pub id: String,
     pub name: String,
     #[serde(default)]
+    pub locked: bool,
+    #[serde(default)]
     pub widgets: Vec<Widget>,
 }
 
@@ -171,6 +173,7 @@ impl Default for BoardFile {
             boards: vec![Board {
                 id: DEFAULT_BOARD_ID.to_string(),
                 name: "Board".to_string(),
+                locked: false,
                 widgets: Vec::new(),
             }],
         }
@@ -444,6 +447,7 @@ where
                 result.boards.push(Board {
                     id: board_id,
                     name,
+                    locked: source_board.locked,
                     widgets,
                 });
             }

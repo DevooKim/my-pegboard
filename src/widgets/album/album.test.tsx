@@ -437,6 +437,24 @@ describe('AlbumView', () => {
     expect(img.src).toContain('/p/cached.jpg')
   })
 
+  it('호버 헤더에서는 장수 표시도 함께 나타난다', () => {
+    renderView(['/p/a.jpg', '/p/b.jpg'], { headerMode: 'hover' })
+
+    const count = screen.getByText('1 / 2')
+    expect(count).toHaveClass('opacity-0')
+    expect(count).toHaveClass('top-8')
+    expect(count).toHaveClass('group-hover/widget:opacity-100')
+    expect(count).toHaveClass('group-focus-within/widget:opacity-100')
+  })
+
+  it('헤더 항상 표시 설정에서는 장수도 계속 보인다', () => {
+    renderView(['/p/a.jpg', '/p/b.jpg'], { headerMode: 'always' })
+
+    const count = screen.getByText('1 / 2')
+    expect(count).toHaveClass('top-1')
+    expect(count).not.toHaveClass('opacity-0')
+  })
+
   it('폭이 좁으면 장수 표시를 그리지 않는다', () => {
     // 240px 미만에서는 표시가 사진을 잡아먹는다.
     render(

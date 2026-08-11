@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import GridLayout, { type Layout, type LayoutItem, useContainerWidth } from 'react-grid-layout'
 import { WidgetHost } from '#/board/WidgetHost'
-import { GRID_COLUMNS, useBoardStore, useWidgets } from '#/store/board'
+import { GRID_COLUMNS, useActiveBoard, useBoardStore } from '#/store/board'
 import { tryGetWidget } from '#/widgets/registry'
 
 import 'react-grid-layout/css/styles.css'
@@ -15,7 +15,7 @@ const DRAG_CONFIG = { handle: '[data-widget-drag-handle]' } as const
 const RESIZE_CONFIG = { handles: ['se'] } as const
 
 export function Board() {
-  const widgets = useWidgets()
+  const { widgets, locked } = useActiveBoard()
   const hydrated = useBoardStore((s) => s.hydrated)
   const applyLayout = useBoardStore((s) => s.applyLayout)
   const { width, containerRef } = useContainerWidth()
@@ -63,8 +63,8 @@ export function Board() {
           layout={layout}
           width={width}
           gridConfig={GRID_CONFIG}
-          dragConfig={DRAG_CONFIG}
-          resizeConfig={RESIZE_CONFIG}
+          dragConfig={{ ...DRAG_CONFIG, enabled: !locked }}
+          resizeConfig={{ ...RESIZE_CONFIG, enabled: !locked }}
           onDragStop={handleLayoutCommit}
           onResizeStop={handleLayoutCommit}
         >

@@ -1,4 +1,4 @@
-import { Columns, Settings } from 'lucide-react'
+import { Columns, Lock, LockOpen, Settings } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { AddWidgetMenu } from '#/board/AddWidgetMenu'
 import { Board } from '#/board/Board'
@@ -81,6 +81,7 @@ export function App() {
         <BoardTabs />
         <div data-tauri-drag-region className="flex-1" />
         <AddBoardButton />
+        <BoardLockButton />
         <AddWidgetMenu />
         <button
           type="button"
@@ -112,6 +113,31 @@ export function App() {
         onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
       />
     </div>
+  )
+}
+
+function BoardLockButton() {
+  const board = useBoardStore(
+    (state) => state.boards.find((item) => item.id === state.activeBoardId) ?? state.boards[0],
+  )
+  const toggleBoardLock = useBoardStore((state) => state.toggleBoardLock)
+  if (!board) return null
+
+  const label = board.locked ? '보드 잠금 해제' : '보드 잠금'
+  const Icon = board.locked ? Lock : LockOpen
+  return (
+    <button
+      type="button"
+      onClick={() => toggleBoardLock(board.id)}
+      title={label}
+      aria-label={label}
+      className={`grid size-7 place-items-center rounded transition-colors duration-fast
+                  hover:bg-surface-inset hover:text-text-primary ${
+                    board.locked ? 'bg-surface-inset text-text-primary' : 'text-text-tertiary'
+                  }`}
+    >
+      <Icon size={14} />
+    </button>
   )
 }
 

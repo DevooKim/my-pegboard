@@ -742,7 +742,7 @@ export type AppInfo = { version: string;
  * 실제 측정은 후속 작업.
  */
 memory_bytes: number | null }
-export type Board = { id: string; name: string; widgets?: Widget[] }
+export type Board = { id: string; name: string; locked?: boolean; widgets?: Widget[] }
 /**
  * The only file shape that leaves the app for board transfer.
  * Deliberately does not contain `TodoFile`, caches, connections, or secrets.
