@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `src/store/todos.ts`
 
-- [ ] Add a field-wise equality helper for the six persisted `TodoItem` fields.
+- [x] Add a field-wise equality helper for the six persisted `TodoItem` fields.
 
 ```ts
 function sameTodoItem(a: TodoItem, b: TodoItem): boolean {
@@ -30,7 +30,7 @@ function sameTodoItem(a: TodoItem, b: TodoItem): boolean {
 }
 ```
 
-- [ ] Add `reconcileTodoItems(current, incoming)` that indexes current items by id, reuses equal objects, and returns incoming order.
+- [x] Add `reconcileTodoItems(current, incoming)` that indexes current items by id, reuses equal objects, and returns incoming order.
 
 ```ts
 function reconcileTodoItems(current: TodoItem[], incoming: TodoItem[]): TodoItem[] {
@@ -42,20 +42,20 @@ function reconcileTodoItems(current: TodoItem[], incoming: TodoItem[]): TodoItem
 }
 ```
 
-- [ ] Route `load`, `add`, `setDone`, `setText`, `remove`, `checkCarryOver`, `carryOverNow`, and `reorder` success payloads through the reconciler using functional Zustand updates.
+- [x] Route `load`, `add`, `setDone`, `setText`, `remove`, `checkCarryOver`, `carryOverNow`, and `reorder` success payloads through the reconciler using functional Zustand updates.
 
 ```ts
 set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
 ```
 
-- [ ] Confirm the public store API and IPC payload types are unchanged with `bun run typecheck`.
+- [x] Confirm the public store API and IPC payload types are unchanged with `bun run typecheck`.
 
 ### Task 2: Defer the application settings modal
 
 **Files:**
 - Modify: `src/App.tsx`
 
-- [ ] Replace the static component import with a type-only `SettingsTab` import and a module-level `lazy(() => import(...))` component.
+- [x] Replace the static component import with a type-only `SettingsTab` import and a module-level `lazy(() => import(...))` component.
 
 ```ts
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
@@ -66,7 +66,7 @@ const SettingsModal = lazy(() =>
 )
 ```
 
-- [ ] Render the lazy modal only while `settingsOpen` is true and wrap it in `Suspense` with a non-animated fallback.
+- [x] Render the lazy modal only while `settingsOpen` is true and wrap it in `Suspense` with a non-animated fallback.
 
 ```tsx
 {settingsOpen && (
@@ -81,7 +81,7 @@ const SettingsModal = lazy(() =>
 )}
 ```
 
-- [ ] Keep `initialTab`, `onClose`, and `onSaved` behavior unchanged.
+- [x] Keep `initialTab`, `onClose`, and `onSaved` behavior unchanged.
 
 ### Task 3: Defer widget configuration forms
 
@@ -95,7 +95,7 @@ const SettingsModal = lazy(() =>
 - Modify: `src/widgets/todo/index.ts`
 - Modify: `src/widgets/web/index.ts`
 
-- [ ] Extend the registry's `ConfigForm` type to accept a typed lazy component without weakening its props to `any`.
+- [x] Extend the registry's `ConfigForm` type to accept a typed lazy component without weakening its props to `any`.
 
 ```ts
 type ConfigFormComponent<TConfig> =
@@ -103,7 +103,7 @@ type ConfigFormComponent<TConfig> =
   | LazyExoticComponent<ComponentType<WidgetConfigFormProps<TConfig>>>
 ```
 
-- [ ] Replace each static ConfigForm import with a named-export dynamic import wrapped in `lazy`.
+- [x] Replace each static ConfigForm import with a named-export dynamic import wrapped in `lazy`.
 
 ```ts
 const JiraConfigForm = lazy(() =>
@@ -111,7 +111,7 @@ const JiraConfigForm = lazy(() =>
 )
 ```
 
-- [ ] Wrap only the form content in `Suspense`; keep the modal shell, controls, validation state, and apply button behavior intact.
+- [x] Wrap only the form content in `Suspense`; keep the modal shell, controls, validation state, and apply button behavior intact.
 
 ```tsx
 <Suspense fallback={<p className="text-caption text-text-tertiary">설정을 불러오는 중…</p>}>
@@ -124,8 +124,8 @@ const JiraConfigForm = lazy(() =>
 **Files:**
 - Review all files above and both documentation files.
 
-- [ ] Run `bun run typecheck` and expect exit code 0.
-- [ ] Run `bun run lint` and expect exit code 0.
-- [ ] Run `bun run build`; record initial JavaScript minified/gzip sizes and confirm the 500KB warning is gone.
-- [ ] Inspect `git diff --check`, the full diff, and explicit staged paths.
+- [x] Run `bun run typecheck` and expect exit code 0.
+- [x] Run `bun run lint` and expect exit code 0.
+- [x] Run `bun run build`; record initial JavaScript minified/gzip sizes and confirm the 500KB warning is gone.
+- [x] Inspect `git diff --check`, the full diff, and explicit staged paths.
 - [ ] Commit with concise Korean messages, push `agent/optimize-rendering-and-startup`, and open a draft PR against the remote default branch.

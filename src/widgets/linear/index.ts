@@ -1,9 +1,13 @@
 import { CircleDashed } from 'lucide-react'
+import { lazy } from 'react'
 import type { LinearWidgetConfig } from '#/ipc/bindings'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { LinearConfigForm } from './ConfigForm'
 import { LinearView } from './View'
+
+const LinearConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.LinearConfigForm })),
+)
 
 /**
  * Linear 위젯 — 이슈 목록 + 상태 변경 + 상세 (DECISIONS 25).

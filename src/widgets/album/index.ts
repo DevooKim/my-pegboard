@@ -1,10 +1,14 @@
 import { Images } from 'lucide-react'
+import { lazy } from 'react'
 import type { AlbumSource } from '#/ipc/bindings'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { AlbumConfigForm } from './ConfigForm'
 import { DEFAULT_INTERVAL_SECS } from './defaults'
 import { AlbumView } from './View'
+
+const AlbumConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.AlbumConfigForm })),
+)
 
 /**
  * 앨범 위젯 — 로컬 폴더의 사진을 조용히 순환시킨다.

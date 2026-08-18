@@ -1,8 +1,12 @@
 import { SquareCheck } from 'lucide-react'
+import { lazy } from 'react'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { TodoConfigForm } from './ConfigForm'
 import { TodoView } from './View'
+
+const TodoConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.TodoConfigForm })),
+)
 
 /**
  * Todo 위젯 — 날짜 축을 가진 daily todo (DECISIONS 13).

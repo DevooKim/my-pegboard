@@ -1,8 +1,12 @@
 import { Globe } from 'lucide-react'
+import { lazy } from 'react'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { WebConfigForm } from './ConfigForm'
 import { WebView } from './View'
+
+const WebConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.WebConfigForm })),
+)
 
 /**
  * 웹 위젯 — 임의의 URL을 iframe으로 띄운다.

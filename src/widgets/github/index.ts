@@ -1,9 +1,13 @@
 import { GitPullRequest } from 'lucide-react'
+import { lazy } from 'react'
 import type { GithubWidgetConfig } from '#/ipc/bindings'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { GithubConfigForm } from './ConfigForm'
 import { GithubView } from './View'
+
+const GithubConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.GithubConfigForm })),
+)
 
 /** 프리셋 id → 표시 이름. Rust의 PRESETS와 짝을 이룬다. */
 const PRESET_TITLES: Record<string, string> = {

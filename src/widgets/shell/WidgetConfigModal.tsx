@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useBoardStore } from '#/store/board'
 import { Modal } from '#/ui/Modal'
 import { getWidget } from '#/widgets/registry'
@@ -59,7 +59,15 @@ export function WidgetConfigModal({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <ConfigForm config={draft} onChange={setDraft} onValidityChange={setValid} />
+        <Suspense
+          fallback={
+            <div className="grid min-h-20 place-items-center text-caption text-text-tertiary">
+              설정을 불러오는 중…
+            </div>
+          }
+        >
+          <ConfigForm config={draft} onChange={setDraft} onValidityChange={setValid} />
+        </Suspense>
       </div>
 
       <footer className="flex shrink-0 justify-end gap-2 border-border-subtle border-t px-4 py-3">
