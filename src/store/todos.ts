@@ -92,6 +92,31 @@ interface TodoState {
   clearError: () => void
 }
 
+/**
+ * IPC는 작업 하나가 끝날 때마다 전체 목록을 돌려준다. 내용이 같은 항목까지 새
+ * 객체로 바꾸면 id별 selector를 쓰는 TodoRowBound도 모든 행을 다시 그리게 된다.
+ * 서버 순서는 따르되 바뀌지 않은 항목의 참조만 보존한다.
+ */
+function reconcileTodoItems(current: TodoItem[], incoming: TodoItem[]): TodoItem[] {
+  const currentById = new Map(current.map((item) => [item.id, item]))
+
+  return incoming.map((item) => {
+    const previous = currentById.get(item.id)
+    return previous && sameTodoItem(previous, item) ? previous : item
+  })
+}
+
+function sameTodoItem(a: TodoItem, b: TodoItem): boolean {
+  return (
+    a.id === b.id &&
+    a.text === b.text &&
+    a.done === b.done &&
+    a.date === b.date &&
+    a.originDate === b.originDate &&
+    a.carriedCount === b.carriedCount
+  )
+}
+
 export const useTodoStore = create<TodoState>((set, get) => ({
   items: [],
   loaded: false,
@@ -102,7 +127,11 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   load: async () => {
     const r = await commands.todoList()
     if (r.status === 'ok') {
-      set({ items: r.data, loaded: true, error: null })
+      set((state) => ({
+        items: reconcileTodoItems(state.items, r.data),
+        loaded: true,
+        error: null,
+      }))
     } else {
       set({ error: r.error, loaded: true })
     }
@@ -112,14 +141,16 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     const trimmed = text.trim()
     if (!trimmed) return
     const r = await commands.todoAdd(trimmed, date)
-    if (r.status === 'ok') set({ items: r.data, error: null })
-    else set({ error: r.error })
+    if (r.status === 'ok') {
+      set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
+    } else set({ error: r.error })
   },
 
   setDone: async (id, done) => {
     const r = await commands.todoSetDone(id, done)
-    if (r.status === 'ok') set({ items: r.data, error: null })
-    else set({ error: r.error })
+    if (r.status === 'ok') {
+      set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
+    } else set({ error: r.error })
   },
 
   setText: async (id, text) => {
@@ -127,14 +158,16 @@ export const useTodoStore = create<TodoState>((set, get) => ({
     // 빈 텍스트로 지우는 경로를 만들지 않는다. 삭제는 명시적으로만.
     if (!trimmed) return
     const r = await commands.todoSetText(id, trimmed)
-    if (r.status === 'ok') set({ items: r.data, error: null })
-    else set({ error: r.error })
+    if (r.status === 'ok') {
+      set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
+    } else set({ error: r.error })
   },
 
   remove: async (id) => {
     const r = await commands.todoRemove(id)
-    if (r.status === 'ok') set({ items: r.data, error: null })
-    else set({ error: r.error })
+    if (r.status === 'ok') {
+      set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
+    } else set({ error: r.error })
   },
 
   checkCarryOver: async (viewingToday, enabled) => {
@@ -156,12 +189,12 @@ export const useTodoStore = create<TodoState>((set, get) => ({
 
     const r = await commands.todoCarryOver(today)
     if (r.status === 'ok') {
-      set({
-        items: r.data.items,
+      set((state) => ({
+        items: reconcileTodoItems(state.items, r.data.items),
         lastCheckedDate: today,
         lastCarriedCount: r.data.report.carried.length,
         error: null,
-      })
+      }))
     } else {
       set({ error: r.error })
     }
@@ -170,11 +203,11 @@ export const useTodoStore = create<TodoState>((set, get) => ({
   carryOverNow: async () => {
     const r = await commands.todoCarryOver(dateKey())
     if (r.status === 'ok') {
-      set({
-        items: r.data.items,
+      set((state) => ({
+        items: reconcileTodoItems(state.items, r.data.items),
         lastCarriedCount: r.data.report.carried.length,
         error: null,
-      })
+      }))
     } else {
       set({ error: r.error })
     }
@@ -182,8 +215,9 @@ export const useTodoStore = create<TodoState>((set, get) => ({
 
   reorder: async (id, toIndex) => {
     const r = await commands.todoReorder(id, toIndex)
-    if (r.status === 'ok') set({ items: r.data, error: null })
-    else set({ error: r.error })
+    if (r.status === 'ok') {
+      set((state) => ({ items: reconcileTodoItems(state.items, r.data), error: null }))
+    } else set({ error: r.error })
   },
 
   clearError: () => set({ error: null }),
