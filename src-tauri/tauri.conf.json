@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "my-pegboard",
-  "version": "0.7.2-beta",
-  "identifier": "io.mypegboard.app",
+  "version": "0.7.3-beta",
+  "identifier": "io.devookim.MyPegboard",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -55,7 +55,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "A6886CFB325F1BDC6839F7F2AF1F3FECC67E480E"
+      "signingIdentity": "CDBE73285261C809C14BE48E5543918ADEA01141"
     }
   }
 }

@@ -29,10 +29,10 @@ fi
 
 # updater 번들은 .app.tar.gz다. 없으면 서명 키가 없는 채로 빌드한 것이다 —
 # 이 경우 tauri가 **에러 없이 번들만 만들지 않는다.** 그 침묵을 여기서 깬다.
-TARBALL=$(ls -t "$BUNDLE"/*.app.tar.gz 2>/dev/null | head -1 || true)
+TARBALL="$BUNDLE/my-pegboard.app.tar.gz"
 SIGFILE="${TARBALL}.sig"
 
-if [[ -z "$TARBALL" || ! -f "$TARBALL" ]]; then
+if [[ ! -f "$TARBALL" ]]; then
   cat >&2 <<'MSG'
 ✗ updater 번들(.app.tar.gz)이 없습니다.
 
@@ -45,6 +45,25 @@ if [[ -z "$TARBALL" || ! -f "$TARBALL" ]]; then
 
   키를 잃으면 이미 배포된 앱은 영구히 업데이트를 받지 못합니다.
 MSG
+  exit 1
+fi
+
+INFO_PATH=$(tar -tzf "$TARBALL" 2>/dev/null \
+  | awk '/^[^\/]+[.]app\/Contents\/Info[.]plist$/ { print }')
+if [[ -z "$INFO_PATH" || "$INFO_PATH" == *$'\n'* ]]; then
+  echo "✗ updater 번들에 Info.plist가 하나만 있지 않습니다" >&2
+  exit 1
+fi
+TARBALL_VERSION=$(tar -xOf "$TARBALL" "$INFO_PATH" 2>/dev/null \
+  | plutil -extract CFBundleShortVersionString raw -o - - 2>/dev/null || true)
+TARBALL_IDENTIFIER=$(tar -xOf "$TARBALL" "$INFO_PATH" 2>/dev/null \
+  | plutil -extract CFBundleIdentifier raw -o - - 2>/dev/null || true)
+EXPECTED_IDENTIFIER=$(/usr/bin/python3 -c \
+  "import json,sys; print(json.load(open(sys.argv[1]))['identifier'])" "$CONF")
+if [[ "$TARBALL_VERSION" != "$VERSION" || "$TARBALL_IDENTIFIER" != "$EXPECTED_IDENTIFIER" ]]; then
+  echo "✗ updater payload과 설정의 버전·식별자가 다릅니다" >&2
+  echo "    payload: $TARBALL_VERSION / $TARBALL_IDENTIFIER" >&2
+  echo "    config:  $VERSION / $EXPECTED_IDENTIFIER" >&2
   exit 1
 fi
 

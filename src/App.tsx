@@ -1,13 +1,17 @@
 import { Columns, Lock, LockOpen, Settings } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { AddWidgetMenu } from '#/board/AddWidgetMenu'
 import { Board } from '#/board/Board'
 import { BoardTabs } from '#/board/BoardTabs'
-import { SettingsModal, type SettingsTab } from '#/settings/SettingsModal'
+import type { SettingsTab } from '#/settings/SettingsModal'
 import { useBoardStore } from '#/store/board'
 import { useConnectionStore } from '#/store/connection'
 import { bootstrap } from '#/store/persist'
 import { startUpdateChecks, useUpdateStore } from '#/store/update'
+
+const SettingsModal = lazy(() =>
+  import('#/settings/SettingsModal').then((module) => ({ default: module.SettingsModal })),
+)
 
 export function App() {
   const [ready, setReady] = useState(false)
@@ -105,13 +109,17 @@ export function App() {
         </button>
       </header>
       {ready && <Board />}
-      <SettingsModal
-        open={settingsOpen}
-        initialTab={settingsTab}
-        onClose={() => setSettingsOpen(false)}
-        // 저장 직후 모든 위젯을 즉시 갱신한다. 저장의 결과가 화면 변화로 보여야 한다.
-        onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
-      />
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            open
+            initialTab={settingsTab}
+            onClose={() => setSettingsOpen(false)}
+            // 저장 직후 모든 위젯을 즉시 갱신한다. 저장의 결과가 화면 변화로 보여야 한다.
+            onSaved={() => window.dispatchEvent(new CustomEvent('pegboard:refresh-all'))}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

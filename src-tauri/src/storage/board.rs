@@ -494,7 +494,7 @@ impl BoardStore {
     ///
     /// `base_dir` is a parameter rather than a call to Tauri's `app_data_dir()`
     /// so tests can point at a tempdir. In the app this is
-    /// `~/Library/Application Support/io.mypegboard.app/`.
+    /// `~/Library/Application Support/io.devookim.MyPegboard/`.
     pub fn load(base_dir: &Path) -> StorageResult<(Self, crate::storage::migrate::LoadOutcome)> {
         let path = base_dir.join(BOARD_FILE);
         let Loaded { value, outcome } = load_or_default::<BoardFile>(&path, &MIGRATION_SET)?;

@@ -8,7 +8,7 @@
 //! Everything here writes through [`atomic`], reads through [`migrate`], and
 //! takes its base directory as a parameter rather than reaching for Tauri's
 //! `app_data_dir()`. In the app that directory is
-//! `~/Library/Application Support/io.mypegboard.app/`; in tests it is a
+//! `~/Library/Application Support/io.devookim.MyPegboard/`; in tests it is a
 //! tempdir.
 //!
 //! | Module     | File               | Notes                                  |

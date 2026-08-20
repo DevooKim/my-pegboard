@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import type { ComponentType, LazyExoticComponent } from 'react'
 
 /**
  * 위젯 시스템의 계약.
@@ -72,6 +72,10 @@ export interface WidgetConfigFormProps<TConfig> {
   onValidityChange?: (valid: boolean) => void
 }
 
+type WidgetConfigFormComponent<TConfig> =
+  | ComponentType<WidgetConfigFormProps<TConfig>>
+  | LazyExoticComponent<ComponentType<WidgetConfigFormProps<TConfig>>>
+
 /**
  * 위젯 타입 정의. registry에 등록되는 단위.
  */
@@ -104,7 +108,7 @@ export interface WidgetDefinition<TConfig = Record<string, unknown>, TData = any
   pollable: boolean
 
   View: ComponentType<WidgetViewProps<TConfig, TData>>
-  ConfigForm: ComponentType<WidgetConfigFormProps<TConfig>>
+  ConfigForm: WidgetConfigFormComponent<TConfig>
 
   /** 설정에서 표시할 위젯 제목을 파생 (예: 프리셋 이름) */
   deriveTitle: (config: TConfig) => string

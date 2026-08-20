@@ -1,9 +1,13 @@
 import { Ticket } from 'lucide-react'
+import { lazy } from 'react'
 import type { JiraWidgetConfig } from '#/ipc/bindings'
 import { registerWidget } from '#/widgets/registry'
 import type { WidgetDefinition } from '#/widgets/types'
-import { JiraConfigForm } from './ConfigForm'
 import { JiraView } from './View'
+
+const JiraConfigForm = lazy(() =>
+  import('./ConfigForm').then((module) => ({ default: module.JiraConfigForm })),
+)
 
 /** 프리셋 id → 표시 이름. Rust의 PRESETS와 짝을 이룬다. */
 const PRESET_TITLES: Record<string, string> = {

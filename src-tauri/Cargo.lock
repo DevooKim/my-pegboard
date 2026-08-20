@@ -2197,11 +2197,12 @@ dependencies = [
 
 [[package]]
 name = "my-pegboard"
-version = "0.7.2-beta"
+version = "0.7.3-beta"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "keyring",
+ "minisign-verify",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

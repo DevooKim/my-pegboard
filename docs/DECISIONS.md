@@ -232,7 +232,7 @@ Rust가 이벤트를 push하면 해당 위젯만 리렌더.
 
 **SQLite로 옮길 시점:** Todo가 수만 개 / 전문 검색 필요 / API 응답 장기 캐시로 오프라인 지원.
 
-**저장 위치:** `~/Library/Application Support/io.mypegboard.app/`
+**저장 위치:** `~/Library/Application Support/io.devookim.MyPegboard/`
 
 **다중 보드 대비 구조 (UI만 없음):**
 ```json
@@ -1090,7 +1090,7 @@ rate limit은 사실상 제약이 아니다. 그래서 폴링 주기는 rate lim
 **전역 실패:** 토큰 만료 시 그 서비스의 모든 위젯이 동시에 깨짐 → 같은 에러 4번은 소음.
 **인증 실패는 앱 상단 배너 한 번만**, 위젯들은 조용히 흐려짐.
 
-**로그:** `~/Library/Logs/io.mypegboard.app/` 회전 로그. **토큰 마스킹 필수.**
+**로그:** `~/Library/Logs/io.devookim.MyPegboard/` 회전 로그. **토큰 마스킹 필수.**
 "어젯밤 뭔가 실패했는데 지금은 정상"을 나중에 추적할 유일한 수단.
 
 **알림:** 인증 실패만. 나머지는 화면 안에서.
@@ -1363,7 +1363,7 @@ API 스키마·필드 채움률·라이브러리 버전은 문서나 기억이 �
 > **2026-08-10 개정.** ad-hoc 서명은 빌드마다 Designated Requirement가 새
 > `cdhash`에 묶여, 앱 업데이트 뒤 키체인의 `항상 허용`이 유지되지 않았다.
 > 개발 빌드가 이미 사용하던 전용 인증서를 릴리스에도 적용한다. 첫 전환에서는
-> 한 번 다시 물을 수 있지만, 이후 같은 인증서와 `io.mypegboard.app` 식별자로
+> 한 번 다시 물을 수 있지만, 이후 같은 인증서와 `io.devookim.MyPegboard` 식별자로
 > 서명된 업데이트는 같은 앱으로 인식된다. 인증서를 잃거나 교체하면 이 연속성도
 > 끊기므로 개인 키를 비밀 백업한다.
 
@@ -1404,7 +1404,7 @@ $ ls my-pegboard.app/Contents/_CodeSignature/
 여섯 가지를 보고 실패 시 exit 1을 낸다:
 
 1. `codesign --verify --deep --strict` — v0.3.0을 무너뜨린 바로 그 검사
-2. ad-hoc·`cdhash` 단독 DR 거부 + 인증서 지문·`io.mypegboard.app` 식별자 확인
+2. ad-hoc·`cdhash` 단독 DR 거부 + 인증서 지문·`io.devookim.MyPegboard` 식별자 확인
 3. `_CodeSignature/CodeResources` 존재 — 1이 실패한 **원인**을 짚어준다
 4. quarantine을 붙인 사본으로 재검증 — 실제 사용자 조건
 5. Gatekeeper 판정의 **사유** 구분 (아래)
@@ -1484,8 +1484,8 @@ CI로 이사시켜야 하는데(`scripts/make-signing-cert.md`), 그건 별개�
 
 더 나쁜 변형: 다른 맥에서 **새 키를 만들어** 빌드하면 `.sig`도 나오고 `latest.json`도
 완성되지만 공개키가 달라 기존 앱이 검증에 실패한다. 사용자는 "업데이트 있음"을 보고
-받았는데 설치 단계에서 실패한다. **이건 복구 불가**다 — 그래서 검사 8이 keynum을
-비교한다.
+받았는데 설치 단계에서 실패한다. **이건 복구 불가**다 — 그래서 검사 8이
+앱에 박힌 공개키로 updater payload 바이트의 minisign 서명을 실제 검증한다.
 
 ### 23.4 확인 시점과 알림 채널
 
@@ -1526,18 +1526,21 @@ CI로 이사시켜야 하는데(`scripts/make-signing-cert.md`), 그건 별개�
 복사**한다. 원래 이름에 버전이 없어서, 그대로 올리면 릴리즈마다 같은 이름의 에셋이
 쌓여 어느 버전인지 구분되지 않는다.
 
-**`verify-release.sh`의 updater 검사 4개 (7~10):**
+**`verify-release.sh`의 릴리스 산출물 검사:**
 
 | # | 검사 | 막는 사고 |
 |---|---|---|
+| 0 | DMG 서명·인증서 지문 | 무서명/다른 서명의 DMG 재포장 |
 | 7 | `.app.tar.gz` + `.sig` 존재 | 키 없는 맥에서 빌드 (23.3) |
-| 8 | `.sig`의 keynum == 앱 pubkey의 keynum | 다른 키로 서명 → 복구 불가 사고 |
-| 9 | `latest.json` version == `tauri.conf.json` version | 엉뚱한 버전 배포 |
-| 10 | URL이 가리키는 파일이 번들에 실재 + 태그가 `v{version}` | updater가 404 → 조용히 "업데이트 없음" |
+| 8 | 앱 pubkey로 updater payload의 minisign 서명 검증 | 다른 키·payload 변조 → 설치 실패 |
+| 8.5 | updater 내부 앱의 version·identifier 일치 | 이전 빌드 stale payload 재포장 |
+| 9 | `latest.json` version 일치 + signature == canonical `.sig` | 엉뚱한 버전·stale JSON 서명 배포 |
+| 10 | URL 에셋이 검증된 canonical payload·서명과 동일 + 태그가 `v{version}` | 변조/stale 업로드·40 updater 404 |
 
-검사 8은 minisign 파일을 base64로 한 겹 벗겨 keynum 8바이트를 비교한다.
-**실제로 다른 키로 서명해 불일치가 잡히는지 확인했다** — 검사가 통과만 하는지 보고
-넘기면, 잡지 못하는 검사를 "커버됨"으로 착각한다.
+검사 8은 Tauri updater가 쓰는 `minisign-verify`와 같은 방식으로 실제 payload
+바이트를 검증한다. `scripts/test-release-verification.sh`는 정상 fixture 통과를
+먼저 확인한 뒤 무서명 DMG, canonical·업로드 payload 변조, `latest.json` signature
+변조를 하나씩 적용해 예상한 이유로 거부되는지 확인한다.
 
 ### 23.6 설치와 재시작
 

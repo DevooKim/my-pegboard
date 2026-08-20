@@ -40,6 +40,23 @@ fi
 echo "검사 대상: $DMG"
 echo
 
+EXPECTED_CERT_SHA1="cdbe73285261c809c14be48e5543918adea01141"
+
+# ── 0. DMG 자체가 고정 인증서로 서명됐는가 ────────────────
+# 내부 앱 서명과 DMG 서명은 별개다. 무서명 DMG에 정상 앱만 다시 담아도
+# 아래 앱 검사는 통과하므로 마운트 전에 외부 서명 정체성을 고정한다.
+DMG_SIGN_INFO=$(codesign -dvv "$DMG" 2>&1 || true)
+DMG_REQUIREMENT=$(codesign -d -r- "$DMG" 2>&1 || true)
+if ! grep -q '^Format=disk image$' <<<"$DMG_SIGN_INFO" \
+  || grep -q 'Signature=adhoc' <<<"$DMG_SIGN_INFO" \
+  || ! grep -Eiq "certificate leaf = H\"$EXPECTED_CERT_SHA1\"" <<<"$DMG_REQUIREMENT"; then
+  echo "✗ DMG가 기대한 my-pegboard Dev 인증서로 서명되지 않았습니다"
+  echo "$DMG_SIGN_INFO" | sed 's/^/    /'
+  echo "$DMG_REQUIREMENT" | sed 's/^/    /'
+  exit 1
+fi
+echo "✓ DMG 서명 정체성 확인 ($EXPECTED_CERT_SHA1)"
+
 MOUNT=$(mktemp -d)
 cleanup() { hdiutil detach "$MOUNT" -quiet 2>/dev/null || true; rmdir "$MOUNT" 2>/dev/null || true; }
 trap cleanup EXIT
@@ -69,19 +86,18 @@ fi
 # 바뀔 때마다 macOS가 새 앱으로 취급해 키체인 접근을 다시 묻는다.
 SIGN_INFO=$(codesign -dvv "$APP" 2>&1 || true)
 REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 || true)
-EXPECTED_CERT_SHA1="a6886cfb325f1bdc6839f7f2af1f3fecc67e480e"
 if grep -q "Signature=adhoc" <<<"$SIGN_INFO" \
   || grep -q "flags=.*adhoc" <<<"$SIGN_INFO" \
   || ! grep -q '^Authority=my-pegboard Dev$' <<<"$SIGN_INFO" \
   || grep -Eq 'designated => cdhash ' <<<"$REQUIREMENT" \
   || ! grep -Eiq "(certificate leaf = |anchor )H\"$EXPECTED_CERT_SHA1\"" <<<"$REQUIREMENT" \
-  || ! grep -q 'identifier "io.mypegboard.app"' <<<"$REQUIREMENT"; then
+  || ! grep -q 'identifier "io.devookim.MyPegboard"' <<<"$REQUIREMENT"; then
   echo "✗ 안정된 코드 서명 신원이 없습니다 — 업데이트마다 키체인을 다시 물을 수 있습니다"
   echo "$SIGN_INFO" | grep -E "^(Identifier|Signature|Authority|TeamIdentifier|CodeDirectory)=" | sed 's/^/    /'
   echo "$REQUIREMENT" | sed 's/^/    /'
   fail=1
 else
-  echo "✓ 안정된 코드 서명 신원: my-pegboard Dev ($EXPECTED_CERT_SHA1) / io.mypegboard.app"
+  echo "✓ 안정된 코드 서명 신원: my-pegboard Dev ($EXPECTED_CERT_SHA1) / io.devookim.MyPegboard"
 fi
 
 # ── 3. 리소스 봉인이 있는가 ────────────────────────────────────────────
@@ -142,9 +158,12 @@ fi
 
 BUNDLE_DIR="$(dirname "$DMG")/../macos"
 CONF="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src-tauri/tauri.conf.json"
+MANIFEST="$(dirname "$CONF")/Cargo.toml"
+CONF_VER=$(/usr/bin/python3 -c \
+  "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$CONF" 2>/dev/null || true)
 
 # ── 7. updater 번들과 서명이 있는가 ────────────────────────────────────
-TARBALL=$(ls -t "$BUNDLE_DIR"/*.app.tar.gz 2>/dev/null | head -1 || true)
+TARBALL="$BUNDLE_DIR/my-pegboard.app.tar.gz"
 if [[ -n "$TARBALL" && -f "$TARBALL" && -f "${TARBALL}.sig" ]]; then
   echo "✓ updater 번들 + 서명 있음 ($(basename "$TARBALL"))"
 else
@@ -157,7 +176,7 @@ fi
 # ── 8. 서명이 앱에 박힌 공개키로 검증되는가 ────────────────────────────
 # updater 키를 새로 만들어 빌드하면 7번은 통과한다. 그런데 공개키가 달라서 기존
 # 사용자는 설치 단계에서 검증 실패를 본다 — 그건 **복구 불가**다.
-if [[ -n "$TARBALL" && -f "${TARBALL}.sig" ]]; then
+if [[ -f "$TARBALL" && -f "${TARBALL}.sig" ]]; then
   PUBKEY=$(/usr/bin/python3 -c \
     "import json,sys; print(json.load(open(sys.argv[1]))['plugins']['updater']['pubkey'])" \
     "$CONF" 2>/dev/null || true)
@@ -165,33 +184,42 @@ if [[ -n "$TARBALL" && -f "${TARBALL}.sig" ]]; then
     echo "✗ tauri.conf.json에서 updater pubkey를 읽지 못했습니다"
     fail=1
   else
-    # minisign 형식: 공개키/서명 모두 base64로 한 겹 싸여 있다. 벗겨서
-    # keynum(8바이트 = base64 앞부분)이 같은지 본다. 다르면 다른 키다.
-    KEY_ID=$(/usr/bin/python3 -c "
-import base64,sys
-raw = base64.b64decode(sys.argv[1]).decode().splitlines()
-print(base64.b64decode(raw[1])[2:10].hex())
-" "$PUBKEY" 2>/dev/null || true)
-    SIG_ID=$(/usr/bin/python3 -c "
-import base64,sys
-raw = base64.b64decode(open(sys.argv[1]).read()).decode().splitlines()
-print(base64.b64decode(raw[1])[2:10].hex())
-" "${TARBALL}.sig" 2>/dev/null || true)
-    if [[ -n "$KEY_ID" && "$KEY_ID" == "$SIG_ID" ]]; then
-      echo "✓ 서명이 앱의 공개키와 같은 키로 만들어졌습니다"
+    if cargo run --quiet --manifest-path "$MANIFEST" \
+      --example verify_updater_signature -- "$TARBALL" "${TARBALL}.sig" "$PUBKEY"; then
+      echo "✓ updater payload 서명이 앱의 공개키로 검증됩니다"
     else
-      echo "✗ 서명 키가 앱에 박힌 공개키와 다릅니다 (key=$KEY_ID sig=$SIG_ID)"
-      echo "    이대로 배포하면 기존 사용자는 설치 단계에서 검증 실패를 봅니다."
+      echo "✗ updater payload가 앱에 박힌 공개키로 검증되지 않습니다"
+      echo "    payload가 변조됐거나 다른 키로 서명된 산출물입니다."
       echo "    원래 개인키(~/.tauri/my-pegboard.key)로 다시 빌드하세요."
       fail=1
     fi
   fi
 fi
 
+# ── 8.5 updater 내부 앱의 버전·식별자가 설정과 같은가 ────────────
+if [[ -f "$TARBALL" ]]; then
+  INFO_PATH=$(tar -tzf "$TARBALL" 2>/dev/null \
+    | awk '/^[^\/]+[.]app\/Contents\/Info[.]plist$/ { print }')
+  PAYLOAD_VERSION=$(tar -xOf "$TARBALL" "$INFO_PATH" 2>/dev/null \
+    | plutil -extract CFBundleShortVersionString raw -o - - 2>/dev/null || true)
+  PAYLOAD_IDENTIFIER=$(tar -xOf "$TARBALL" "$INFO_PATH" 2>/dev/null \
+    | plutil -extract CFBundleIdentifier raw -o - - 2>/dev/null || true)
+  CONF_IDENTIFIER=$(/usr/bin/python3 -c \
+    "import json,sys; print(json.load(open(sys.argv[1]))['identifier'])" "$CONF" 2>/dev/null || true)
+  if [[ -n "$INFO_PATH" && "$INFO_PATH" != *$'\n'* \
+    && "$PAYLOAD_VERSION" == "$CONF_VER" \
+    && "$PAYLOAD_IDENTIFIER" == "$CONF_IDENTIFIER" ]]; then
+    echo "✓ updater payload 버전·식별자 일치: $PAYLOAD_VERSION / $PAYLOAD_IDENTIFIER"
+  else
+    echo "✗ updater payload의 버전·식별자가 설정과 다릅니다"
+    echo "    payload: $PAYLOAD_VERSION / $PAYLOAD_IDENTIFIER"
+    echo "    config:  $CONF_VER / $CONF_IDENTIFIER"
+    fail=1
+  fi
+fi
+
 # ── 9. latest.json 버전이 tauri.conf.json과 맞는가 ─────────────────────
 LATEST="$BUNDLE_DIR/latest.json"
-CONF_VER=$(/usr/bin/python3 -c \
-  "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$CONF" 2>/dev/null || true)
 if [[ ! -f "$LATEST" ]]; then
   echo "✗ latest.json이 없습니다 — ./scripts/make-latest-json.sh를 실행하세요"
   echo "    이 파일이 릴리즈에 없으면 기존 사용자는 새 버전을 영원히 못 봅니다."
@@ -210,14 +238,29 @@ else
   # 파일명이 어긋나면 updater가 404를 받는다. 앱은 "업데이트 없음"처럼 조용하다.
   # URL이 가리키는 이름의 파일이 **실제로 번들 디렉토리에 있는지**까지 본다 —
   # 이름만 맞춰봐야 올릴 파일이 없으면 릴리즈에서 빠진다.
+  JSON_SIGNATURE=$(/usr/bin/python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['platforms']['darwin-aarch64']['signature'])
+" "$LATEST" 2>/dev/null || true)
+  CANONICAL_SIGNATURE=$(cat "${TARBALL}.sig" 2>/dev/null || true)
+  if [[ -n "$JSON_SIGNATURE" && "$JSON_SIGNATURE" == "$CANONICAL_SIGNATURE" ]]; then
+    echo "✓ latest.json signature가 검증된 canonical updater 서명과 일치"
+  else
+    echo "✗ latest.json signature가 canonical updater 서명과 다릅니다"
+    fail=1
+  fi
+
   JSON_URL=$(/usr/bin/python3 -c "
 import json,sys
 d = json.load(open(sys.argv[1]))
 print(d['platforms']['darwin-aarch64']['url'])
 " "$LATEST" 2>/dev/null || true)
   URL_ASSET="${JSON_URL##*/}"
-  if [[ -n "$URL_ASSET" && -f "$BUNDLE_DIR/$URL_ASSET" && -f "$BUNDLE_DIR/${URL_ASSET}.sig" ]]; then
-    echo "✓ latest.json URL이 올릴 파일과 일치: $URL_ASSET"
+  if [[ -n "$URL_ASSET" && -f "$BUNDLE_DIR/$URL_ASSET" && -f "$BUNDLE_DIR/${URL_ASSET}.sig" \
+    && -f "$TARBALL" && -f "${TARBALL}.sig" ]] \
+    && cmp -s "$TARBALL" "$BUNDLE_DIR/$URL_ASSET" \
+    && cmp -s "${TARBALL}.sig" "$BUNDLE_DIR/${URL_ASSET}.sig"; then
+    echo "✓ latest.json URL이 검증된 updater 파일과 일치: $URL_ASSET"
     UPLOAD_ASSET="$URL_ASSET"
   else
     echo "✗ latest.json URL이 가리키는 파일이 번들에 없습니다"

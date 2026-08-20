@@ -223,7 +223,7 @@ cd .. && bun run typecheck      # 4번
 bun run test
 ```
 
-`./run.sh --build`는 실제 `io.mypegboard.app` 데이터를 사용하므로,
+`./run.sh --build`는 실제 `io.devookim.MyPegboard` 데이터를 사용하므로,
 `SKILL.md` 5장의 백업·복원 절차를 준비한 뒤 실행한다.
 
 앱에서:
