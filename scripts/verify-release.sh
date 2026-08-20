@@ -238,6 +238,18 @@ else
   # 파일명이 어긋나면 updater가 404를 받는다. 앱은 "업데이트 없음"처럼 조용하다.
   # URL이 가리키는 이름의 파일이 **실제로 번들 디렉토리에 있는지**까지 본다 —
   # 이름만 맞춰봐야 올릴 파일이 없으면 릴리즈에서 빠진다.
+  JSON_SIGNATURE=$(/usr/bin/python3 -c "
+import json,sys
+print(json.load(open(sys.argv[1]))['platforms']['darwin-aarch64']['signature'])
+" "$LATEST" 2>/dev/null || true)
+  CANONICAL_SIGNATURE=$(cat "${TARBALL}.sig" 2>/dev/null || true)
+  if [[ -n "$JSON_SIGNATURE" && "$JSON_SIGNATURE" == "$CANONICAL_SIGNATURE" ]]; then
+    echo "✓ latest.json signature가 검증된 canonical updater 서명과 일치"
+  else
+    echo "✗ latest.json signature가 canonical updater 서명과 다릅니다"
+    fail=1
+  fi
+
   JSON_URL=$(/usr/bin/python3 -c "
 import json,sys
 d = json.load(open(sys.argv[1]))

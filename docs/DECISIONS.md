@@ -1534,12 +1534,13 @@ CI로 이사시켜야 하는데(`scripts/make-signing-cert.md`), 그건 별개�
 | 7 | `.app.tar.gz` + `.sig` 존재 | 키 없는 맥에서 빌드 (23.3) |
 | 8 | 앱 pubkey로 updater payload의 minisign 서명 검증 | 다른 키·payload 변조 → 설치 실패 |
 | 8.5 | updater 내부 앱의 version·identifier 일치 | 이전 빌드 stale payload 재포장 |
-| 9 | `latest.json` version == `tauri.conf.json` version | 엉뚱한 버전 배포 |
+| 9 | `latest.json` version 일치 + signature == canonical `.sig` | 엉뚱한 버전·stale JSON 서명 배포 |
 | 10 | URL 에셋이 검증된 canonical payload·서명과 동일 + 태그가 `v{version}` | 변조/stale 업로드·40 updater 404 |
 
 검사 8은 Tauri updater가 쓰는 `minisign-verify`와 같은 방식으로 실제 payload
-바이트를 검증한다. `scripts/test-release-verification.sh`는 무서명 DMG와 변조된
-updater payload를 실제로 만들어 둘 다 거부되는지 확인한다.
+바이트를 검증한다. `scripts/test-release-verification.sh`는 정상 fixture 통과를
+먼저 확인한 뒤 무서명 DMG, canonical·업로드 payload 변조, `latest.json` signature
+변조를 하나씩 적용해 예상한 이유로 거부되는지 확인한다.
 
 ### 23.6 설치와 재시작
 
