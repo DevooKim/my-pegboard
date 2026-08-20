@@ -74,7 +74,7 @@ bun run lint
 
 ### 실제 앱 검증 전
 
-- [ ] `./run.sh --build`가 배포판과 같은 `io.mypegboard.app` 데이터를
+- [ ] `./run.sh --build`가 배포판과 같은 `io.devookim.MyPegboard` 데이터를
       쓴다는 점을 사용자에게 알림
 - [ ] 사용자 확인을 받음
 - [ ] `board.json`을 작업 디렉터리 밖에 백업하고 경로를 기록

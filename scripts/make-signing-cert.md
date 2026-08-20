@@ -6,7 +6,7 @@
 ## 왜 필요한가
 
 ad-hoc 서명은 macOS가 빌드할 때마다 앱을 '다른 앱'으로 보므로 **업데이트 뒤
-키체인 접근을 다시 묻는다.** 같은 인증서와 `io.mypegboard.app` 식별자를 유지하면
+키체인 접근을 다시 묻는다.** 같은 인증서와 `io.devookim.MyPegboard` 식별자를 유지하면
 첫 전환 뒤의 업데이트들은 같은 앱으로 인식된다.
 
 Apple Developer 계정은 필요 없다. 이 인증서는 개인·내부 배포에서 버전 사이의
@@ -44,7 +44,7 @@ security find-identity -p codesigning
 security find-certificate -c "my-pegboard Dev" -Z | grep "SHA-1 hash"
 ```
 
-현재 릴리스에 고정된 지문은 `A6886CFB325F1BDC6839F7F2AF1F3FECC67E480E`다.
+현재 릴리스에 고정된 지문은 `CDBE73285261C809C14BE48E5543918ADEA01141`다.
 동명 인증서가 여러 개면 이 지문이 붙은 신원을 사용한다.
 
 ## 개인 키 백업

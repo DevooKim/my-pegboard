@@ -119,7 +119,7 @@ src-tauri/src/
 - **스키마 버전** — `{ "version": 1, ... }`. 없으면 나중에 구파일을 읽을 방법이 없다.
 - **Todo 백업** — `todos.json.bak` 1세대. Todo는 원본이 딴 데 없는 유일본 데이터.
 
-저장 위치: `~/Library/Application Support/io.mypegboard.app/`
+저장 위치: `~/Library/Application Support/io.devookim.MyPegboard/`
 
 ### 비밀
 - 토큰·이메일은 **Keychain** (`keyring` crate). 키 네임스페이스 `jira.default.token`.
@@ -131,7 +131,7 @@ src-tauri/src/
   "N분 전 데이터" 흐린 표시. 목록이 사라지면 안 된다.
 - **영구적**(401/403/400): 재시도 없음. 위젯 본문을 에러 상태로 + **무엇을 해야 하는지** + 행동 버튼.
 - **인증 실패는 전역 배너 한 번만.** 위젯 4개에 같은 에러 4번은 소음.
-- 로그: `~/Library/Logs/io.mypegboard.app/` 회전 로그 (Tauri는 productName이 아니라 identifier를 쓴다).
+- 로그: `~/Library/Logs/io.devookim.MyPegboard/` 회전 로그 (Tauri는 productName이 아니라 identifier를 쓴다).
 
 ---
 

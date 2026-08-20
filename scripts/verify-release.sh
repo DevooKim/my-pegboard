@@ -69,19 +69,19 @@ fi
 # 바뀔 때마다 macOS가 새 앱으로 취급해 키체인 접근을 다시 묻는다.
 SIGN_INFO=$(codesign -dvv "$APP" 2>&1 || true)
 REQUIREMENT=$(codesign -d -r- "$APP" 2>&1 || true)
-EXPECTED_CERT_SHA1="a6886cfb325f1bdc6839f7f2af1f3fecc67e480e"
+EXPECTED_CERT_SHA1="cdbe73285261c809c14be48e5543918adea01141"
 if grep -q "Signature=adhoc" <<<"$SIGN_INFO" \
   || grep -q "flags=.*adhoc" <<<"$SIGN_INFO" \
   || ! grep -q '^Authority=my-pegboard Dev$' <<<"$SIGN_INFO" \
   || grep -Eq 'designated => cdhash ' <<<"$REQUIREMENT" \
   || ! grep -Eiq "(certificate leaf = |anchor )H\"$EXPECTED_CERT_SHA1\"" <<<"$REQUIREMENT" \
-  || ! grep -q 'identifier "io.mypegboard.app"' <<<"$REQUIREMENT"; then
+  || ! grep -q 'identifier "io.devookim.MyPegboard"' <<<"$REQUIREMENT"; then
   echo "✗ 안정된 코드 서명 신원이 없습니다 — 업데이트마다 키체인을 다시 물을 수 있습니다"
   echo "$SIGN_INFO" | grep -E "^(Identifier|Signature|Authority|TeamIdentifier|CodeDirectory)=" | sed 's/^/    /'
   echo "$REQUIREMENT" | sed 's/^/    /'
   fail=1
 else
-  echo "✓ 안정된 코드 서명 신원: my-pegboard Dev ($EXPECTED_CERT_SHA1) / io.mypegboard.app"
+  echo "✓ 안정된 코드 서명 신원: my-pegboard Dev ($EXPECTED_CERT_SHA1) / io.devookim.MyPegboard"
 fi
 
 # ── 3. 리소스 봉인이 있는가 ────────────────────────────────────────────

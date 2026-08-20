@@ -31,7 +31,7 @@
 # 공용 배포에서는 Developer ID Application 인증서와 공증을 사용한다.
 set -euo pipefail
 
-SERVICE="io.mypegboard.app"
+SERVICE="io.devookim.MyPegboard"
 ACCOUNTS=("jira.default.email" "jira.default.token")
 
 if [[ "${PEGBOARD_ALLOW_UNSAFE_KEYCHAIN_BYPASS:-}" != "I_UNDERSTAND" ]]; then

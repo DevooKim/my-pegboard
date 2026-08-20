@@ -150,11 +150,11 @@ bun run lint
 ### 실제 앱 검증 전 데이터 보호
 
 `./run.sh --build`는 실행 중인 my-pegboard를 종료하고, 배포판과 같은
-`io.mypegboard.app` 데이터 디렉터리를 쓴다. 새 위젯 타입이 든 `board.json`은
+`io.devookim.MyPegboard` 데이터 디렉터리를 쓴다. 새 위젯 타입이 든 `board.json`은
 구버전 앱에서 손상 파일로 판정될 수 있다.
 
 - **사용자 확인 없이 `./run.sh --build`를 실행하지 않는다.**
-- 실행 전 `~/Library/Application Support/io.mypegboard.app/board.json`을 작업
+- 실행 전 `~/Library/Application Support/io.devookim.MyPegboard/board.json`을 작업
   디렉터리 밖의 임시 디렉터리에 백업하고 백업 경로를 보고한다.
 - 검증 후 앱을 종료하고 원래 `board.json`을 복원한 뒤에만 구버전 앱을 실행한다.
 - 백업할 파일이 없었다면 검증으로 생성된 파일을 지우기 전에

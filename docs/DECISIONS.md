@@ -232,7 +232,7 @@ Rust가 이벤트를 push하면 해당 위젯만 리렌더.
 
 **SQLite로 옮길 시점:** Todo가 수만 개 / 전문 검색 필요 / API 응답 장기 캐시로 오프라인 지원.
 
-**저장 위치:** `~/Library/Application Support/io.mypegboard.app/`
+**저장 위치:** `~/Library/Application Support/io.devookim.MyPegboard/`
 
 **다중 보드 대비 구조 (UI만 없음):**
 ```json
@@ -1090,7 +1090,7 @@ rate limit은 사실상 제약이 아니다. 그래서 폴링 주기는 rate lim
 **전역 실패:** 토큰 만료 시 그 서비스의 모든 위젯이 동시에 깨짐 → 같은 에러 4번은 소음.
 **인증 실패는 앱 상단 배너 한 번만**, 위젯들은 조용히 흐려짐.
 
-**로그:** `~/Library/Logs/io.mypegboard.app/` 회전 로그. **토큰 마스킹 필수.**
+**로그:** `~/Library/Logs/io.devookim.MyPegboard/` 회전 로그. **토큰 마스킹 필수.**
 "어젯밤 뭔가 실패했는데 지금은 정상"을 나중에 추적할 유일한 수단.
 
 **알림:** 인증 실패만. 나머지는 화면 안에서.
@@ -1363,7 +1363,7 @@ API 스키마·필드 채움률·라이브러리 버전은 문서나 기억이 �
 > **2026-08-10 개정.** ad-hoc 서명은 빌드마다 Designated Requirement가 새
 > `cdhash`에 묶여, 앱 업데이트 뒤 키체인의 `항상 허용`이 유지되지 않았다.
 > 개발 빌드가 이미 사용하던 전용 인증서를 릴리스에도 적용한다. 첫 전환에서는
-> 한 번 다시 물을 수 있지만, 이후 같은 인증서와 `io.mypegboard.app` 식별자로
+> 한 번 다시 물을 수 있지만, 이후 같은 인증서와 `io.devookim.MyPegboard` 식별자로
 > 서명된 업데이트는 같은 앱으로 인식된다. 인증서를 잃거나 교체하면 이 연속성도
 > 끊기므로 개인 키를 비밀 백업한다.
 
@@ -1404,7 +1404,7 @@ $ ls my-pegboard.app/Contents/_CodeSignature/
 여섯 가지를 보고 실패 시 exit 1을 낸다:
 
 1. `codesign --verify --deep --strict` — v0.3.0을 무너뜨린 바로 그 검사
-2. ad-hoc·`cdhash` 단독 DR 거부 + 인증서 지문·`io.mypegboard.app` 식별자 확인
+2. ad-hoc·`cdhash` 단독 DR 거부 + 인증서 지문·`io.devookim.MyPegboard` 식별자 확인
 3. `_CodeSignature/CodeResources` 존재 — 1이 실패한 **원인**을 짚어준다
 4. quarantine을 붙인 사본으로 재검증 — 실제 사용자 조건
 5. Gatekeeper 판정의 **사유** 구분 (아래)

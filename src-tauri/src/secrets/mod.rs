@@ -26,7 +26,7 @@ use keyring::Entry;
 use thiserror::Error;
 
 /// The keychain service name. All entries live under this.
-pub const SERVICE: &str = "io.mypegboard.app";
+pub const SERVICE: &str = "io.devookim.MyPegboard";
 
 /// The only connection id today.
 ///
@@ -586,7 +586,7 @@ mod tests {
 
         fn test_store() -> SecretStore {
             // Separate service name so a failed run cannot clobber real creds.
-            SecretStore::with_service("io.mypegboard.app.test")
+            SecretStore::with_service("io.devookim.MyPegboard.test")
         }
 
         #[test]
