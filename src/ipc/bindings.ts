@@ -615,6 +615,64 @@ async albumCached(widgetId: string) : Promise<Result<AlbumWidgetData | null, str
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * 위젯 마운트. 구독을 등록하고 현재 상태를 즉시 돌려준다 —
+ * 첫 이벤트를 기다리며 빈 화면을 보이지 않기 위한 것.
+ */
+async nowplayingSubscribe() : Promise<Result<NowPlayingPush, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("nowplaying_subscribe") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 위젯 언마운트. 구독자가 0이 되면 어댑터 프로세스를 내린다 —
+ * "언마운트 = 폴링 중단" 규칙의 이벤트판.
+ */
+async nowplayingUnsubscribe() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("nowplaying_unsubscribe") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 재연결. 새로고침 버튼이 부른다 — 스트림이 죽었을 때의 복구 경로.
+ */
+async nowplayingReconnect() : Promise<Result<NowPlayingPush, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("nowplaying_reconnect") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 재생 제어. **자동 재시도 없음** — "다음 곡"은 멱등이 아니다.
+ */
+async nowplayingSend(command: NowPlayingCommand) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("nowplaying_send", { command }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 재생 중인 앱을 앞으로. 앨범아트/곡명 클릭의 목적지다 —
+ * "더 보고 싶으면 원본 앱으로"라는 GitHub 위젯과 같은 패턴.
+ */
+async nowplayingOpenApp(bundleId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("nowplaying_open_app", { bundleId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async boardLoad() : Promise<Result<BoardFile, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("board_load") };
@@ -660,6 +718,11 @@ async boardImportApply(candidate: BoardExportFile, mode: BoardImportMode) : Prom
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+nowPlayingPush: NowPlayingPush
+}>({
+nowPlayingPush: "now-playing-push"
+})
 
 /** user-defined constants **/
 
@@ -1643,6 +1706,56 @@ export type LinearWorkflowState = { id: string; name: string; color: string; typ
  */
 position: number }
 /**
+ * 위젯이 보낼 수 있는 재생 제어. 어댑터의 send 명령 ID로 변환된다.
+ *
+ * 셔플·반복·탐색은 **일부러 없다** — 현재 셔플/반복 상태를 신뢰성 있게 읽지
+ * 못하면 토글 버튼이 거짓말을 하고, seek는 플레이어별 지원 편차가 있다.
+ * 핵심 3종만 노출한다 (사용자 결정, DECISIONS 27).
+ */
+export type NowPlayingCommand = "playPause" | "next" | "previous"
+/**
+ * Rust → WebView push 봉투.
+ *
+ * - `state: Some` → 재생 중 (일시정지 포함)
+ * - `state: None, error: None` → 재생 중인 미디어 없음 (정상적인 빈 상태)
+ * - `error: Some` → 어댑터 실패. macOS가 이 기법을 막았거나 프로세스가 죽었다.
+ * 조용한 실패 금지 원칙에 따라 이것도 반드시 push한다.
+ */
+export type NowPlayingPush = { state: NowPlayingState | null; error: string | null }
+/**
+ * 시스템 "지금 재생 중" 상태. 어댑터가 주는 40여 개 키에서 위젯이 그릴 것만
+ * 남겼다 — "필요한 필드만 남긴다" (CLAUDE.md).
+ */
+export type NowPlayingState = {
+/**
+ * 재생 중인 앱의 번들 id (예: `com.spotify.client`). "앱 열기"에 쓴다.
+ */
+bundleId: string; title: string;
+/**
+ * 어댑터가 빈 문자열을 줄 수 있다(실측: 브라우저 미디어). 빈 문자열은
+ * `None`으로 바꿔 프론트가 "표시할 게 있나"를 한 가지 방법으로만 판단하게 한다.
+ */
+artist: string | null; album: string | null; playing: boolean; durationSecs: number | null;
+/**
+ * `sampled_at_ms` 시점의 재생 위치. 진행바는 이 둘로 보간한다 —
+ * 어댑터가 초마다 push하지 않으므로(실측: 수 초 간격) 프론트가 시계를 돌린다.
+ */
+elapsedSecs: number | null;
+/**
+ * `elapsed_secs`를 잰 시각 (Unix epoch 밀리초).
+ */
+sampledAtMs: number | null; playbackRate: number | null;
+/**
+ * 앨범아트 data URI (`data:image/jpeg;base64,…`). **직전 push와 같은
+ * 아트면 None** — 타임라인 갱신마다 이미지를 IPC로 반복 전송하지 않는다.
+ * 같은지 여부는 `artwork_token`으로 판단한다.
+ */
+artwork: string | null;
+/**
+ * 앨범아트 식별 토큰. `None`이면 아트 자체가 없는 것.
+ */
+artworkToken: number | null }
+/**
  * 프리셋 정의. 정적 테이블이므로 `&'static str`.
  */
 export type Preset = {
@@ -1735,7 +1848,11 @@ export type WidgetType = "jira" | "github" | "todo" |
 /**
  * Linear issues — read + status change + detail modal (DECISIONS 25).
  */
-"linear"
+"linear" |
+/**
+ * System now-playing — player-agnostic, event-pushed, no cache (DECISIONS 27).
+ */
+"nowplaying"
 
 /** tauri-specta globals **/
 

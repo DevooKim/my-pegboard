@@ -7,6 +7,7 @@ import '#/widgets/album'
 import '#/widgets/github'
 import '#/widgets/jira'
 import '#/widgets/linear'
+import '#/widgets/nowplaying'
 import '#/widgets/todo'
 import '#/widgets/web'
 

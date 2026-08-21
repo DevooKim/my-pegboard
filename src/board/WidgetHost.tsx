@@ -21,6 +21,7 @@ import { useJiraData } from '#/widgets/jira/useJiraData'
 import { LinearCreateIssueModal } from '#/widgets/linear/CreateIssueModal'
 import { IssueDetailModal as LinearIssueDetailModal } from '#/widgets/linear/IssueDetailModal'
 import { useLinearData } from '#/widgets/linear/useLinearData'
+import { useNowPlaying } from '#/widgets/nowplaying/useNowPlaying'
 import { tryGetWidget } from '#/widgets/registry'
 import { WidgetConfigModal } from '#/widgets/shell/WidgetConfigModal'
 import { IconButton, WidgetShell } from '#/widgets/shell/WidgetShell'
@@ -104,6 +105,13 @@ export function WidgetHost({ widget }: { widget: WidgetInstance }) {
         />
       ) : widget.type === 'linear' ? (
         <LinearHost
+          widget={widget}
+          width={width}
+          onRemove={() => setConfirmingRemove(true)}
+          onConfigure={openConfig}
+        />
+      ) : widget.type === 'nowplaying' ? (
+        <NowPlayingHost
           widget={widget}
           width={width}
           onRemove={() => setConfirmingRemove(true)}
@@ -326,6 +334,48 @@ function carryTooltip(pending: TodoItem[]): string {
   const rest = pending.length - SHOWN
   const lines = rest > 0 ? [...head, `… 외 ${rest}개`] : head
   return [`미완료 ${pending.length}개 가져오기`, ...lines].join('\n')
+}
+
+/**
+ * "지금 재생 중" 위젯 호스트.
+ *
+ * 폴링 주기 계산(`refreshMs`)이 없다 — Rust가 시스템 미디어 변화를 이벤트로
+ * push한다. 마운트가 구독이고 언마운트가 해지라, 비활성 보드에서는 어댑터
+ * 프로세스 자체가 내려간다 ("언마운트 = 폴링 중단" 규칙의 이벤트판).
+ *
+ * `fetchedAt`을 표시하지 않는 이유는 앨범과 같다 — 이벤트가 실시간으로
+ * 오므로 "N분 전"이 줄 정보가 없다. 새로고침 버튼은 어댑터 재연결이다.
+ */
+function NowPlayingHost({
+  widget,
+  width,
+  onRemove,
+  onConfigure,
+}: {
+  widget: WidgetInstance
+  width: number
+  onRemove: () => void
+  onConfigure: () => void
+}) {
+  const definition = tryGetWidget('nowplaying')
+  const { envelope, refresh } = useNowPlaying()
+
+  if (!definition) return null
+  const View = definition.View
+
+  return (
+    <WidgetShell
+      title={definition.deriveTitle(widget.config)}
+      status={envelope.status}
+      fetchedAt={null}
+      pollable
+      onRefresh={refresh}
+      onConfigure={onConfigure}
+      onRemove={onRemove}
+    >
+      <View widgetId={widget.id} config={widget.config} envelope={envelope} width={width} />
+    </WidgetShell>
+  )
 }
 
 /**
