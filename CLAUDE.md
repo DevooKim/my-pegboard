@@ -88,6 +88,7 @@ src/
 │  ├─ jira/        ← 위젯 하나 = 폴더 하나
 │  ├─ github/
 │  ├─ linear/      markdown/ 렌더러를 안에 갖는다 (의존성 0)
+│  ├─ nowplaying/  시스템 "지금 재생 중" — 플레이어 불문
 │  ├─ todo/
 │  ├─ web/
 │  └─ album/
@@ -98,7 +99,9 @@ src/
 
 src-tauri/src/
 ├─ commands/       IPC 커맨드
-├─ providers/      jira/ github/ linear/ album/ — API 클라이언트·타입·캐시 (album은 로컬 스캔)
+├─ providers/      jira/ github/ linear/ album/ nowplaying/ — API 클라이언트·타입·캐시
+│                  (album은 로컬 스캔, nowplaying은 로컬 서브프로세스 스트림)
+├─ vendor/         mediaremote-adapter — build.rs가 clang으로 빌드 (VENDORED.md 참조)
 ├─ scheduler/      위젯별 폴링 타이머
 ├─ storage/        파일 IO, 원자적 쓰기, 마이그레이션
 ├─ secrets/        키체인
@@ -304,6 +307,28 @@ API 키가 없어 공개 `schema.graphql`과 문서만 보고 썼다. 모든 필
 
 ---
 
+## 지금 재생 중
+
+**특정 서비스 위젯이 아니다.** macOS 시스템 Now Playing을 읽으므로 Spotify든
+브라우저 탭의 YouTube Music이든 전부 잡힌다. 로그인·토큰·설정 0.
+서비스별 API 연동(YouTube Music·Spotify)은 검토 후 버렸다 — 근거는 DECISIONS 27.
+
+- **데이터 원천이 비공개 프레임워크 우회다.** macOS 15.4부터 Apple이 MediaRemote를
+  막아서 `src-tauri/vendor/mediaremote-adapter`(BSD-3)를 perl 서브프로세스로 띄운다.
+  **Apple이 또 막으면 위젯이 죽는다** — 그때는 error push로 화면에 드러난다.
+  판정 규칙(실측): 스트림은 시작 직후 반드시 한 줄을 내보낸다 →
+  첫 줄 타임아웃 = 고장, 빈 페이로드 = 재생 없음
+- 프레임워크는 **build.rs가 clang으로 빌드**한다 (cmake 불필요). 번들은
+  `tauri.conf.json`의 `macOS.frameworks` + `resources`(perl 스크립트) 두 곳이다
+- **디스크 캐시 없음 — 대전제 1의 명시적 예외.** 지난 "지금 재생 중"은 거짓말이다
+- **폴링 없음.** Rust가 diff 스트림을 병합해 `NowPlayingPush` 이벤트로 민다.
+  마운트 = 구독, 언마운트 = 해지, 구독자 0 = 프로세스 종료. 새로고침 버튼 = 재연결
+- 앨범아트는 **바뀔 때만** 이벤트에 싣는다(토큰 비교). 프론트는 토큰이 같으면
+  직전 아트를 이어받는다 — 이 병합이 빠지면 수 초마다 아트가 깜빡인다
+- **제어(재생/일시정지·이전·다음)는 자동 재시도 금지.** "다음 곡"은 멱등이 아니다.
+  셔플·반복·seek는 일부러 없다 (상태를 못 읽는 토글은 거짓말을 한다)
+- 앨범아트/곡명 클릭 = 재생 중인 앱 열기 (`open -b`). 상세 화면은 만들지 않는다
+
 ## 앨범
 
 **기분 전환용 배경이다. 사진 뷰어가 아니다.**
@@ -383,7 +408,7 @@ membership이 달라지면 typed `relaunchRequired` 신호를 반환해 설정 U
 | 자동 업데이트 | **있음** — GitHub Release 기반 (DECISIONS 23) |
 
 **위젯 개수 제한:** Jira 4 / GitHub 4 / **Linear 4** / **Todo 1** / Web 4 / **앨범 4**
-(타입별, **보드당**)
+/ **지금 재생 중 1** (타입별, **보드당**)
 
 **"보드당"이다.** 보드 A에 Jira 4개가 있어도 보드 B에 또 넣을 수 있다.
 전체 상한이 아니다 — 보드의 목적이 맥락 전환이므로 보드마다 그 맥락의 위젯이
