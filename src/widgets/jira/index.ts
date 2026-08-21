@@ -34,6 +34,7 @@ export const jiraWidget: WidgetDefinition<JiraWidgetConfig> = {
     projects: [],
     refreshSecs: 300,
     columns: null,
+    groupByParent: false,
   },
   // 3열은 DESIGN.md가 검증한 최소 가독 폭. 기본은 4열로 여유를 준다.
   defaultLayout: { w: 4, h: 10 },

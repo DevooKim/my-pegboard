@@ -1359,6 +1359,10 @@ refreshSecs?: number;
  */
 columns?: string[] | null;
 /**
+ * 상위 항목별로 묶어서 보여줄까. 기존 위젯의 평면 목록을 유지하기 위해 기본 끔.
+ */
+groupByParent?: boolean;
+/**
  * 정렬 기준. **프리셋에만 적용된다** — 생 JQL의 ORDER BY는 사용자 몫이다.
  */
 sortField?: SortField | null; sortDirection?: SortDirection | null }

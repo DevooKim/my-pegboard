@@ -66,6 +66,9 @@ pub struct JiraWidgetConfig {
     /// 목록에 표시할 열. 비어 있으면 기본 세트.
     #[serde(default)]
     pub columns: Option<Vec<String>>,
+    /// 상위 항목별로 묶어서 보여줄까. 기존 위젯의 평면 목록을 유지하기 위해 기본 끔.
+    #[serde(default)]
+    pub group_by_parent: bool,
     /// 정렬 기준. **프리셋에만 적용된다** — 생 JQL의 ORDER BY는 사용자 몫이다.
     #[serde(default)]
     pub sort_field: Option<SortField>,
@@ -90,9 +93,36 @@ impl Default for JiraWidgetConfig {
             projects: Vec::new(),
             refresh_secs: default_refresh_secs(),
             columns: None,
+            group_by_parent: false,
             sort_field: None,
             sort_direction: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::JiraWidgetConfig;
+
+    #[test]
+    fn old_config_keeps_flat_list_and_explicit_grouping_is_read() {
+        let old: JiraWidgetConfig = serde_json::from_value(serde_json::json!({
+            "query": { "kind": "preset", "id": "assigned-to-me" },
+            "maxResults": 15
+        }))
+        .expect("기존 Jira config가 파싱돼야 한다");
+        assert!(
+            !old.group_by_parent,
+            "기존 위젯은 평면 목록을 유지해야 한다"
+        );
+
+        let grouped: JiraWidgetConfig = serde_json::from_value(serde_json::json!({
+            "query": { "kind": "preset", "id": "assigned-to-me" },
+            "maxResults": 15,
+            "groupByParent": true
+        }))
+        .expect("그룹 설정을 읽어야 한다");
+        assert!(grouped.group_by_parent);
     }
 }
 

@@ -6,6 +6,7 @@ import { useNow } from '#/ui/relativeTime'
 import type { WidgetViewProps } from '#/widgets/types'
 import { ColumnHeader } from './ColumnHeader'
 import { type ColumnWidths, visibleColumns, withDefaults } from './columns'
+import { groupByParent } from './grouping'
 import { IssueDetailModal } from './IssueDetailModal'
 import { IssueRow } from './IssueRow'
 import { notifyTransitioned } from './StatusTransitionPopover'
@@ -34,13 +35,19 @@ export function JiraView({
   // 행의 상대 시간도 1분마다 갱신한다. key로 넘겨 IssueRow를 다시 그린다.
   const now = useNow()
   const visible = visibleColumns(config.columns)
+  const grouped = config.groupByParent ?? false
+  // 그룹 헤더가 이미 상위를 보여주므로 같은 값을 열에서 반복하지 않는다.
+  const displayedColumns = useMemo(
+    () => (grouped ? visible.filter((column) => column !== 'parent') : visible),
+    [grouped, visible],
+  )
 
   // 목록에 스크롤바가 생기면 그만큼 헤더를 밀어줘야 열이 어긋나지 않는다.
   // macOS는 오버레이 스크롤바라 보통 0이지만, 마우스를 연결하면 폭이 생긴다.
   // 열려 있는 상세 모달. seed는 목록이 이미 가진 값 — 0ms 골격의 재료다 (D2).
   const [detail, setDetail] = useState<{ key: string; seed: JiraIssue | null } | null>(null)
 
-  const listRef = useRef<HTMLUListElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
   const [scrollbar, setScrollbar] = useState(0)
   useEffect(() => {
     const el = listRef.current
@@ -76,6 +83,7 @@ export function JiraView({
   )
 
   const issues = envelope.data?.issues ?? []
+  const groups = useMemo(() => (grouped ? groupByParent(issues) : null), [grouped, issues])
 
   // 아직 한 번도 데이터를 못 받은 상태에서만 로딩/에러가 본문을 차지한다.
   if (issues.length === 0) {
@@ -96,24 +104,61 @@ export function JiraView({
       {/* 목록에 스크롤바가 생기면 그만큼 헤더를 좁혀야 열이 어긋나지 않는다.
           헤더 안쪽 패딩으로 하면 1fr이 넓어져 뒤 트랙이 밀리므로 바깥에서 준다. */}
       <div style={{ paddingRight: scrollbar }}>
-        <ColumnHeader widths={widths} density={density} visible={visible} onResize={resizeColumn} />
+        <ColumnHeader
+          widths={widths}
+          density={density}
+          visible={displayedColumns}
+          onResize={resizeColumn}
+        />
       </div>
-      <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
-        {issues.map((issue) => (
-          <li key={issue.key}>
-            <IssueRow
-              issue={issue}
-              density={density}
-              widths={widths}
-              visible={visible}
-              now={now}
-              browseUrl={browseUrl}
-              onOpen={() => setDetail({ key: issue.key, seed: issue })}
-              onTransitioned={notifyTransitioned}
-            />
-          </li>
-        ))}
-      </ul>
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
+        {groups ? (
+          groups.map((group) => (
+            <section key={group.parent?.key ?? '__no_parent__'}>
+              <h3
+                className="flex min-w-0 items-baseline gap-2 px-3 pt-2 pb-1 text-base text-text-secondary"
+                title={group.title}
+              >
+                {group.parent && <span className="ticket-key shrink-0">{group.parent.key}</span>}
+                {group.label && <span className="truncate">{group.label}</span>}
+              </h3>
+              <ul>
+                {group.issues.map((issue) => (
+                  <li key={issue.key}>
+                    <IssueRow
+                      issue={issue}
+                      density={density}
+                      widths={widths}
+                      visible={displayedColumns}
+                      now={now}
+                      browseUrl={browseUrl}
+                      onOpen={() => setDetail({ key: issue.key, seed: issue })}
+                      onTransitioned={notifyTransitioned}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        ) : (
+          <ul>
+            {issues.map((issue) => (
+              <li key={issue.key}>
+                <IssueRow
+                  issue={issue}
+                  density={density}
+                  widths={widths}
+                  visible={displayedColumns}
+                  now={now}
+                  browseUrl={browseUrl}
+                  onOpen={() => setDetail({ key: issue.key, seed: issue })}
+                  onTransitioned={notifyTransitioned}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* Modal이 포털이라 위치는 무관하다. 목록 뒤에 두어 읽는 순서를 맞춘다. */}
       <IssueDetailModal

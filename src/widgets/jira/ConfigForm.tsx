@@ -381,6 +381,23 @@ export function JiraConfigForm({ config, onChange }: WidgetConfigFormProps<JiraW
         </div>
       </Section>
 
+      <Section>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={config.groupByParent ?? false}
+            onChange={(e) => onChange({ ...config, groupByParent: e.target.checked })}
+            className="accent-accent"
+          />
+          <span className="text-body text-text-primary">상위 항목별로 묶어서 보기</span>
+        </label>
+        {(config.groupByParent ?? false) && (
+          <span className="text-caption text-text-tertiary">
+            상위 항목이 없는 티켓은 별도 그룹에 모읍니다. 상위 열은 그룹 헤더로 대체됩니다.
+          </span>
+        )}
+      </Section>
+
       <Section last>
         <div className="flex flex-col gap-1">
           <span className="text-caption text-text-secondary">자동 새로고침</span>

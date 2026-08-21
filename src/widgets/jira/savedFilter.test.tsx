@@ -54,6 +54,7 @@ const baseConfig: JiraWidgetConfig = {
   columns: null,
   sortField: null,
   sortDirection: null,
+  groupByParent: false,
 }
 
 function renderForm(config: JiraWidgetConfig = baseConfig) {
@@ -72,6 +73,19 @@ function querySelect(): HTMLSelectElement {
 
 beforeEach(() => {
   jiraFilters.mockReset()
+})
+
+describe('상위 항목 그룹 설정', () => {
+  it('기본은 기존과 같은 평면 목록이고 체크하면 그룹 설정을 저장한다', async () => {
+    jiraFilters.mockResolvedValue({ status: 'ok', data: [] })
+    const { onChange } = renderForm()
+
+    const checkbox = await screen.findByRole('checkbox', { name: '상위 항목별로 묶어서 보기' })
+    expect(checkbox).not.toBeChecked()
+
+    checkbox.click()
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ groupByParent: true }))
+  })
 })
 
 describe('필터 목록 조회가 실패했을 때', () => {
