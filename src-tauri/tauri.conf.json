@@ -53,9 +53,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns"
     ],
+    "resources": [
+      "vendor/mediaremote-adapter/bin/mediaremote-adapter.pl"
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "CDBE73285261C809C14BE48E5543918ADEA01141"
+      "signingIdentity": "CDBE73285261C809C14BE48E5543918ADEA01141",
+      "frameworks": [
+        "vendor/mediaremote-adapter/build/MediaRemoteAdapter.framework"
+      ]
     }
   }
 }

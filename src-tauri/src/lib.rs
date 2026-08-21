@@ -13,7 +13,7 @@ pub mod secrets;
 pub mod storage;
 
 use tauri::Manager;
-use tauri_specta::{collect_commands, Builder as SpectaBuilder};
+use tauri_specta::{collect_commands, collect_events, Builder as SpectaBuilder};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -91,17 +91,28 @@ pub fn run() {
         commands::album::album_pick_files,
         commands::album::album_rescan,
             commands::album::album_cached,
+        commands::nowplaying::nowplaying_subscribe,
+        commands::nowplaying::nowplaying_unsubscribe,
+        commands::nowplaying::nowplaying_reconnect,
+        commands::nowplaying::nowplaying_send,
+        commands::nowplaying::nowplaying_open_app,
             commands::board::board_load,
             commands::board::board_save,
             commands::board::board_export,
             commands::board::board_import_preview,
             commands::board::board_import_apply,
-    ]);
+    ])
+    // "지금 재생 중"은 폴링이 아니라 Rust가 이벤트를 push한다 (DECISIONS 27).
+    .events(collect_events![providers::nowplaying::NowPlayingPush]);
 
 
     builder
         .invoke_handler(specta.invoke_handler())
-        .setup(|app| {
+        .setup(move |app| {
+            // 타입드 이벤트 배선. 이게 없으면 프론트의 events.*.listen이
+            // 아무것도 받지 못한다.
+            specta.mount_events(app);
+
             let log_dir = app
                 .path()
                 .app_log_dir()

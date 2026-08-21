@@ -38,3 +38,6 @@ CLAUDE.local.md
 
 # TypeScript 증분 빌드 캐시 — 빌드마다 바뀌어 머지 충돌만 낸다
 tsconfig.tsbuildinfo
+
+# mediaremote-adapter 빌드 산출물 — build.rs가 clang으로 매번 만든다
+src-tauri/vendor/mediaremote-adapter/build/

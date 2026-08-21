@@ -65,6 +65,8 @@ pub enum WidgetType {
     Album,
     /// Linear issues — read + status change + detail modal (DECISIONS 25).
     Linear,
+    /// System now-playing — player-agnostic, event-pushed, no cache (DECISIONS 27).
+    Nowplaying,
 }
 
 impl WidgetType {
@@ -85,6 +87,9 @@ impl WidgetType {
             // Jira·GitHub과 같은 이유로 4다. 위젯마다 다른 쿼리를 본다
             // ("내게 할당된 것" / "팀에서 최근 움직인 것").
             WidgetType::Linear => 4,
+            // Todo와 같은 논리로 1이다. 시스템 "지금 재생 중"은 전역 하나뿐이라
+            // 두 번째 위젯은 같은 것을 한 번 더 그릴 뿐이다 (DECISIONS 27).
+            WidgetType::Nowplaying => 1,
         }
     }
 
@@ -96,6 +101,7 @@ impl WidgetType {
             WidgetType::Web => "web",
             WidgetType::Album => "album",
             WidgetType::Linear => "linear",
+            WidgetType::Nowplaying => "nowplaying",
         }
     }
 }

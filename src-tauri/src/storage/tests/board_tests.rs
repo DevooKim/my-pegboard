@@ -127,6 +127,8 @@ fn instance_limits_match_decisions() {
     assert_eq!(WidgetType::Album.instance_limit(), 4);
     // Linear는 Jira·GitHub과 같다. 위젯마다 다른 쿼리를 본다.
     assert_eq!(WidgetType::Linear.instance_limit(), 4);
+    // 지금 재생 중은 Todo와 같다. 시스템 재생 상태는 전역 하나뿐이다.
+    assert_eq!(WidgetType::Nowplaying.instance_limit(), 1);
 }
 
 /// `as_str`은 프론트의 문자열 리터럴과 정확히 일치해야 한다. 어긋나면
@@ -139,6 +141,7 @@ fn type_strings_match_the_frontend_literals() {
     assert_eq!(WidgetType::Web.as_str(), "web");
     assert_eq!(WidgetType::Album.as_str(), "album");
     assert_eq!(WidgetType::Linear.as_str(), "linear");
+    assert_eq!(WidgetType::Nowplaying.as_str(), "nowplaying");
 }
 
 /// 앨범 위젯이 든 board.json이 왕복하는지. 등록 1번(Rust enum)의 회귀 테스트다 —
@@ -199,6 +202,30 @@ fn a_linear_widget_survives_a_disk_round_trip() {
     assert_eq!(w.widget_type, WidgetType::Linear);
     assert_eq!(w.config["query"]["id"], "assigned-to-me");
     assert_eq!(w.config["teams"][0], "team-eng");
+}
+
+/// "지금 재생 중" 위젯이 든 board.json이 왕복하는지. 등록 1번의 회귀 테스트다 —
+/// enum에 변형이 없으면 파일 **전체**가 거부되어 다른 위젯까지 같이 날아간다.
+#[test]
+fn a_nowplaying_widget_survives_a_disk_round_trip() {
+    let dir = TempDir::new().unwrap();
+
+    {
+        let mut s = store(&dir);
+        let mut w = widget("n1", WidgetType::Nowplaying);
+        w.config = json!({ "title": "음악" });
+        s.add_widget_to_active(w).unwrap();
+        // 다른 타입이 섞여 있어도 함께 살아남아야 한다.
+        s.add_widget_to_active(widget("j1", WidgetType::Jira))
+            .unwrap();
+        s.save().unwrap();
+    }
+
+    let s = store(&dir);
+    assert_eq!(s.data().boards[0].widgets.len(), 2);
+    let w = s.widget("n1").expect("지금 재생 중 위젯이 사라졌다");
+    assert_eq!(w.widget_type, WidgetType::Nowplaying);
+    assert_eq!(w.config["title"], "음악");
 }
 
 #[test]

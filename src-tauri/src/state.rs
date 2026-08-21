@@ -63,6 +63,9 @@ pub struct AppState {
     pub linear_meta: Mutex<LinearMetaStore>,
     /// 재시작하면 버리는 캐시(createmeta, `/myself`).
     pub jira_session: Mutex<JiraSessionCache>,
+    /// "지금 재생 중" 어댑터 프로세스와 구독 수. 디스크 캐시가 없다 —
+    /// 지난 재생 정보를 그리면 거짓말이 되는 유일한 위젯 (DECISIONS 27).
+    pub nowplaying: Mutex<crate::providers::nowplaying::NowPlayingRuntime>,
     pub secrets: SecretStore,
     pub connections: Mutex<Connections>,
     pub connections_path: PathBuf,
@@ -117,6 +120,7 @@ impl AppState {
             github_meta: Mutex::new(github_meta),
             linear_meta: Mutex::new(linear_meta),
             jira_session: Mutex::new(JiraSessionCache::default()),
+            nowplaying: Mutex::new(crate::providers::nowplaying::NowPlayingRuntime::default()),
             secrets: SecretStore::new(),
             connections: Mutex::new(connections),
             connections_path,

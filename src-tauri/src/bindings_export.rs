@@ -8,8 +8,9 @@
 #[cfg(test)]
 mod tests {
     use crate::commands;
+    use crate::providers;
     use std::fs;
-    use tauri_specta::{collect_commands, Builder};
+    use tauri_specta::{collect_commands, collect_events, Builder};
 
     fn trim_trailing_whitespace(input: &str) -> String {
         let mut output = input
@@ -84,12 +85,20 @@ mod tests {
             commands::album::album_pick_files,
             commands::album::album_rescan,
             commands::album::album_cached,
+            commands::nowplaying::nowplaying_subscribe,
+            commands::nowplaying::nowplaying_unsubscribe,
+            commands::nowplaying::nowplaying_reconnect,
+            commands::nowplaying::nowplaying_send,
+            commands::nowplaying::nowplaying_open_app,
             commands::board::board_load,
             commands::board::board_save,
             commands::board::board_export,
             commands::board::board_import_preview,
             commands::board::board_import_apply,
-        ]);
+        ])
+        // lib.rs의 events와 반드시 같아야 한다. 어긋나면 바인딩에 이벤트가
+        // 없거나(여기 누락) 런타임에 배선이 안 된다(lib.rs 누락).
+        .events(collect_events![providers::nowplaying::NowPlayingPush]);
 
         let path = "../src/ipc/bindings.ts";
         builder

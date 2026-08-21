@@ -8,6 +8,7 @@ pub mod board;
 pub mod github;
 pub mod jira;
 pub mod linear;
+pub mod nowplaying;
 pub mod todo;
 
 use serde::Serialize;
